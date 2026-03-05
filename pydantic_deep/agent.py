@@ -509,8 +509,8 @@ def create_deep_agent(  # noqa: C901
         all_toolsets.append(console_toolset)
 
     if include_subagents:
-        # For subagents, convert model to string if it's a Model instance
-        subagent_model = model if isinstance(model, str) else DEFAULT_MODEL
+        # Pass model through to subagents (supports both str and Model objects)
+        subagent_model = model or DEFAULT_MODEL
 
         # Create toolsets factory for subagents - they get console, todo, and extra tools
         _retries = retries  # capture for closure
