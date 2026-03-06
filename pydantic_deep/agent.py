@@ -39,6 +39,31 @@ DEFAULT_MODEL = "openai:gpt-4.1"
 DEFAULT_INSTRUCTIONS = BASE_PROMPT
 
 
+class _DepsTodoProxy:
+    """Proxy that delegates todo reads/writes to the current run's DeepAgentDeps.
+
+    Implements ``TodoStorageProtocol`` so it can be passed as ``storage``
+    to ``create_todo_toolset()``.  The proxy is bound to a specific
+    ``DeepAgentDeps`` instance at the start of each model turn (inside
+    ``dynamic_instructions``), ensuring the toolset always operates on
+    the correct deps object.
+    """
+
+    def __init__(self) -> None:
+        self._deps: DeepAgentDeps | None = None
+
+    @property
+    def todos(self) -> list[Any]:
+        if self._deps is None:
+            return []
+        return self._deps.todos
+
+    @todos.setter
+    def todos(self, value: list[Any]) -> None:
+        if self._deps is not None:
+            self._deps.todos = list(value)
+
+
 @overload
 def create_deep_agent(
     model: str | Model | None = None,
@@ -480,8 +505,10 @@ def create_deep_agent(  # noqa: C901
     # Build toolsets list
     all_toolsets: list[AbstractToolset[DeepAgentDeps]] = []
 
+    _todo_proxy: _DepsTodoProxy | None = None
     if include_todo:
-        todo_toolset = create_todo_toolset(id="deep-todo")
+        _todo_proxy = _DepsTodoProxy()
+        todo_toolset = create_todo_toolset(storage=_todo_proxy, id="deep-todo")
         all_toolsets.append(todo_toolset)
 
     if include_filesystem:
@@ -526,7 +553,9 @@ def create_deep_agent(  # noqa: C901
                 edit_format=edit_format,  # type: ignore[arg-type,unused-ignore]
             )
             _set_toolset_retries(sub_console, _retries)
-            result: list[Any] = [sub_console, create_todo_toolset()]
+            sub_todo_proxy = _DepsTodoProxy()
+            sub_todo_proxy._deps = deps
+            result: list[Any] = [sub_console, create_todo_toolset(storage=sub_todo_proxy)]
             # Include extra toolsets (e.g., MCP servers for web search)
             result.extend(_sub_extra)
             if context_files or context_discovery:
@@ -805,8 +834,9 @@ def create_deep_agent(  # noqa: C901
         if uploads_prompt:
             parts.append(uploads_prompt)
 
-        if include_todo:
-            todo_prompt = get_todo_system_prompt(ctx.deps)
+        if include_todo and _todo_proxy is not None:
+            _todo_proxy._deps = ctx.deps
+            todo_prompt = get_todo_system_prompt(_todo_proxy)
             if todo_prompt:
                 parts.append(todo_prompt)
 

@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.19] - 2026-03-06
+
+### Fixed
+
+- **`deps.todos` not synchronized with todo tools** — `create_todo_toolset()` was called without `storage=` parameter, creating an isolated `TodoStorage` disconnected from `deps.todos`. Todo tools wrote to their own internal list while `deps.todos`, `get_todo_prompt()`, and `share_todos` remained empty. Fixed with `_DepsTodoProxy` pattern that delegates reads/writes to `deps.todos` at runtime. Subagent todo toolsets use the same proxy pattern for consistency. ([#35](https://github.com/vstorm-co/pydantic-deepagents/issues/35))
+
 ## [0.2.18] - 2026-02-27
 
 ### Added

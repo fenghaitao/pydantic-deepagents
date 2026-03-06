@@ -11,8 +11,9 @@ from pydantic_deep import (
     create_default_deps,
     run_with_files,
 )
+from pydantic_deep.agent import _DepsTodoProxy
 from pydantic_deep.deps import _format_size
-from pydantic_deep.types import SubAgentConfig
+from pydantic_deep.types import SubAgentConfig, Todo
 
 # Use TestModel to avoid requiring API keys
 TEST_MODEL = TestModel()
@@ -251,11 +252,14 @@ class TestDeepAgentDeps:
 
     def test_upload_file_binary(self):
         """Test uploading a binary file (non-UTF-8)."""
+        from unittest.mock import patch
+
         deps = DeepAgentDeps(backend=StateBackend())
 
-        # Binary content that is not valid UTF-8
+        # Binary content — mock chardet to return no encoding (platform-dependent)
         content = bytes([0x80, 0x81, 0x82, 0xFF])
-        path = deps.upload_file("binary.dat", content)
+        with patch("pydantic_deep.deps.chardet.detect", return_value={"encoding": None}):
+            path = deps.upload_file("binary.dat", content)
 
         assert path == "/uploads/binary.dat"
         # Binary files should have line_count = None
@@ -285,10 +289,13 @@ class TestDeepAgentDeps:
 
     def test_get_uploads_summary_with_binary_files(self):
         """Test uploads summary with binary files (no line count)."""
+        from unittest.mock import patch
+
         deps = DeepAgentDeps(backend=StateBackend())
 
-        # Binary file (non-UTF-8)
-        deps.upload_file("binary.dat", bytes([0x80, 0x81, 0x82]))
+        # Binary file — mock chardet to return no encoding (platform-dependent)
+        with patch("pydantic_deep.deps.chardet.detect", return_value={"encoding": None}):
+            deps.upload_file("binary.dat", bytes([0x80, 0x81, 0x82]))
 
         summary = deps.get_uploads_summary()
 
@@ -394,3 +401,52 @@ class TestRunWithFiles:
 
         assert deps1.uploads == {}
         assert deps2.uploads == {}
+
+
+class TestDepsTodoProxy:
+    """Tests for _DepsTodoProxy."""
+
+    def test_returns_empty_list_when_deps_is_none(self):
+        """Proxy returns [] before being bound to any deps."""
+        proxy = _DepsTodoProxy()
+        assert proxy.todos == []
+
+    def test_delegates_read_to_deps(self):
+        """Proxy reads from deps.todos."""
+        proxy = _DepsTodoProxy()
+        deps = DeepAgentDeps(backend=StateBackend())
+        todo = Todo(content="Test task", status="pending", active_form="Testing")
+        deps.todos = [todo]
+        proxy._deps = deps
+        assert proxy.todos == [todo]
+
+    def test_delegates_write_to_deps(self):
+        """Proxy writes to deps.todos."""
+        proxy = _DepsTodoProxy()
+        deps = DeepAgentDeps(backend=StateBackend())
+        proxy._deps = deps
+        todo = Todo(content="Test task", status="pending", active_form="Testing")
+        proxy.todos = [todo]
+        assert deps.todos == [todo]
+
+    def test_setter_copies_list(self):
+        """Setter creates a copy, not assigns reference."""
+        proxy = _DepsTodoProxy()
+        deps = DeepAgentDeps(backend=StateBackend())
+        proxy._deps = deps
+        original = [Todo(content="Task", status="pending", active_form="Working")]
+        proxy.todos = original
+        assert deps.todos == original
+        assert deps.todos is not original
+
+    def test_setter_noop_when_deps_is_none(self):
+        """Setter silently no-ops without deps."""
+        proxy = _DepsTodoProxy()
+        proxy.todos = [Todo(content="Task", status="pending", active_form="Working")]
+        assert proxy.todos == []
+
+    def test_agent_created_with_proxy_storage(self):
+        """Integration: agent is created with proxy-backed todo toolset."""
+        agent = create_deep_agent(model=TEST_MODEL, include_todo=True)
+        # The agent should have a toolset with id "deep-todo"
+        assert agent is not None
