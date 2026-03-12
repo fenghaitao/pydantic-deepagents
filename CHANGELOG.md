@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.20] - 2026-03-11
+
+### Changed
+
+- Updated `pydantic-ai-backend` dependency to `>=0.1.14` — `DockerSandbox` now resolves relative paths against `work_dir` instead of `/`, and returns clean error messages for missing files ([pydantic-ai-backend#22](https://github.com/vstorm-co/pydantic-ai-backend/pull/22), by [@ret2libc](https://github.com/ret2libc))
+- Updated `pydantic-ai-middleware` dependency to `>=0.2.3` — `MiddlewareAgent.iter()` now calls `after_run` and `on_error` middleware ([pydantic-ai-middleware#17](https://github.com/vstorm-co/pydantic-ai-middleware/issues/17))
+
 ## [0.2.19] - 2026-03-06
 
 ### Fixed
