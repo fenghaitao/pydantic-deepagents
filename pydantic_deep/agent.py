@@ -661,6 +661,7 @@ def create_deep_agent(  # noqa: C901
         all_toolsets.append(skills_toolset)  # type: ignore[arg-type]
 
     # Context toolset
+    context_toolset = None
     if context_files or context_discovery:
         from pydantic_deep.toolsets.context import ContextToolset
 
@@ -672,6 +673,7 @@ def create_deep_agent(  # noqa: C901
         all_toolsets.append(context_toolset)
 
     # Memory toolset
+    memory_toolset = None
     if include_memory:
         from pydantic_deep.toolsets.memory import DEFAULT_MEMORY_DIR, AgentMemoryToolset
 
@@ -823,6 +825,14 @@ def create_deep_agent(  # noqa: C901
         **agent_create_kwargs,
     )
 
+    # Build list of toolsets whose get_instructions() should be called.
+    # pydantic-ai's AbstractToolset does NOT call this automatically.
+    _instruction_toolsets: list[Any] = [
+        ts
+        for ts in [skills_toolset, context_toolset, memory_toolset, *(toolsets or [])]
+        if ts is not None and hasattr(ts, "get_instructions")
+    ]
+
     # Add dynamic system prompts
     @agent.instructions
     def dynamic_instructions(ctx: Any) -> str:  # pragma: no cover
@@ -845,28 +855,12 @@ def create_deep_agent(  # noqa: C901
             if console_prompt:
                 parts.append(console_prompt)
 
-        if include_skills and skills_toolset:
-            skills_instructions = skills_toolset.get_instructions(ctx)
-            if skills_instructions:
-                parts.append(skills_instructions)
-
-        if (context_files or context_discovery) and context_toolset:
-            context_instructions = context_toolset.get_instructions(ctx)
-            if context_instructions:
-                parts.append(context_instructions)
-
-        if include_memory and memory_toolset:
-            memory_instructions = memory_toolset.get_instructions(ctx)
-            if memory_instructions:
-                parts.append(memory_instructions)
-
-        if toolsets:
-            for _ts in toolsets:
-                _get = getattr(_ts, "get_instructions", None)
-                if _get is not None:
-                    _instr = _get(ctx)
-                    if _instr:
-                        parts.append(_instr)
+        # Collect instructions from toolsets that define get_instructions().
+        # pydantic-ai's AbstractToolset does NOT call this automatically.
+        for _ts in _instruction_toolsets:
+            _instr = _ts.get_instructions(ctx)
+            if _instr:
+                parts.append(_instr)
 
         if include_subagents:
             # Build configs list for prompt generation
