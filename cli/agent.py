@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -108,8 +109,22 @@ def create_cli_agent(  # noqa: C901
 
     config = load_config(config_path)
 
-    # Apply config defaults — explicit params override
+    # Apply config defaults — explicit params override.
+    # If no explicit model/env override is set and config still has the default,
+    # auto-select by available provider credentials, with LiteLLM as final fallback.
     effective_model = model or config.model
+    if (
+        model is None
+        and "PYDANTIC_DEEP_MODEL" not in os.environ
+        and config.model == "openrouter:openai/gpt-4.1"
+    ):
+        from cli.providers import select_default_model
+
+        effective_model = select_default_model()
+        if isinstance(effective_model, str) and effective_model.startswith("litellm:"):
+            from pydantic_deep.litellm import infer_litellm_model
+
+            effective_model = infer_litellm_model(effective_model)
     effective_working_dir = working_dir or config.working_dir
     effective_allow_list = shell_allow_list or config.shell_allow_list or None
 
