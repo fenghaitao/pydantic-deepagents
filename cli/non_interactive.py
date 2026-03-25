@@ -33,6 +33,7 @@ _PROVIDER_ENV_VARS: dict[str, str] = {
     "google": "GOOGLE_API_KEY",
     "groq": "GROQ_API_KEY",
     "mistral": "MISTRAL_API_KEY",
+    "litellm": "OAuth2 / provider-specific env (no fixed API key)",
 }
 
 

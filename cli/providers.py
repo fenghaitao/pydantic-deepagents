@@ -151,6 +151,30 @@ PROVIDERS: dict[str, ProviderInfo] = {
     ),
 }
 
+DEFAULT_MODEL_BY_PROVIDER: dict[str, str] = {
+    "openrouter": "openrouter:openai/gpt-4.1",
+    "openai": "openai:gpt-4.1",
+    "anthropic": "anthropic:claude-sonnet-4-5",
+    "google-gla": "google-gla:gemini-2.5-pro",
+    "groq": "groq:llama-3.3-70b-versatile",
+    "mistral": "mistral:mistral-large-latest",
+    "deepseek": "deepseek:deepseek-chat",
+    "litellm": "litellm:github_copilot/gpt-4o",
+}
+"""Preferred default model ids for provider auto-selection."""
+
+DEFAULT_PROVIDER_PRIORITY: list[str] = [
+    "openrouter",
+    "openai",
+    "anthropic",
+    "google-gla",
+    "groq",
+    "mistral",
+    "deepseek",
+    "litellm",
+]
+"""Provider order used by auto-selection when no explicit model is set."""
+
 
 def parse_model_string(model: str) -> tuple[str, str]:
     """Parse a pydantic-ai model string into (provider, model_name).
@@ -233,12 +257,31 @@ def format_provider_error(model: str) -> str | None:
     return None
 
 
+def select_default_model() -> str:
+    """Select a default model based on available provider credentials.
+
+    Chooses the first provider in ``DEFAULT_PROVIDER_PRIORITY`` with all required
+    environment variables set. If none match, falls back to LiteLLM to support
+    OAuth-backed flows (e.g. GitHub Copilot via LiteLLM).
+    """
+    for provider in DEFAULT_PROVIDER_PRIORITY:
+        info = PROVIDERS.get(provider)
+        if info is None:
+            continue
+        if not info.env_vars or not validate_provider_env(provider):
+            return DEFAULT_MODEL_BY_PROVIDER[provider]
+    return DEFAULT_MODEL_BY_PROVIDER["litellm"]
+
+
 __all__ = [
+    "DEFAULT_MODEL_BY_PROVIDER",
+    "DEFAULT_PROVIDER_PRIORITY",
     "PROVIDERS",
     "ProviderInfo",
     "check_provider_extra",
     "format_provider_error",
     "get_provider",
     "parse_model_string",
+    "select_default_model",
     "validate_provider_env",
 ]

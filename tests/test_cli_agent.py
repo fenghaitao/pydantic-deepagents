@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from pydantic_ai.models.test import TestModel
@@ -13,6 +14,7 @@ from cli.agent import (
     create_cli_agent,
 )
 from cli.prompts import CLI_SYSTEM_PROMPT, build_cli_instructions
+from cli.providers import select_default_model
 from pydantic_deep.middleware.hooks import HookEvent, HookInput, HookResult
 
 TEST_MODEL = TestModel()
@@ -98,6 +100,54 @@ class TestCreateCliAgent:
             context_discovery=False,
         )
         assert agent is not None
+
+    def test_default_model_falls_back_to_litellm_when_no_keys(self, tmp_path: Path) -> None:
+        with (
+            patch.dict(
+                "os.environ",
+                {
+                    "OPENAI_API_KEY": "",
+                    "OPENROUTER_API_KEY": "",
+                    "ANTHROPIC_API_KEY": "",
+                    "GOOGLE_API_KEY": "",
+                    "GROQ_API_KEY": "",
+                    "MISTRAL_API_KEY": "",
+                    "DEEPSEEK_API_KEY": "",
+                },
+                clear=False,
+            ),
+            patch("cli.agent.create_deep_agent") as mock_create,
+        ):
+            mock_create.return_value = TestModel()
+            create_cli_agent(
+                model=None,
+                working_dir=str(tmp_path),
+            )
+            call_kwargs = mock_create.call_args.kwargs
+            assert call_kwargs["model"] is not None
+            assert type(call_kwargs["model"]).__name__ == "LiteLLMModel"
+
+
+class TestCliProviderAutoSelection:
+    def test_select_default_model_prefers_openai_when_key_present(self) -> None:
+        with patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}, clear=False):
+            assert select_default_model() == "openai:gpt-4.1"
+
+    def test_select_default_model_uses_litellm_when_no_keys(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {
+                "OPENAI_API_KEY": "",
+                "OPENROUTER_API_KEY": "",
+                "ANTHROPIC_API_KEY": "",
+                "GOOGLE_API_KEY": "",
+                "GROQ_API_KEY": "",
+                "MISTRAL_API_KEY": "",
+                "DEEPSEEK_API_KEY": "",
+            },
+            clear=False,
+        ):
+            assert select_default_model() == "litellm:github_copilot/gpt-4o"
 
 
 class TestShellAllowListHook:
