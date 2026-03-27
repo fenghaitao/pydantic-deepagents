@@ -1476,6 +1476,7 @@ def _raw_line_edit() -> str:  # noqa: C901
     - ``/`` as first character → instant command picker
     - ``@`` anywhere → instant file picker (result inserted inline)
     - Ctrl+V → clipboard image paste
+    - Left/Right (and Home/End / Ctrl+A / Ctrl+E) → move cursor; cursor cell shown in reverse video
     - Up/Down → readline history navigation
     - Backspace, Ctrl+U (clear line), Ctrl+W (delete word)
     - Enter to submit, Ctrl+C to interrupt, Ctrl+D to EOF
@@ -1484,143 +1485,192 @@ def _raw_line_edit() -> str:  # noqa: C901
         The user's input line.
     """
     buf = ""
+    cursor = 0  # insertion index 0..len(buf); visual cursor via ANSI after redraw
     history_len = readline.get_current_history_length()
     history_pos = history_len + 1  # past the end = current input
     saved_buf = ""  # saved current input when navigating history
 
+    # Reverse-video highlight for cursor (always visible vs. thin terminal caret).
+    _RV = "\x1b[7m"
+    _RST = "\x1b[0m"
+
     def _redraw() -> None:
-        """Redraw the prompt and buffer."""
-        sys.stdout.write(f"\r\x1b[K{_USER_PROMPT}{buf}")
+        """Redraw prompt + buffer with a visible cursor (inverse video on one cell)."""
+        sys.stdout.write(f"\r\x1b[K{_USER_PROMPT}")
+        if not buf:
+            sys.stdout.write(f"{_RV} {_RST}")
+        elif cursor >= len(buf):
+            sys.stdout.write(buf + f"{_RV} {_RST}")
+        else:
+            ch = buf[cursor]
+            sys.stdout.write(buf[:cursor] + _RV + ch + _RST + buf[cursor + 1 :])
         sys.stdout.flush()
 
-    sys.stdout.write(_USER_PROMPT)
+    # Hide OS caret while we draw our own block; restore on any exit.
+    sys.stdout.write("\x1b[?25l")
     sys.stdout.flush()
+    try:
+        _redraw()
+        while True:
+            key = _read_raw_key()
 
-    while True:
-        key = _read_raw_key()
+            # --- "/" as first character → command picker ---
+            if key == "/" and not buf:
+                sys.stdout.write("/\n")
+                sys.stdout.flush()
+                picked = _command_picker()
+                return picked or ""
 
-        # --- "/" as first character → command picker ---
-        if key == "/" and not buf:
-            sys.stdout.write("/\n")
-            sys.stdout.flush()
-            picked = _command_picker()
-            return picked or ""
+            # --- "@" anywhere → file picker ---
+            if key == "@":
+                sys.stdout.write("@")
+                sys.stdout.flush()
+                picked_file = _file_picker()
+                if picked_file:
+                    mention = f"@{picked_file} "
+                    buf = buf[:cursor] + mention + buf[cursor:]
+                    cursor += len(mention)
+                    _redraw()
+                else:
+                    # Cancelled — just continue without @
+                    _redraw()
+                continue
 
-        # --- "@" anywhere → file picker ---
-        if key == "@":
-            sys.stdout.write("@")
-            sys.stdout.flush()
-            picked_file = _file_picker()
-            if picked_file:
-                mention = f"@{picked_file} "
-                buf += mention
-                _redraw()
-            else:
-                # Cancelled — just continue without @
-                _redraw()
-            continue
+            # --- Ctrl+V → clipboard image paste ---
+            if key == "paste":
+                from cli.clipboard import get_clipboard_image
 
-        # --- Ctrl+V → clipboard image paste ---
-        if key == "paste":
-            from cli.clipboard import get_clipboard_image
+                theme = get_theme()
+                image = get_clipboard_image()
+                if image:
+                    _pending_images.append(image)
+                    n = len(_pending_images)
+                    tag = f"[image {n}]"
+                    buf = buf[:cursor] + tag + buf[cursor:]
+                    cursor += len(tag)
+                    size_kb = len(image.data) / 1024
+                    # Show tag inline + confirmation below
+                    sys.stdout.write("\n")
+                    console.print(
+                        f"[{theme.accent}]  \u2022 Image pasted from clipboard "
+                        f"({size_kb:.0f} KB)[/{theme.accent}]"
+                    )
+                    _redraw()
+                else:
+                    sys.stdout.write("\n")
+                    console.print(f"[{theme.muted}]  No image in clipboard.[/{theme.muted}]")
+                    _redraw()
+                continue
 
-            theme = get_theme()
-            image = get_clipboard_image()
-            if image:
-                _pending_images.append(image)
-                n = len(_pending_images)
-                tag = f"[image {n}]"
-                buf += tag
-                size_kb = len(image.data) / 1024
-                # Show tag inline + confirmation below
-                sys.stdout.write("\n")
-                console.print(
-                    f"[{theme.accent}]  \u2022 Image pasted from clipboard "
-                    f"({size_kb:.0f} KB)[/{theme.accent}]"
-                )
-                _redraw()
-            else:
-                sys.stdout.write("\n")
-                console.print(f"[{theme.muted}]  No image in clipboard.[/{theme.muted}]")
-                _redraw()
-            continue
-
-        # --- Enter → submit ---
-        if key == "enter":
-            sys.stdout.write("\n")
-            sys.stdout.flush()
-            if buf.strip():
-                readline.add_history(buf)
-            return buf
-
-        # --- Ctrl+C → interrupt ---
-        if key == "interrupt":
-            sys.stdout.write("\n")
-            sys.stdout.flush()
-            raise KeyboardInterrupt
-
-        # --- Ctrl+D → EOF (only on empty line) ---
-        if key == "eof":
-            if not buf:
+            # --- Enter → submit ---
+            if key == "enter":
                 sys.stdout.write("\n")
                 sys.stdout.flush()
-                raise EOFError
-            continue
+                if buf.strip():
+                    readline.add_history(buf)
+                return buf
 
-        # --- Backspace ---
-        if key == "backspace":
-            if buf:
-                buf = buf[:-1]
+            # --- Ctrl+C → interrupt ---
+            if key == "interrupt":
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+                raise KeyboardInterrupt
+
+            # --- Ctrl+D → EOF (only on empty line) ---
+            if key == "eof":
+                if not buf:
+                    sys.stdout.write("\n")
+                    sys.stdout.flush()
+                    raise EOFError
+                continue
+
+            # --- Backspace ---
+            if key == "backspace":
+                if cursor > 0:
+                    buf = buf[: cursor - 1] + buf[cursor:]
+                    cursor -= 1
+                    _redraw()
+                continue
+
+            # --- Ctrl+U → clear entire line ---
+            if key == "clear_line":
+                buf = ""
+                cursor = 0
                 _redraw()
-            continue
+                continue
 
-        # --- Ctrl+U → clear entire line ---
-        if key == "clear_line":
-            buf = ""
-            _redraw()
-            continue
-
-        # --- Ctrl+W → delete last word ---
-        if key == "del_word":
-            stripped = buf.rstrip()
-            last_space = stripped.rfind(" ")
-            buf = stripped[: last_space + 1] if last_space >= 0 else ""
-            _redraw()
-            continue
-
-        # --- Ctrl+L → clear screen and redraw ---
-        if key == "clear_screen":
-            sys.stdout.write("\x1b[2J\x1b[H")
-            _redraw()
-            continue
-
-        # --- Up arrow → previous history ---
-        if key == "up":
-            if history_pos > 1:
-                if history_pos == history_len + 1:
-                    saved_buf = buf
-                history_pos -= 1
-                buf = readline.get_history_item(history_pos) or ""
+            # --- Ctrl+W → delete word before cursor ---
+            if key == "del_word":
+                left = buf[:cursor].rstrip()
+                if not left:
+                    continue
+                last_space = left.rfind(" ")
+                new_left = left[: last_space + 1] if last_space >= 0 else ""
+                buf = new_left + buf[cursor:]
+                cursor = len(new_left)
                 _redraw()
-            continue
+                continue
 
-        # --- Down arrow → next history ---
-        if key == "down":
-            if history_pos <= history_len:
-                history_pos += 1
-                if history_pos == history_len + 1:
-                    buf = saved_buf
-                else:
+            # --- Ctrl+L → clear screen and redraw ---
+            if key == "clear_screen":
+                sys.stdout.write("\x1b[2J\x1b[H")
+                _redraw()
+                continue
+
+            # --- Up arrow → previous history ---
+            if key == "up":
+                if history_pos > 1:
+                    if history_pos == history_len + 1:
+                        saved_buf = buf
+                    history_pos -= 1
                     buf = readline.get_history_item(history_pos) or ""
-                _redraw()
-            continue
+                    cursor = len(buf)
+                    _redraw()
+                continue
 
-        # --- Printable character ---
-        if len(key) == 1 and key.isprintable():
-            buf += key
-            sys.stdout.write(key)
-            sys.stdout.flush()
-            continue
+            # --- Down arrow → next history ---
+            if key == "down":
+                if history_pos <= history_len:
+                    history_pos += 1
+                    if history_pos == history_len + 1:
+                        buf = saved_buf
+                    else:
+                        buf = readline.get_history_item(history_pos) or ""
+                    cursor = len(buf)
+                    _redraw()
+                continue
+
+            # --- Left / Right → move cursor (CSI sequences mapped in _read_raw_key) ---
+            if key == "left":
+                if cursor > 0:
+                    cursor -= 1
+                    _redraw()
+                continue
+            if key == "right":
+                if cursor < len(buf):
+                    cursor += 1
+                    _redraw()
+                continue
+
+            # --- Home / End (also Ctrl+A / Ctrl+E from _read_raw_key) ---
+            if key == "home":
+                cursor = 0
+                _redraw()
+                continue
+            if key == "end":
+                cursor = len(buf)
+                _redraw()
+                continue
+
+            # --- Printable character ---
+            if len(key) == 1 and key.isprintable():
+                buf = buf[:cursor] + key + buf[cursor:]
+                cursor += 1
+                _redraw()
+                continue
+    finally:
+        sys.stdout.write("\x1b[?25h")
+        sys.stdout.flush()
 
 
 def _read_user_input() -> str:
