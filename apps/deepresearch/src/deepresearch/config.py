@@ -9,7 +9,10 @@ import subprocess
 from pathlib import Path
 
 from pydantic_ai.mcp import MCPServerStdio, MCPServerStreamableHTTP
+from pydantic_ai.models import Model
 from pydantic_ai.toolsets import AbstractToolset
+
+from pydantic_deep.litellm import infer_litellm_model
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +30,34 @@ STATIC_DIR = APP_DIR / "static"
 # Model
 # ---------------------------------------------------------------------------
 
-MODEL_NAME: str = os.getenv("MODEL_NAME", "openai:gpt-4.1")
+
+def _resolve_model_name() -> str | Model:
+    """Resolve the LLM from ``MODEL_NAME`` or the same provider priority as the CLI.
+
+    When ``MODEL_NAME`` is unset, uses :func:`cli.providers.select_default_model`
+    (first provider with API keys, else LiteLLM / GitHub Copilot). ``litellm:…``
+    models are wrapped with :func:`pydantic_deep.litellm.infer_litellm_model`.
+    """
+    raw = os.environ.get("MODEL_NAME")
+    try:
+        from cli.providers import select_default_model
+    except ImportError:  # pragma: no cover
+        select_default_model = None
+
+    if raw is None:
+        if select_default_model is None:
+            selected = "openai:gpt-4.1"
+        else:
+            selected = select_default_model()
+        if isinstance(selected, str) and selected.startswith("litellm:"):
+            return infer_litellm_model(selected)
+        return selected
+    if raw.startswith("litellm:"):
+        return infer_litellm_model(raw)
+    return raw
+
+
+MODEL_NAME: str | Model = _resolve_model_name()
 
 # ---------------------------------------------------------------------------
 # Excalidraw Canvas

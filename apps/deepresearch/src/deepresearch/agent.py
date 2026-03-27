@@ -389,7 +389,7 @@ def create_research_agent(
     agent_registry = DynamicAgentRegistry()
     factory_toolset = create_agent_factory_toolset(
         registry=agent_registry,
-        default_model="openai:gpt-4.1-mini",
+        default_model=MODEL_NAME,
         max_agents=5,
         id="agent-factory",
     )
