@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-03-31
+
+### Added
+
+- `capabilities` parameter on `create_deep_agent()` for user-provided capabilities ([#55](https://github.com/vstorm-co/pydantic-deepagents/pull/55))
+
+### Fixed
+
+- Pre-existing mypy `unused-ignore` error in `spec.py`
+
 ## [0.3.1] - 2026-03-31
 
 ### Changed

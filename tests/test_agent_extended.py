@@ -122,6 +122,16 @@ This is a test skill.
         )
         assert agent is not None
 
+    def test_create_with_user_capabilities(self):
+        """Test creating with user-provided capabilities."""
+        from pydantic_ai.capabilities import Thinking
+
+        agent = create_deep_agent(
+            model=TEST_MODEL,
+            capabilities=[Thinking(effort="low")],
+        )
+        assert agent is not None
+
     def test_create_with_custom_retries(self):
         """Test creating an agent with custom retries value."""
         agent = create_deep_agent(model=TEST_MODEL, retries=5)

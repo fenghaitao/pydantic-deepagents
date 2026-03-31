@@ -132,7 +132,7 @@ class DeepAgentSpec(BaseModel):
 def _load_yaml(text: str) -> dict[str, Any]:
     """Load YAML text, raising ImportError if PyYAML is not installed."""
     try:
-        import yaml  # type: ignore[import-untyped]
+        import yaml  # type: ignore[import-untyped,unused-ignore]
     except ImportError as e:  # pragma: no cover
         raise ImportError(  # pragma: no cover
             "PyYAML is required for YAML spec files. "
