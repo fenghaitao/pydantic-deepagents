@@ -146,7 +146,7 @@ def _build_hook_input(
     tool_name: str,
     tool_args: dict[str, Any],
     tool_result: Any | None = None,
-    tool_error: Exception | None = None,
+    tool_error: BaseException | None = None,
 ) -> HookInput:
     """Build HookInput from hook context."""
     return HookInput(
