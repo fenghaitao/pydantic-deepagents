@@ -492,7 +492,7 @@ def create_deep_agent(  # noqa: C901
         # Only add if user hasn't already defined a "research" subagent
         existing_names = {sa["name"] for sa in effective_subagents}
         if RESEARCH_SUBAGENT["name"] not in existing_names:
-            effective_subagents.append(dict(RESEARCH_SUBAGENT))
+            effective_subagents.append(SubAgentConfig(RESEARCH_SUBAGENT))
 
     def _set_toolset_retries(toolset: AbstractToolset[DeepAgentDeps], max_retries: int) -> None:
         """Set max_retries on a FunctionToolset and all its registered tools."""
@@ -899,7 +899,7 @@ def create_deep_agent(  # noqa: C901
     if thinking is not False:  # pragma: no cover
         from pydantic_ai.capabilities import Thinking
 
-        effort = thinking if isinstance(thinking, str) else True
+        effort: Any = thinking if isinstance(thinking, str) else True
         all_capabilities.append(Thinking(effort=effort))
 
     # Add user-provided capabilities
