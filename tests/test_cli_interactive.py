@@ -682,7 +682,6 @@ class TestStreamModelRequest:
 
 
 class TestRunInteractiveSandbox:
-
     _provider_patch = patch(
         "apps.cli.provider_setup.has_any_provider_configured", return_value=True
     )
@@ -692,6 +691,7 @@ class TestRunInteractiveSandbox:
 
     def teardown_method(self) -> None:
         self._provider_patch.stop()
+
     """Tests for sandbox-related paths in run_interactive()."""
 
     @patch("apps.cli.interactive._create_sandbox_backend", return_value=None)

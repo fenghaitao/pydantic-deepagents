@@ -816,3 +816,173 @@ class TestHooksExports:
         assert HooksCapability is not None
         assert EXIT_ALLOW == 0
         assert EXIT_DENY == 2
+
+
+class TestRunAndModelHooks:
+    """Tests for BEFORE_RUN, AFTER_RUN, RUN_ERROR, BEFORE/AFTER_MODEL_REQUEST hooks."""
+
+    async def test_before_run_handler(self) -> None:
+        calls: list[str] = []
+
+        async def on_start(inp: HookInput) -> HookResult:
+            calls.append(f"start:{inp.event}")
+            return HookResult()
+
+        cap = HooksCapability(hooks=[Hook(event=HookEvent.BEFORE_RUN, handler=on_start)])
+        ctx = _ctx(DeepAgentDeps(backend=StateBackend()))
+        await cap.before_run(ctx)
+        assert calls == ["start:before_run"]
+
+    async def test_before_run_no_hooks(self) -> None:
+        cap = HooksCapability(hooks=[])
+        ctx = _ctx(DeepAgentDeps(backend=StateBackend()))
+        await cap.before_run(ctx)
+
+    async def test_after_run_handler(self) -> None:
+        calls: list[str] = []
+
+        async def on_end(inp: HookInput) -> HookResult:
+            calls.append(f"end:{inp.tool_result}")
+            return HookResult()
+
+        cap = HooksCapability(hooks=[Hook(event=HookEvent.AFTER_RUN, handler=on_end)])
+        ctx = _ctx(DeepAgentDeps(backend=StateBackend()))
+        await cap.after_run(ctx, output="done")
+        assert calls == ["end:done"]
+
+    async def test_after_run_no_hooks(self) -> None:
+        cap = HooksCapability(hooks=[])
+        ctx = _ctx(DeepAgentDeps(backend=StateBackend()))
+        await cap.after_run(ctx, output="x")
+
+    async def test_run_error_handler(self) -> None:
+        calls: list[str] = []
+
+        async def on_err(inp: HookInput) -> HookResult:
+            calls.append(f"err:{inp.tool_error}")
+            return HookResult()
+
+        cap = HooksCapability(hooks=[Hook(event=HookEvent.RUN_ERROR, handler=on_err)])
+        ctx = _ctx(DeepAgentDeps(backend=StateBackend()))
+        await cap.on_run_error(ctx, error=ValueError("boom"))
+        assert calls == ["err:boom"]
+
+    async def test_run_error_no_hooks(self) -> None:
+        cap = HooksCapability(hooks=[])
+        ctx = _ctx(DeepAgentDeps(backend=StateBackend()))
+        await cap.on_run_error(ctx, error=ValueError("x"))
+
+    async def test_before_model_request_handler(self) -> None:
+        calls: list[str] = []
+
+        async def on_req(inp: HookInput) -> HookResult:
+            calls.append("model_req")
+            return HookResult()
+
+        cap = HooksCapability(
+            hooks=[Hook(event=HookEvent.BEFORE_MODEL_REQUEST, handler=on_req)]
+        )
+        ctx = _ctx(DeepAgentDeps(backend=StateBackend()))
+        result = await cap.before_model_request(ctx, request_context="ctx_obj")
+        assert result == "ctx_obj"
+        assert calls == ["model_req"]
+
+    async def test_before_model_request_no_hooks(self) -> None:
+        cap = HooksCapability(hooks=[])
+        ctx = _ctx(DeepAgentDeps(backend=StateBackend()))
+        result = await cap.before_model_request(ctx, request_context="ctx_obj")
+        assert result == "ctx_obj"
+
+    async def test_after_model_request_handler(self) -> None:
+        calls: list[str] = []
+
+        async def on_resp(inp: HookInput) -> HookResult:
+            calls.append("model_resp")
+            return HookResult()
+
+        cap = HooksCapability(
+            hooks=[Hook(event=HookEvent.AFTER_MODEL_REQUEST, handler=on_resp)]
+        )
+        ctx = _ctx(DeepAgentDeps(backend=StateBackend()))
+        await cap.after_model_request(ctx, response="resp_obj")
+        assert calls == ["model_resp"]
+
+    async def test_after_model_request_no_hooks(self) -> None:
+        cap = HooksCapability(hooks=[])
+        ctx = _ctx(DeepAgentDeps(backend=StateBackend()))
+        await cap.after_model_request(ctx, response="x")
+
+    async def test_after_run_background(self) -> None:
+        calls: list[str] = []
+
+        async def bg(inp: HookInput) -> HookResult:
+            calls.append("bg_after")
+            return HookResult()
+
+        cap = HooksCapability(
+            hooks=[Hook(event=HookEvent.AFTER_RUN, handler=bg, background=True)]
+        )
+        ctx = _ctx(DeepAgentDeps(backend=StateBackend()))
+        await cap.after_run(ctx, output="x")
+        await asyncio.sleep(0.05)
+        assert calls == ["bg_after"]
+
+    async def test_run_error_background(self) -> None:
+        calls: list[str] = []
+
+        async def bg(inp: HookInput) -> HookResult:
+            calls.append("bg_err")
+            return HookResult()
+
+        cap = HooksCapability(
+            hooks=[Hook(event=HookEvent.RUN_ERROR, handler=bg, background=True)]
+        )
+        ctx = _ctx(DeepAgentDeps(backend=StateBackend()))
+        await cap.on_run_error(ctx, error=ValueError("x"))
+        await asyncio.sleep(0.05)
+        assert calls == ["bg_err"]
+
+    async def test_before_model_request_background(self) -> None:
+        calls: list[str] = []
+
+        async def bg(inp: HookInput) -> HookResult:
+            calls.append("bg_model")
+            return HookResult()
+
+        cap = HooksCapability(
+            hooks=[Hook(event=HookEvent.BEFORE_MODEL_REQUEST, handler=bg, background=True)]
+        )
+        ctx = _ctx(DeepAgentDeps(backend=StateBackend()))
+        await cap.before_model_request(ctx, request_context="x")
+        await asyncio.sleep(0.05)
+        assert calls == ["bg_model"]
+
+    async def test_after_model_request_background(self) -> None:
+        calls: list[str] = []
+
+        async def bg(inp: HookInput) -> HookResult:
+            calls.append("bg_resp")
+            return HookResult()
+
+        cap = HooksCapability(
+            hooks=[Hook(event=HookEvent.AFTER_MODEL_REQUEST, handler=bg, background=True)]
+        )
+        ctx = _ctx(DeepAgentDeps(backend=StateBackend()))
+        await cap.after_model_request(ctx, response="x")
+        await asyncio.sleep(0.05)
+        assert calls == ["bg_resp"]
+
+    async def test_before_run_background(self) -> None:
+        calls: list[str] = []
+
+        async def bg_hook(inp: HookInput) -> HookResult:
+            calls.append("bg")
+            return HookResult()
+
+        cap = HooksCapability(
+            hooks=[Hook(event=HookEvent.BEFORE_RUN, handler=bg_hook, background=True)]
+        )
+        ctx = _ctx(DeepAgentDeps(backend=StateBackend()))
+        await cap.before_run(ctx)
+        await asyncio.sleep(0.05)
+        assert calls == ["bg"]

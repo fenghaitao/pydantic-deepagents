@@ -225,3 +225,83 @@ class TestDeepAgentDepsExtended:
         assert "Available Subagents" in summary
         assert "researcher" in summary
         assert "writer" in summary
+
+    def test_builtin_research_skipped_if_already_defined(self):
+        """Test that built-in research subagent is not added if user defines one."""
+        from pydantic_deep.types import SubAgentConfig
+
+        custom_research = SubAgentConfig(
+            name="research",
+            description="My custom research",
+            instructions="Custom instructions",
+        )
+        agent = create_deep_agent(
+            model=TEST_MODEL,
+            subagents=[custom_research],
+            include_builtin_subagents=True,
+        )
+        assert agent is not None
+
+    def test_create_with_context_manager_disabled(self):
+        """Test creating with context_manager=False."""
+        agent = create_deep_agent(
+            model=TEST_MODEL,
+            context_manager=False,
+        )
+        assert agent is not None
+
+    def test_create_with_thinking_disabled(self):
+        """Test creating with thinking=False."""
+        agent = create_deep_agent(
+            model=TEST_MODEL,
+            thinking=False,
+            web_search=False,
+            web_fetch=False,
+        )
+        assert agent is not None
+
+    def test_create_with_eviction_disabled(self):
+        """Test creating with eviction disabled."""
+        agent = create_deep_agent(
+            model=TEST_MODEL,
+            eviction_token_limit=None,
+            web_search=False,
+            web_fetch=False,
+            thinking=False,
+        )
+        assert agent is not None
+
+    def test_create_with_no_processors(self):
+        """Test creating with all processors disabled."""
+        agent = create_deep_agent(
+            model=TEST_MODEL,
+            eviction_token_limit=None,
+            patch_tool_calls=False,
+            web_search=False,
+            web_fetch=False,
+            thinking=False,
+        )
+        assert agent is not None
+
+    def test_create_with_no_capabilities(self):
+        """Test creating with all capabilities disabled."""
+        agent = create_deep_agent(
+            model=TEST_MODEL,
+            web_search=False,
+            web_fetch=False,
+            thinking=False,
+            cost_tracking=False,
+            context_manager=False,
+        )
+        assert agent is not None
+
+    def test_create_with_model_settings(self):
+        """Test creating with custom model_settings."""
+        agent = create_deep_agent(
+            model=TEST_MODEL,
+            model_settings={"temperature": 0.5},
+            web_search=False,
+            web_fetch=False,
+            thinking=False,
+        )
+        assert agent is not None

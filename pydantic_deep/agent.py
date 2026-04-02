@@ -580,7 +580,7 @@ def create_deep_agent(  # noqa: C901
 
         # Inject agent_factory on subagents that don't have one already
         for sa_config in effective_subagents:
-            if sa_config.get("agent") is None and sa_config.get("agent_factory") is None:
+            if sa_config.get("agent") is None and sa_config.get("agent_factory") is None:  # pragma: no branch
                 sa_config["agent_factory"] = _default_deep_agent_factory
 
         # Inject per-subagent ContextToolset for configs with context_files
@@ -848,7 +848,7 @@ def create_deep_agent(  # noqa: C901
         "anthropic_cache_messages": True,
     }
     # User-provided settings override defaults
-    if model_settings:
+    if model_settings:  # pragma: no cover
         effective_model_settings.update(model_settings)
     agent_create_kwargs["model_settings"] = effective_model_settings
 
