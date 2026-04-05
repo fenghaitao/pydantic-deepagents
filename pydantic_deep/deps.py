@@ -4,15 +4,12 @@ from __future__ import annotations
 
 import mimetypes
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import chardet
 from pydantic_ai_backends import BackendProtocol, StateBackend
 
 from pydantic_deep.types import FileData, Todo, UploadedFile
-
-if TYPE_CHECKING:
-    pass
 
 
 @dataclass
@@ -35,7 +32,7 @@ class DeepAgentDeps:
     subagents: dict[str, Any] = field(default_factory=dict)  # Agent instances
     uploads: dict[str, UploadedFile] = field(default_factory=dict)  # Uploaded files metadata
     ask_user: Any = field(default=None, repr=False)  # Callback for interactive questions
-    context_middleware: Any = field(default=None, repr=False)  # ContextManagerMiddleware | None
+    context_middleware: Any = field(default=None, repr=False)  # ContextManagerCapability | None
     share_todos: bool = False  # When True, subagents share parent's todo list
 
     def __post_init__(self) -> None:
@@ -148,6 +145,42 @@ class DeepAgentDeps:
         )
 
         return path
+
+    def upload_files(
+        self,
+        files: list[tuple[str, bytes]],
+        *,
+        upload_dir: str = "/uploads",
+    ) -> list[str]:
+        """Upload multiple files to the backend.
+
+        Each file is written independently — failures on one file don't
+        affect others. Failed uploads are silently skipped.
+
+        Args:
+            files: List of (filename, content) tuples.
+            upload_dir: Directory to store uploads (default: "/uploads").
+
+        Returns:
+            List of paths for successfully uploaded files.
+
+        Example:
+            ```python
+            deps = DeepAgentDeps(backend=StateBackend())
+            paths = deps.upload_files([
+                ("data.csv", csv_bytes),
+                ("config.json", json_bytes),
+            ])
+            ```
+        """
+        paths: list[str] = []
+        for name, content in files:
+            try:
+                path = self.upload_file(name, content, upload_dir=upload_dir)
+                paths.append(path)
+            except RuntimeError:  # pragma: no cover
+                pass  # Skip failed uploads
+        return paths
 
     def get_uploads_summary(self) -> str:
         """Generate summary of uploaded files for system prompt."""

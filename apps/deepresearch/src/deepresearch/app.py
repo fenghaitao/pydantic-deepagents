@@ -8,7 +8,7 @@ Features:
 - Plan mode (ask_user question flow)
 - Skills (research-methodology, report-writing, quick-reference)
 - Hooks (audit logger, safety gate)
-- Middleware (AuditMiddleware, PermissionMiddleware)
+- Capabilities (AuditCapability, PermissionCapability)
 - Image support (multimodal attachments)
 - Docker sandbox per user for file operations
 - WebSocket streaming for real-time updates
@@ -94,11 +94,7 @@ from .config import (  # noqa: E402
     WORKSPACES_DIR,
     create_mcp_servers,
 )
-from .middleware import AuditMiddleware, PermissionMiddleware  # noqa: E402
-
-# ---------------------------------------------------------------------------
-# Logging
-# ---------------------------------------------------------------------------
+from .middleware import AuditCapability, PermissionCapability  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
@@ -119,13 +115,9 @@ for _lib in (
 ):
     logging.getLogger(_lib).setLevel(logging.WARNING)
 
-# Create directories
 WORKSPACE_DIR.mkdir(exist_ok=True)
 WORKSPACES_DIR.mkdir(exist_ok=True)
 
-# ---------------------------------------------------------------------------
-# Attachment helpers
-# ---------------------------------------------------------------------------
 
 _TEXT_EXTS = {
     "txt",
@@ -237,12 +229,8 @@ def _build_file_summary(name: str, path: str, data: bytes, media_type: str) -> s
     return summary
 
 
-# ---------------------------------------------------------------------------
-# Session state
-# ---------------------------------------------------------------------------
-
-audit_mw = AuditMiddleware()
-permission_mw = PermissionMiddleware()
+audit_cap = AuditCapability()
+permission_cap = PermissionCapability()
 
 
 @dataclass
@@ -261,11 +249,6 @@ class UserSession:
     # Background task push notification tracking
     _notified_tasks: set[str] = field(default_factory=set)
     _injected_tasks: set[str] = field(default_factory=set)
-
-
-# ---------------------------------------------------------------------------
-# JSONL Event Persistence
-# ---------------------------------------------------------------------------
 
 
 def _log_event(session: UserSession | None, event: dict[str, Any]) -> None:
@@ -474,22 +457,16 @@ def create_ask_user_callback(websocket: WebSocket, session: UserSession) -> Any:
     return callback
 
 
-# Global state
 agent: Agent[DeepAgentDeps, str] | None = None
 session_manager: SessionManager | None = None
 user_sessions: dict[str, UserSession] = {}
 
-# ---------------------------------------------------------------------------
-# Context file
-# ---------------------------------------------------------------------------
 
 _DEEP_MD_PATH = APP_DIR / "workspace" / "DEEP.md"
 _MEMORY_MD_PATH = APP_DIR / "workspace" / "MEMORY.md"
 
 
-# ---------------------------------------------------------------------------
 # Excalidraw canvas isolation — save/restore per session
-# ---------------------------------------------------------------------------
 
 _current_canvas_session: str | None = None
 
@@ -628,18 +605,13 @@ def _get_failed_server_names(
     return matched or all_names
 
 
-# ---------------------------------------------------------------------------
-# FastAPI app
-# ---------------------------------------------------------------------------
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize agent with MCP servers and session manager."""
     global agent, session_manager
 
     mcp_servers = create_mcp_servers()
-    agent = create_research_agent(mcp_servers=mcp_servers, middleware=[audit_mw, permission_mw])
+    agent = create_research_agent(mcp_servers=mcp_servers, middleware=[audit_cap, permission_cap])
 
     session_manager = SessionManager(
         default_runtime="python-datascience",
@@ -658,7 +630,7 @@ async def lifespan(app: FastAPI):
         print(f"  Workspaces     : {WORKSPACES_DIR}")
         print("  Runtime        : python-datascience")
         print("  Hooks          : audit_logger, safety_gate")
-        print("  Middleware     : AuditMiddleware, PermissionMiddleware")
+        print("  Capabilities   : AuditCapability, PermissionCapability")
         print("  Subagents      : code-reviewer, general-purpose + dynamic factory")
         print("  Execute        : enabled (human-in-the-loop)")
         print("  Image support  : enabled")
@@ -679,7 +651,7 @@ async def lifespan(app: FastAPI):
         )
         # Rebuild agent without problematic MCP servers
         remaining = [s for s in mcp_servers if getattr(s, "tool_prefix", "") not in failed]
-        agent = create_research_agent(mcp_servers=remaining, middleware=[audit_mw, permission_mw])
+        agent = create_research_agent(mcp_servers=remaining, middleware=[audit_cap, permission_cap])
         _print_banner(remaining)
         async with agent:
             yield
@@ -709,11 +681,6 @@ async def root():
     if html_path.exists():
         return HTMLResponse(content=html_path.read_text())
     return HTMLResponse(content="<h1>Frontend not found. Check static/index.html</h1>")
-
-
-# ---------------------------------------------------------------------------
-# WebSocket chat
-# ---------------------------------------------------------------------------
 
 
 @app.websocket("/ws/chat")
@@ -1129,11 +1096,6 @@ async def handle_approval(
         await websocket.send_json({"type": "error", "content": str(e)})
 
 
-# ---------------------------------------------------------------------------
-# Streaming helpers
-# ---------------------------------------------------------------------------
-
-
 async def _stream_model_request(
     websocket: WebSocket, node: Any, run: Any, session: UserSession
 ) -> None:
@@ -1280,7 +1242,7 @@ async def _stream_tool_calls(  # noqa: C901
                 )
 
                 # Live audit stats
-                stats = audit_mw.get_stats()
+                stats = audit_cap.get_stats()
                 await websocket.send_json(
                     {
                         "type": "middleware_event",
@@ -1368,11 +1330,6 @@ async def process_node(websocket: WebSocket, node: Any, run: Any, session: UserS
         await _stream_tool_calls(websocket, node, run, session)
     elif isinstance(node, End):
         await websocket.send_json({"type": "status", "content": "Completed!"})
-
-
-# ---------------------------------------------------------------------------
-# REST endpoints
-# ---------------------------------------------------------------------------
 
 
 @app.post("/upload")
@@ -1653,12 +1610,12 @@ async def get_config():
                 ],
                 "middleware": [
                     {
-                        "name": "AuditMiddleware",
+                        "name": "AuditCapability",
                         "type": "tool_stats",
                         "description": "Tracks tool usage count, duration, breakdown",
                     },
                     {
-                        "name": "PermissionMiddleware",
+                        "name": "PermissionCapability",
                         "type": "path_blocking",
                         "description": "Blocks access to /etc/passwd, .env, /root/, etc.",
                     },
@@ -1685,7 +1642,6 @@ async def get_config():
                     ),
                 },
                 "context_files": ["/workspace/DEEP.md", "/workspace/MEMORY.md"],
-                "image_support": True,
                 "subagents": [
                     "code-reviewer",
                     "general-purpose",
@@ -1696,8 +1652,8 @@ async def get_config():
                 "interrupt_on": {"execute": True, "write_file": False},
                 "excalidraw_enabled": os.getenv("EXCALIDRAW_ENABLED", "1") == "1",
                 "excalidraw_canvas_url": EXCALIDRAW_CANVAS_URL,
-                "tool_stats": dict(audit_mw.get_stats().tools_used),
-                "total_tool_calls": audit_mw.get_stats().call_count,
+                "tool_stats": dict(audit_cap.get_stats().tools_used),
+                "total_tool_calls": audit_cap.get_stats().call_count,
             }
         }
     )
@@ -1715,7 +1671,7 @@ async def reset(session_id: str = Query(..., description="Session ID")):
         await session_manager.release(session_id)
 
     del user_sessions[session_id]
-    audit_mw.reset_stats()
+    audit_cap.reset_stats()
 
     return JSONResponse(content={"status": "reset complete", "session_id": session_id})
 
@@ -1793,9 +1749,7 @@ async def health():
     return {"status": "ok", "agent_ready": agent is not None, "session_count": len(user_sessions)}
 
 
-# ---------------------------------------------------------------------------
 # Export endpoint (Markdown, HTML, PDF)
-# ---------------------------------------------------------------------------
 
 
 @app.get("/export/{fmt}")
@@ -1884,9 +1838,7 @@ async def export_report(
     raise HTTPException(status_code=400, detail=f"Unsupported format: {fmt}. Use: md, html, pdf")
 
 
-# ---------------------------------------------------------------------------
 # Preview endpoint (for HTML/SVG live preview in file panel)
-# ---------------------------------------------------------------------------
 
 
 @app.get("/preview/{session_id}/{filepath:path}")
@@ -1910,11 +1862,6 @@ async def preview_file(session_id: str, filepath: str):
         return Response(content=result, media_type=content_type)
     except Exception as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
-
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
 
 
 def main():

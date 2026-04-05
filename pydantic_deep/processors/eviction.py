@@ -13,8 +13,10 @@ Falls back to ``self.backend`` for standalone usage without ``RunContext``.
 
 from __future__ import annotations
 
+import inspect
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -141,7 +143,7 @@ class EvictionProcessor:
 
         backend = StateBackend()
         processor = EvictionProcessor(backend=backend)
-        agent = Agent("openai:gpt-4.1", history_processors=[processor])
+        agent = Agent("anthropic:claude-sonnet-4-6", history_processors=[processor])
         ```
     """
 
@@ -159,6 +161,12 @@ class EvictionProcessor:
 
     tail_lines: int = DEFAULT_TAIL_LINES
     """Number of lines from the end to include in the preview."""
+
+    on_eviction: Callable[[str, str, int, int], Any] | None = None
+    """Callback when tool output is evicted.
+
+    Called with (tool_name, file_path, original_chars, preview_chars).
+    """
 
     _evicted_ids: set[str] = field(default_factory=set, repr=False)
     """Tracks tool_call_ids that have already been evicted to prevent re-eviction."""
@@ -255,6 +263,14 @@ class EvictionProcessor:
                 )
                 new_parts.append(evicted_part)  # type: ignore[arg-type]
                 self._evicted_ids.add(part.tool_call_id)
+
+                if self.on_eviction is not None:
+                    _result = self.on_eviction(
+                        part.tool_name, file_path, len(content_str), len(replacement)
+                    )
+                    if inspect.isawaitable(_result):
+                        await _result
+
                 modified = True
 
             if modified:
@@ -278,6 +294,7 @@ def create_eviction_processor(
     eviction_path: str = DEFAULT_EVICTION_PATH,
     head_lines: int = DEFAULT_HEAD_LINES,
     tail_lines: int = DEFAULT_TAIL_LINES,
+    on_eviction: Callable[[str, str, int, int], Any] | None = None,
 ) -> EvictionProcessor:
     """Create an eviction processor for large tool outputs.
 
@@ -290,6 +307,8 @@ def create_eviction_processor(
         eviction_path: Directory path for evicted files.
         head_lines: Lines to show from start in preview.
         tail_lines: Lines to show from end in preview.
+        on_eviction: Callback when tool output is evicted. Called with
+            (tool_name, file_path, original_chars, preview_chars).
 
     Returns:
         Configured EvictionProcessor instance.
@@ -311,4 +330,5 @@ def create_eviction_processor(
         eviction_path=eviction_path,
         head_lines=head_lines,
         tail_lines=tail_lines,
+        on_eviction=on_eviction,
     )

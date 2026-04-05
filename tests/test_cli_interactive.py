@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from pydantic_ai.messages import ModelMessage
 
-from cli.interactive import (
+from apps.cli.interactive import (
     _handle_command,
     _print_todos,
     _truncate,
@@ -33,13 +33,13 @@ class TestTruncateInteractive:
 class TestPrintWelcomeBanner:
     """Tests for print_welcome_banner()."""
 
-    @patch("cli.display._get_git_branch", return_value="main")
-    @patch("cli.display.__version__", "0.0.0", create=True)
+    @patch("apps.cli.display._get_git_branch", return_value="main")
+    @patch("apps.cli.display.__version__", "0.0.0", create=True)
     def test_prints_banner(self, _mock_branch: MagicMock) -> None:
-        from cli.display import print_welcome_banner
+        from apps.cli.display import print_welcome_banner
 
         mock_console = MagicMock()
-        with patch("cli.display.__version__", "0.0.0", create=True):
+        with patch("apps.cli.display.__version__", "0.0.0", create=True):
             print_welcome_banner(mock_console, model="test-model", working_dir="/tmp")
         assert mock_console.print.call_count >= 2
 
@@ -47,7 +47,7 @@ class TestPrintWelcomeBanner:
 class TestPrintTodos:
     """Tests for _print_todos()."""
 
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.console")
     def test_empty_todos(self, mock_console: MagicMock) -> None:
         deps = MagicMock()
         deps.todos = []
@@ -55,7 +55,7 @@ class TestPrintTodos:
         # Empty list should not print anything
         mock_console.print.assert_not_called()
 
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.console")
     def test_completed_todo(self, mock_console: MagicMock) -> None:
         deps = MagicMock()
         deps.todos = [Todo(content="done task", status="completed", active_form="Completing")]
@@ -64,7 +64,7 @@ class TestPrintTodos:
         calls = [str(c) for c in mock_console.print.call_args_list]
         assert any("\u2713" in c for c in calls)
 
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.console")
     def test_in_progress_todo(self, mock_console: MagicMock) -> None:
         deps = MagicMock()
         deps.todos = [Todo(content="working", status="in_progress", active_form="Working")]
@@ -72,7 +72,7 @@ class TestPrintTodos:
         calls = [str(c) for c in mock_console.print.call_args_list]
         assert any("\u25cf" in c for c in calls)
 
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.console")
     def test_pending_todo(self, mock_console: MagicMock) -> None:
         deps = MagicMock()
         deps.todos = [Todo(content="pending task", status="pending", active_form="Pending")]
@@ -84,19 +84,19 @@ class TestPrintTodos:
 class TestHandleCommand:
     """Tests for _handle_command()."""
 
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.console")
     async def test_quit_command(self, _mock_console: MagicMock) -> None:
         deps = MagicMock()
         should_break, _ = await _handle_command("/quit", deps, [])
         assert should_break is True
 
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.console")
     async def test_exit_command(self, _mock_console: MagicMock) -> None:
         deps = MagicMock()
         should_break, _ = await _handle_command("/exit", deps, [])
         assert should_break is True
 
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.console")
     async def test_clear_command(self, _mock_console: MagicMock) -> None:
         deps = MagicMock()
         deps.todos = [Todo(content="test", status="pending", active_form="Testing")]
@@ -107,8 +107,8 @@ class TestHandleCommand:
         assert new_history == []
         assert deps.todos == []
 
-    @patch("cli.interactive._print_todos")
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive._print_todos")
+    @patch("apps.cli.interactive.console")
     async def test_todos_command(
         self, _mock_console: MagicMock, mock_print_todos: MagicMock
     ) -> None:
@@ -117,19 +117,19 @@ class TestHandleCommand:
         assert should_break is False
         mock_print_todos.assert_called_once_with(deps)
 
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.console")
     async def test_unknown_command(self, _mock_console: MagicMock) -> None:
         deps = MagicMock()
         should_break, _ = await _handle_command("/unknown", deps, [])
         assert should_break is False
 
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.console")
     async def test_case_insensitive(self, _mock_console: MagicMock) -> None:
         deps = MagicMock()
         should_break, _ = await _handle_command("/QUIT", deps, [])
         assert should_break is True
 
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.console")
     async def test_cost_command_no_data(self, mock_console: MagicMock) -> None:
         deps = MagicMock()
         should_break, _ = await _handle_command("/cost", deps, [])
@@ -137,7 +137,7 @@ class TestHandleCommand:
         calls = [str(c) for c in mock_console.print.call_args_list]
         assert any("No cost data" in c for c in calls)
 
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.console")
     async def test_cost_command_with_data(self, mock_console: MagicMock) -> None:
         deps = MagicMock()
         should_break, _ = await _handle_command("/cost", deps, [], cumulative_cost=0.0456)
@@ -145,7 +145,7 @@ class TestHandleCommand:
         calls = [str(c) for c in mock_console.print.call_args_list]
         assert any("0.0456" in c for c in calls)
 
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.console")
     async def test_help_shows_cost_command(self, mock_console: MagicMock) -> None:
         deps = MagicMock()
         await _handle_command("/help", deps, [])
@@ -156,20 +156,20 @@ class TestHandleCommand:
 class TestPrintModelError:
     """Tests for _print_model_error()."""
 
-    @patch("cli.interactive.print_error")
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.print_error")
+    @patch("apps.cli.interactive.console")
     def test_api_key_error(self, _mock_console: MagicMock, mock_print_error: MagicMock) -> None:
-        from cli.interactive import _print_model_error
+        from apps.cli.interactive import _print_model_error
 
         _print_model_error(ValueError("Missing api_key for provider"))
         mock_print_error.assert_called_once()
         call_kwargs = mock_print_error.call_args
         assert "hint" in call_kwargs[1]
 
-    @patch("cli.interactive.print_error")
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.print_error")
+    @patch("apps.cli.interactive.console")
     def test_non_api_key_error(self, _mock_console: MagicMock, mock_print_error: MagicMock) -> None:
-        from cli.interactive import _print_model_error
+        from apps.cli.interactive import _print_model_error
 
         _print_model_error(RuntimeError("Connection timeout"))
         mock_print_error.assert_called_once()
@@ -180,10 +180,10 @@ class TestPrintModelError:
 class TestCreateSandboxBackend:
     """Tests for _create_sandbox_backend()."""
 
-    @patch("cli.interactive.print_error")
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.print_error")
+    @patch("apps.cli.interactive.console")
     def test_import_error(self, _mock_console: MagicMock, mock_print_error: MagicMock) -> None:
-        from cli.interactive import _create_sandbox_backend
+        from apps.cli.interactive import _create_sandbox_backend
 
         with patch.dict("sys.modules", {"pydantic_ai_backends": None}):
             import builtins
@@ -204,19 +204,19 @@ class TestCreateSandboxBackend:
 class TestStopSandbox:
     """Tests for _stop_sandbox()."""
 
-    @patch("cli.interactive.print_warning")
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.print_warning")
+    @patch("apps.cli.interactive.console")
     def test_cleanup_failure(self, _mock_console: MagicMock, mock_warning: MagicMock) -> None:
-        from cli.interactive import _stop_sandbox
+        from apps.cli.interactive import _stop_sandbox
 
         mock_sandbox = MagicMock()
         mock_sandbox.stop.side_effect = RuntimeError("cleanup failed")
         _stop_sandbox(mock_sandbox)
         mock_warning.assert_called_once()
 
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.console")
     def test_cleanup_success(self, _mock_console: MagicMock) -> None:
-        from cli.interactive import _stop_sandbox
+        from apps.cli.interactive import _stop_sandbox
 
         mock_sandbox = MagicMock()
         _stop_sandbox(mock_sandbox)
@@ -226,11 +226,11 @@ class TestStopSandbox:
 class TestStreamToolCalls:
     """Tests for _stream_tool_calls()."""
 
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.console")
     async def test_tool_call_event(self, mock_console: MagicMock) -> None:
         from pydantic_ai.messages import FunctionToolCallEvent
 
-        from cli.interactive import _stream_tool_calls
+        from apps.cli.interactive import _stream_tool_calls
 
         tc = MagicMock(spec=FunctionToolCallEvent)
         tc.part = MagicMock()
@@ -255,11 +255,11 @@ class TestStreamToolCalls:
         await _stream_tool_calls(node, ctx)
         mock_console.print.assert_called()
 
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.console")
     async def test_tool_result_event(self, mock_console: MagicMock) -> None:
         from pydantic_ai.messages import FunctionToolResultEvent
 
-        from cli.interactive import _stream_tool_calls
+        from apps.cli.interactive import _stream_tool_calls
 
         tr = MagicMock(spec=FunctionToolResultEvent)
         tr.result = MagicMock()
@@ -284,11 +284,11 @@ class TestStreamToolCalls:
         await _stream_tool_calls(node, ctx)
         mock_console.print.assert_called()
 
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.console")
     async def test_non_dict_args(self, mock_console: MagicMock) -> None:
         from pydantic_ai.messages import FunctionToolCallEvent
 
-        from cli.interactive import _stream_tool_calls
+        from apps.cli.interactive import _stream_tool_calls
 
         tc = MagicMock(spec=FunctionToolCallEvent)
         tc.part = MagicMock()
@@ -348,9 +348,9 @@ class _FakeIterRun:
 class TestProcessStream:
     """Tests for _process_stream() — uses agent.iter() internally."""
 
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.console")
     async def test_process_stream_empty(self, _mock_console: MagicMock) -> None:
-        from cli.interactive import _process_stream
+        from apps.cli.interactive import _process_stream
 
         mock_agent = MagicMock()
         mock_agent.iter.return_value = _FakeIterRun([], result_messages=["msg"])
@@ -359,11 +359,11 @@ class TestProcessStream:
         result = await _process_stream(mock_agent, "test", deps, [])
         assert result == ["msg"]  # type: ignore[comparison-overlap]
 
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.console")
     async def test_process_stream_with_end_node(self, _mock_console: MagicMock) -> None:
         from pydantic_ai._agent_graph import End  # type: ignore[attr-defined]
 
-        from cli.interactive import _process_stream
+        from apps.cli.interactive import _process_stream
 
         mock_agent = MagicMock()
         end_node = MagicMock(spec=End)
@@ -380,10 +380,21 @@ class TestProcessStream:
 class TestRunInteractive:
     """Tests for run_interactive()."""
 
-    @patch("cli.interactive._process_stream")
-    @patch("cli.interactive.create_cli_agent")
-    @patch("cli.interactive.print_welcome_banner")
-    @patch("cli.interactive.console")
+    # All tests need provider check skipped to avoid wizard
+    _provider_patch = patch(
+        "apps.cli.provider_setup.has_any_provider_configured", return_value=True
+    )
+
+    def setup_method(self) -> None:
+        self._provider_patch.start()
+
+    def teardown_method(self) -> None:
+        self._provider_patch.stop()
+
+    @patch("apps.cli.interactive._process_stream")
+    @patch("apps.cli.interactive.create_cli_agent")
+    @patch("apps.cli.interactive.print_welcome_banner")
+    @patch("apps.cli.interactive.console")
     @patch("builtins.input")
     async def test_quit_exits_loop(
         self,
@@ -402,10 +413,10 @@ class TestRunInteractive:
         mock_input.return_value = "/quit"
         await run_interactive()
 
-    @patch("cli.interactive._process_stream")
-    @patch("cli.interactive.create_cli_agent")
-    @patch("cli.interactive.print_welcome_banner")
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive._process_stream")
+    @patch("apps.cli.interactive.create_cli_agent")
+    @patch("apps.cli.interactive.print_welcome_banner")
+    @patch("apps.cli.interactive.console")
     @patch("builtins.input")
     async def test_empty_input_continues(
         self,
@@ -424,10 +435,10 @@ class TestRunInteractive:
         mock_input.side_effect = ["", "/quit"]
         await run_interactive()
 
-    @patch("cli.interactive._process_stream")
-    @patch("cli.interactive.create_cli_agent")
-    @patch("cli.interactive.print_welcome_banner")
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive._process_stream")
+    @patch("apps.cli.interactive.create_cli_agent")
+    @patch("apps.cli.interactive.print_welcome_banner")
+    @patch("apps.cli.interactive.console")
     @patch("builtins.input")
     async def test_message_calls_process_stream(
         self,
@@ -448,10 +459,10 @@ class TestRunInteractive:
         await run_interactive()
         mock_stream.assert_called_once()
 
-    @patch("cli.interactive._process_stream")
-    @patch("cli.interactive.create_cli_agent")
-    @patch("cli.interactive.print_welcome_banner")
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive._process_stream")
+    @patch("apps.cli.interactive.create_cli_agent")
+    @patch("apps.cli.interactive.print_welcome_banner")
+    @patch("apps.cli.interactive.console")
     @patch("builtins.input")
     async def test_shows_todos_after_message(
         self,
@@ -470,13 +481,13 @@ class TestRunInteractive:
         mock_stream.return_value = []
         mock_input.side_effect = ["hello", "/quit"]
 
-        with patch("cli.interactive._print_todos") as mock_pt:
+        with patch("apps.cli.interactive._print_todos") as mock_pt:
             await run_interactive()
             mock_pt.assert_called()
 
-    @patch("cli.interactive.create_cli_agent")
-    @patch("cli.interactive.print_welcome_banner")
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.create_cli_agent")
+    @patch("apps.cli.interactive.print_welcome_banner")
+    @patch("apps.cli.interactive.console")
     @patch("builtins.input")
     async def test_keyboard_interrupt_continues(
         self,
@@ -497,9 +508,9 @@ class TestRunInteractive:
         calls = [str(c) for c in mock_console.print.call_args_list]
         assert any("Ctrl+C" in c for c in calls)
 
-    @patch("cli.interactive.create_cli_agent")
-    @patch("cli.interactive.print_welcome_banner")
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.create_cli_agent")
+    @patch("apps.cli.interactive.print_welcome_banner")
+    @patch("apps.cli.interactive.console")
     @patch("builtins.input")
     async def test_eof_error_exits(
         self,
@@ -519,10 +530,10 @@ class TestRunInteractive:
         calls = [str(c) for c in mock_console.print.call_args_list]
         assert any("Goodbye" in c for c in calls)
 
-    @patch("cli.interactive._process_stream")
-    @patch("cli.interactive.create_cli_agent")
-    @patch("cli.interactive.print_welcome_banner")
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive._process_stream")
+    @patch("apps.cli.interactive.create_cli_agent")
+    @patch("apps.cli.interactive.print_welcome_banner")
+    @patch("apps.cli.interactive.console")
     @patch("builtins.input")
     async def test_exception_shows_error(
         self,
@@ -544,9 +555,9 @@ class TestRunInteractive:
         calls = [str(c) for c in mock_console.print.call_args_list]
         assert any("Error" in c for c in calls)
 
-    @patch("cli.interactive.create_cli_agent")
-    @patch("cli.interactive.print_welcome_banner")
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.create_cli_agent")
+    @patch("apps.cli.interactive.print_welcome_banner")
+    @patch("apps.cli.interactive.console")
     @patch("builtins.input")
     async def test_cost_callback(
         self,
@@ -576,9 +587,9 @@ class TestRunInteractive:
         cost_info.total_cost_usd = 0.0456
         callback(cost_info)  # Should not raise
 
-    @patch("cli.interactive.create_cli_agent")
-    @patch("cli.interactive.print_welcome_banner")
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.create_cli_agent")
+    @patch("apps.cli.interactive.print_welcome_banner")
+    @patch("apps.cli.interactive.console")
     @patch("builtins.input")
     async def test_cost_callback_no_run_cost(
         self,
@@ -603,10 +614,10 @@ class TestRunInteractive:
         cost_info = object()
         callback(cost_info)  # Should not raise
 
-    @patch("cli.interactive._process_stream")
-    @patch("cli.interactive.create_cli_agent")
-    @patch("cli.interactive.print_welcome_banner")
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive._process_stream")
+    @patch("apps.cli.interactive.create_cli_agent")
+    @patch("apps.cli.interactive.print_welcome_banner")
+    @patch("apps.cli.interactive.console")
     @patch("builtins.input")
     async def test_non_breaking_command_continues_loop(
         self,
@@ -631,15 +642,15 @@ class TestRunInteractive:
 class TestStreamModelRequest:
     """Tests for _stream_model_request()."""
 
-    @patch("cli.interactive._is_tty", return_value=False)
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive._is_tty", return_value=False)
+    @patch("apps.cli.interactive.console")
     async def test_tool_name_in_part_start(
         self, mock_console: MagicMock, _mock_tty: MagicMock
     ) -> None:
         """Tool PartStartEvent stops spinner but does not print (handled by _stream_tool_calls)."""
         from pydantic_ai import PartStartEvent
 
-        from cli.interactive import _stream_model_request
+        from apps.cli.interactive import _stream_model_request
 
         part_start = MagicMock(spec=PartStartEvent)
         part_start.part = MagicMock()
@@ -671,20 +682,30 @@ class TestStreamModelRequest:
 
 
 class TestRunInteractiveSandbox:
+    _provider_patch = patch(
+        "apps.cli.provider_setup.has_any_provider_configured", return_value=True
+    )
+
+    def setup_method(self) -> None:
+        self._provider_patch.start()
+
+    def teardown_method(self) -> None:
+        self._provider_patch.stop()
+
     """Tests for sandbox-related paths in run_interactive()."""
 
-    @patch("cli.interactive._create_sandbox_backend", return_value=None)
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive._create_sandbox_backend", return_value=None)
+    @patch("apps.cli.interactive.console")
     async def test_sandbox_creation_fails(
         self, _mock_console: MagicMock, _mock_sandbox: MagicMock
     ) -> None:
         await run_interactive(sandbox=True)
 
-    @patch("cli.interactive._stop_sandbox")
-    @patch("cli.interactive.create_cli_agent")
-    @patch("cli.interactive._create_sandbox_backend")
-    @patch("cli.interactive.print_welcome_banner")
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive._stop_sandbox")
+    @patch("apps.cli.interactive.create_cli_agent")
+    @patch("apps.cli.interactive._create_sandbox_backend")
+    @patch("apps.cli.interactive.print_welcome_banner")
+    @patch("apps.cli.interactive.console")
     @patch("builtins.input")
     async def test_sandbox_cleanup_on_exit(
         self,
@@ -709,9 +730,9 @@ class TestRunInteractiveSandbox:
         mock_stop.assert_called_once_with(mock_sandbox)
 
     @patch("builtins.input", return_value="q")
-    @patch("cli.interactive._print_model_error")
-    @patch("cli.interactive.create_cli_agent", side_effect=ValueError("Bad model"))
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive._print_model_error")
+    @patch("apps.cli.interactive.create_cli_agent", side_effect=ValueError("Bad model"))
+    @patch("apps.cli.interactive.console")
     async def test_agent_creation_failure(
         self,
         _mock_console: MagicMock,
@@ -726,12 +747,12 @@ class TestRunInteractiveSandbox:
 class TestProcessStreamBranches:
     """Tests for branch coverage in _process_stream()."""
 
-    @patch("cli.interactive.console")
+    @patch("apps.cli.interactive.console")
     async def test_user_prompt_node_ignored(self, _mock_console: MagicMock) -> None:
         """UserPromptNode should be silently skipped."""
         from pydantic_ai._agent_graph import UserPromptNode
 
-        from cli.interactive import _process_stream
+        from apps.cli.interactive import _process_stream
 
         mock_agent = MagicMock()
         user_node = MagicMock(spec=UserPromptNode)

@@ -34,10 +34,6 @@ from pydantic_deep.toolsets.skills.types import (
     normalize_skill_name,
 )
 
-# ==========================================================================
-# Exceptions
-# ==========================================================================
-
 
 class TestExceptions:
     """Tests for skills exception hierarchy."""
@@ -56,9 +52,7 @@ class TestExceptions:
         assert "test-skill not found" in str(err)
 
 
-# ==========================================================================
 # Types — normalize_skill_name
-# ==========================================================================
 
 
 class TestNormalizeSkillName:
@@ -98,9 +92,7 @@ class TestSkillNamePattern:
             assert not SKILL_NAME_PATTERN.match(name), f"Should not match: {name}"
 
 
-# ==========================================================================
 # Types — SkillResource
-# ==========================================================================
 
 
 class TestSkillResource:
@@ -135,9 +127,7 @@ class TestSkillResource:
             await res.load(ctx=None)
 
 
-# ==========================================================================
 # Types — SkillScript
-# ==========================================================================
 
 
 class TestSkillScript:
@@ -161,9 +151,7 @@ class TestSkillScript:
             await script.run(ctx=None)
 
 
-# ==========================================================================
 # Types — Skill dataclass
-# ==========================================================================
 
 
 class TestSkill:
@@ -226,9 +214,7 @@ class TestSkill:
         assert s.scripts[0].name == "custom-script"
 
 
-# ==========================================================================
 # Types — SkillWrapper
-# ==========================================================================
 
 
 class TestSkillWrapper:
@@ -357,9 +343,7 @@ class TestSkillWrapper:
         assert skill.description == ""
 
 
-# ==========================================================================
 # Local — FileBasedSkillResource
-# ==========================================================================
 
 
 class TestFileBasedSkillResource:
@@ -428,9 +412,7 @@ class TestFileBasedSkillResource:
         assert res.description == "A doc"
 
 
-# ==========================================================================
 # Local — LocalSkillScriptExecutor
-# ==========================================================================
 
 
 class TestLocalSkillScriptExecutor:
@@ -543,9 +525,7 @@ class TestLocalSkillScriptExecutor:
         assert executor._python_executable == "/usr/bin/python3"
 
 
-# ==========================================================================
 # Local — CallableSkillScriptExecutor
-# ==========================================================================
 
 
 class TestCallableSkillScriptExecutor:
@@ -570,9 +550,7 @@ class TestCallableSkillScriptExecutor:
         assert result == "Async test.py"
 
 
-# ==========================================================================
 # Local — FileBasedSkillScript
-# ==========================================================================
 
 
 class TestFileBasedSkillScript:
@@ -613,9 +591,7 @@ class TestFileBasedSkillScript:
         assert script.description == "Runs something"
 
 
-# ==========================================================================
 # Callable resource/script (function_schema.call)
-# ==========================================================================
 
 
 class TestCallableResourceLoad:
@@ -680,11 +656,6 @@ class TestCallableScriptRun:
         result = await script.run(ctx=None)
         assert result == "done"
         mock_schema.call.assert_awaited_once_with({}, None)
-
-
-# ==========================================================================
-# FileBasedSkillResource YAML error fallback
-# ==========================================================================
 
 
 class TestFileBasedSkillResourceYamlError:

@@ -9,13 +9,12 @@ from unittest.mock import patch
 import pytest
 from pydantic_ai.models.test import TestModel
 
-from cli.agent import (
+from apps.cli.agent import (
     _make_shell_allow_list_hook,
     create_cli_agent,
 )
-from cli.prompts import CLI_SYSTEM_PROMPT, build_cli_instructions
-from cli.providers import select_default_model
-from pydantic_deep.middleware.hooks import HookEvent, HookInput, HookResult
+from apps.cli.prompts import CLI_SYSTEM_PROMPT, build_cli_instructions
+from pydantic_deep.capabilities.hooks import HookEvent, HookInput, HookResult
 
 TEST_MODEL = TestModel()
 
@@ -54,7 +53,7 @@ class TestCreateCliAgent:
         assert agent is not None
 
     def test_accepts_extra_middleware(self, tmp_path: Path) -> None:
-        from cli.middleware.loop_detection import LoopDetectionMiddleware
+        from apps.cli.middleware.loop_detection import LoopDetectionMiddleware
 
         extra = [LoopDetectionMiddleware(max_repeats=5)]
         agent, deps = create_cli_agent(

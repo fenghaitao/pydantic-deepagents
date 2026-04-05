@@ -28,9 +28,6 @@ from pydantic_deep.types import Todo
 TEST_MODEL = TestModel()
 
 
-# --- Helpers ---
-
-
 def _make_ctx(backend: StateBackend | None = None) -> RunContext[DeepAgentDeps]:
     """Create a RunContext with DeepAgentDeps for testing."""
     b = backend or StateBackend()
@@ -53,9 +50,6 @@ def _minimal_agent(**kwargs: Any) -> Any:
     }
     defaults.update(kwargs)
     return create_deep_agent(**defaults)  # type: ignore[call-overload]
-
-
-# --- Unit Tests: SharedTodoItem ---
 
 
 class TestSharedTodoItem:
@@ -93,9 +87,6 @@ class TestSharedTodoItem:
         item1 = SharedTodoItem()
         item2 = SharedTodoItem()
         assert item1.id != item2.id
-
-
-# --- Unit Tests: SharedTodoList ---
 
 
 class TestSharedTodoList:
@@ -291,9 +282,6 @@ class TestSharedTodoList:
         assert await todos.count() == 2
 
 
-# --- Unit Tests: TeamMessage ---
-
-
 class TestTeamMessage:
     """Tests for TeamMessage dataclass."""
 
@@ -323,9 +311,6 @@ class TestTeamMessage:
         assert msg.receiver == ""
         assert msg.content == ""
         assert msg.timestamp is not None
-
-
-# --- Unit Tests: TeamMessageBus ---
 
 
 class TestTeamMessageBus:
@@ -453,9 +438,6 @@ class TestTeamMessageBus:
             await bus.receive("nobody")
 
 
-# --- Unit Tests: TeamMember ---
-
-
 class TestTeamMember:
     """Tests for TeamMember dataclass."""
 
@@ -478,11 +460,8 @@ class TestTeamMember:
             description="QA tester",
             instructions="Test thoroughly",
         )
-        assert member.model == "openai:gpt-4.1"
+        assert member.model == "anthropic:claude-sonnet-4-6"
         assert member.toolsets == []
-
-
-# --- Unit Tests: TeamMemberHandle ---
 
 
 class TestTeamMemberHandle:
@@ -506,9 +485,6 @@ class TestTeamMemberHandle:
         assert handle.status == "idle"
         assert handle.result is None
         assert handle.error is None
-
-
-# --- Unit Tests: AgentTeam ---
 
 
 class TestAgentTeam:
@@ -641,9 +617,6 @@ class TestAgentTeam:
         await team.dissolve()
         await team.dissolve()  # Should not raise
         assert team._dissolved is True
-
-
-# --- Unit Tests: create_team_toolset ---
 
 
 class TestCreateTeamToolset:
@@ -802,9 +775,6 @@ class TestCreateTeamToolset:
         assert "bob" in result
 
 
-# --- Integration Tests: share_todos ---
-
-
 class TestShareTodosIntegration:
     """Tests for share_todos field on DeepAgentDeps."""
 
@@ -847,9 +817,6 @@ class TestShareTodosIntegration:
         assert cloned.share_todos is False
 
 
-# --- Integration Tests: create_deep_agent ---
-
-
 class TestCreateDeepAgentTeams:
     """Tests for include_teams parameter in create_deep_agent."""
 
@@ -865,8 +832,32 @@ class TestCreateDeepAgentTeams:
         toolset_ids = [getattr(t, "_id", "") for t in agent.toolsets]
         assert "deep-team" in toolset_ids
 
+    def test_include_teams_with_subagents_wires_registry(self):
+        """include_teams=True with include_subagents=True wires the registry."""
+        agent = _minimal_agent(
+            include_teams=True,
+            include_subagents=True,
+            include_skills=False,
+            cost_tracking=False,
+        )
+        toolset_ids = [getattr(t, "_id", "") for t in agent.toolsets]
+        assert "deep-team" in toolset_ids
+        assert "deep-subagents" in toolset_ids
 
-# --- Integration Tests: Exports ---
+    def test_include_teams_with_explicit_registry(self):
+        """include_teams with explicit subagent_registry uses it."""
+        from subagents_pydantic_ai import DynamicAgentRegistry
+
+        registry = DynamicAgentRegistry()
+        agent = _minimal_agent(
+            include_teams=True,
+            include_subagents=True,
+            include_skills=False,
+            cost_tracking=False,
+            subagent_registry=registry,
+        )
+        toolset_ids = [getattr(t, "_id", "") for t in agent.toolsets]
+        assert "deep-team" in toolset_ids
 
 
 class TestTeamsExports:

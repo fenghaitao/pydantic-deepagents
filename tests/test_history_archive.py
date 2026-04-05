@@ -28,10 +28,6 @@ from pydantic_deep.processors.history_archive import (
     create_history_search_toolset,
 )
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 _TS = datetime(2024, 1, 1, tzinfo=timezone.utc)
 
 
@@ -43,11 +39,6 @@ def _mock_ctx() -> object:
 def _write_messages(path: Path, messages: list[ModelMessage]) -> None:
     """Write messages to a JSON file using ModelMessagesTypeAdapter."""
     path.write_bytes(ModelMessagesTypeAdapter.dump_json(messages))
-
-
-# ============================================================================
-# Tests for _format_message
-# ============================================================================
 
 
 class TestFormatMessage:
@@ -272,11 +263,6 @@ class TestFormatMessage:
         assert result == ""
 
 
-# ============================================================================
-# Tests for _format_messages
-# ============================================================================
-
-
 class TestFormatMessages:
     """Tests for the _format_messages helper."""
 
@@ -315,11 +301,6 @@ class TestFormatMessages:
         assert _format_messages([]) == []
 
 
-# ============================================================================
-# Tests for _load_messages
-# ============================================================================
-
-
 class TestLoadMessages:
     """Tests for the _load_messages helper."""
 
@@ -355,11 +336,6 @@ class TestLoadMessages:
         assert len(result) == 2
         assert isinstance(result[0], ModelRequest)
         assert isinstance(result[1], ModelResponse)
-
-
-# ============================================================================
-# Tests for create_history_search_toolset
-# ============================================================================
 
 
 class TestCreateHistorySearchToolset:
@@ -605,11 +581,6 @@ class TestCreateHistorySearchToolset:
         result = await fn(ctx, "Compression")
         assert "Found" in result
         assert "Compression summary" in result
-
-
-# ============================================================================
-# Tests for SEARCH_HISTORY_DESCRIPTION constant
-# ============================================================================
 
 
 class TestConstants:

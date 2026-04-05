@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from cli.theme import (
+from apps.cli.theme import (
     ASCII_GLYPHS,
     DEFAULT_THEME,
     MINIMAL_THEME,

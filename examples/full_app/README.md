@@ -24,7 +24,7 @@ A complete demonstration of **every** pydantic-deep feature in a web application
 | 16 | **Patch Tool Calls** | `patch_tool_calls=True` — fixes orphaned tool calls in history |
 | 17 | **Sliding Window** | `SlidingWindowProcessor` — zero-cost conversation trimming |
 | 18 | **Context Files** | `context_files=["/workspace/DEEP.md"]` — workspace context loaded into prompt |
-| 19 | **Image Support** | `image_support=True` — multimodal read_file for images |
+| 19 | **Image Support** | Always enabled — multimodal read_file for images |
 | 20 | **RuntimeConfig** | `python-datascience` runtime with pre-installed data science packages |
 | 21 | **TODO List** | Task planning with inline progress widget in chat |
 | 22 | **Config Panel** | Frontend tab showing all active features and live tool usage stats |
@@ -117,7 +117,7 @@ Click the **Config** tab in the sidebar to view all active features, hooks, midd
 ```
 full_app/
 ├── app.py                  # FastAPI backend with all features wired
-├── audit_middleware.py      # AuditMiddleware + PermissionMiddleware
+├── audit_middleware.py      # AuditCapability + PermissionCapability
 ├── github_tools.py          # Mock GitHub tools (FunctionToolset)
 ├── skills/
 │   ├── data-analysis/
@@ -179,7 +179,7 @@ The agent is configured in `app.py` with **all** pydantic-deep features:
 
 ```python
 agent = create_deep_agent(
-    model="openai:gpt-4.1",
+    model="anthropic:claude-sonnet-4-6",
     instructions=MAIN_INSTRUCTIONS,
     backend=None,
     # Toolsets
@@ -191,7 +191,7 @@ agent = create_deep_agent(
     toolsets=[github_toolset],
     # Subagents
     subagents=SUBAGENT_CONFIGS,
-    include_general_purpose_subagent=True,
+    include_builtin_subagents=True,
     # Skills
     skills=PROGRAMMATIC_SKILLS,
     skill_directories=[{"path": str(SKILLS_DIR), "recursive": True}],
@@ -205,8 +205,6 @@ agent = create_deep_agent(
     history_processors=[sliding_window],
     # Context files
     context_files=["/workspace/DEEP.md"],
-    # Image support
-    image_support=True,
     # Human-in-the-loop
     interrupt_on={"execute": True, "write_file": False},
 )
@@ -255,9 +253,9 @@ Add more `SubAgentConfig` entries to the `SUBAGENT_CONFIGS` list in `app.py`.
 
 Add more `Hook` entries to the `HOOKS` list in `app.py`.
 
-### Adding Middleware
+### Adding Capabilities
 
-Create a new class extending `AgentMiddleware[DeepAgentDeps]` and add it to the `middleware` list.
+Create a new class extending `AbstractCapability[DeepAgentDeps]` and add it to the `middleware` list in `create_deep_agent()`.
 
 ### Using Pre-configured Runtimes
 

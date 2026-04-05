@@ -1,9 +1,16 @@
-"""Agent teams with shared todos and peer-to-peer messaging."""
+"""Agent teams with shared todos and peer-to-peer messaging.
+
+Teams provide coordination infrastructure on top of the subagent execution
+engine. When a ``registry`` is provided, team members are registered as
+subagents and ``assign_task`` delegates to the subagent ``task()`` tool
+for actual execution.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -12,10 +19,6 @@ from uuid import uuid4
 from pydantic_ai.tools import RunContext
 from pydantic_ai.toolsets.function import FunctionToolset
 from pydantic_ai_backends import BackendProtocol, StateBackend
-
-# ---------------------------------------------------------------------------
-# SharedTodoItem + SharedTodoList
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -73,7 +76,6 @@ class SharedTodoList:
             item = self._items.get(item_id)
             if item is None or item.assigned_to is not None or item.status != "pending":
                 return False
-            # Check dependencies
             for dep_id in item.blocked_by:
                 dep = self._items.get(dep_id)
                 if dep and dep.status != "completed":
@@ -126,11 +128,6 @@ class SharedTodoList:
         """Get the number of items."""
         async with self._lock:
             return len(self._items)
-
-
-# ---------------------------------------------------------------------------
-# TeamMessage + TeamMessageBus
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -216,11 +213,6 @@ class TeamMessageBus:
         return list(self._queues.keys())
 
 
-# ---------------------------------------------------------------------------
-# TeamMember + TeamMemberHandle
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class TeamMember:
     """A member of an agent team."""
@@ -229,7 +221,7 @@ class TeamMember:
     role: str
     description: str
     instructions: str
-    model: str = "openai:gpt-4.1"
+    model: str = "anthropic:claude-sonnet-4-6"
     toolsets: list[Any] = field(default_factory=list)
 
 
@@ -238,15 +230,11 @@ class TeamMemberHandle:
     """Handle to a running team member."""
 
     name: str
+    task_id: str | None = None
     task: asyncio.Task[Any] | None = None
     status: str = "idle"  # idle | running | completed | failed
     result: str | None = None
     error: str | None = None
-
-
-# ---------------------------------------------------------------------------
-# AgentTeam
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -254,7 +242,8 @@ class AgentTeam:
     """Multi-agent team with shared state.
 
     Coordinates shared TODO lists and peer-to-peer messaging
-    between team members.
+    between team members. Execution is delegated to the subagent
+    system via a ``DynamicAgentRegistry``.
     """
 
     name: str
@@ -301,14 +290,12 @@ class AgentTeam:
         for handle in self._handles.values():
             if handle.task is not None and not handle.task.done():
                 handle.task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await handle.task
             self.message_bus.unregister(handle.name)
         self._handles.clear()
         self._dissolved = True
 
-
-# ---------------------------------------------------------------------------
-# Tool description constants
-# ---------------------------------------------------------------------------
 
 SPAWN_TEAM_DESCRIPTION = """\
 Create and start an agent team for parallel multi-agent collaboration.
@@ -322,17 +309,16 @@ and 'instructions' keys. Only one team can be active at a time — dissolve \
 the current team before creating a new one."""
 
 ASSIGN_TASK_DESCRIPTION = """\
-Assign a task to a specific team member.
+Assign a task to a specific team member and start execution.
 
-The member must exist in the active team. Use check_teammates to see \
-available members and their current status before assigning."""
+The member's agent runs the task in the background. Use check_teammates \
+to monitor progress and see results when complete."""
 
 CHECK_TEAMMATES_DESCRIPTION = """\
 Check the status of all team members and shared tasks.
 
-Returns each member's current status and the shared task list with \
-assignments. Use this to monitor progress before assigning new work \
-or dissolving the team."""
+Returns each member's current status (idle/running/completed/failed), \
+result preview for completed members, and the shared task list."""
 
 MESSAGE_TEAMMATE_DESCRIPTION = """\
 Send a message to a specific team member.
@@ -346,29 +332,33 @@ Shut down the active team and clean up all resources.
 Call this when all team tasks are complete or the team is no longer needed. \
 This stops all running members and releases resources."""
 
-# ---------------------------------------------------------------------------
-# create_team_toolset
-# ---------------------------------------------------------------------------
-
 
 def create_team_toolset(  # noqa: C901
     *,
     id: str | None = None,
     descriptions: dict[str, str] | None = None,
+    registry: Any | None = None,
+    agent_factory: Callable[..., Any] | None = None,
+    task_fn: Any | None = None,
+    task_manager: Any | None = None,
 ) -> FunctionToolset[Any]:
     """Create a toolset for managing agent teams.
 
-    Provides tools for spawning teams, assigning tasks, checking
-    status, messaging teammates, and dissolving teams. The team is
-    created lazily on the first ``spawn_team`` call and stored in the
-    toolset closure.
+    When ``registry`` and ``task_fn`` are provided, team members are
+    registered as subagents and ``assign_task`` delegates execution to
+    the subagent system.
 
     Args:
         id: Toolset identifier. Defaults to ``"deep-team"``.
         descriptions: Optional mapping of tool name to custom description.
-            Supported keys: ``spawn_team``, ``assign_task``,
-            ``check_teammates``, ``message_teammate``, ``dissolve_team``.
-            When a key is absent the built-in default is used.
+        registry: ``DynamicAgentRegistry`` for registering team members
+            as subagents at runtime.
+        agent_factory: Callable ``(SubAgentConfig) -> Agent`` used to
+            create member agents. Passed as ``agent_factory`` on the
+            SubAgentConfig so ``_compile_subagent`` uses it.
+        task_fn: The subagent ``task()`` tool function. When provided,
+            ``assign_task`` calls it to execute via the subagent engine.
+        task_manager: Subagent ``TaskManager`` for checking task status.
 
     Returns:
         A ``FunctionToolset`` with team management tools.
@@ -376,7 +366,7 @@ def create_team_toolset(  # noqa: C901
     toolset: FunctionToolset[Any] = FunctionToolset(id=id or "deep-team")
     _descs = descriptions or {}
 
-    _team: list[AgentTeam | None] = [None]  # Mutable container for closure
+    _team: list[AgentTeam | None] = [None]
 
     @toolset.tool(description=_descs.get("spawn_team", SPAWN_TEAM_DESCRIPTION))
     async def spawn_team(
@@ -384,17 +374,7 @@ def create_team_toolset(  # noqa: C901
         team_name: str,
         members: list[dict[str, str]],
     ) -> str:
-        """Create and start an agent team.
-
-        Args:
-            ctx: Run context.
-            team_name: Name for the team.
-            members: List of member dicts with 'name', 'role',
-                'description', 'instructions' keys.
-
-        Returns:
-            Confirmation with list of team members.
-        """
+        """Create and start an agent team."""
         if _team[0] is not None:
             return "Error: A team is already active. Dissolve it first."
 
@@ -404,6 +384,7 @@ def create_team_toolset(  # noqa: C901
                 role=m.get("role", "worker"),
                 description=m.get("description", ""),
                 instructions=m.get("instructions", ""),
+                model=m.get("model", "anthropic:claude-sonnet-4-6"),
             )
             for m in members
         ]
@@ -417,9 +398,31 @@ def create_team_toolset(  # noqa: C901
         _team[0] = team
         handles = await team.spawn()
 
+        # Register members as subagents for execution
+        if registry is not None:
+            from subagents_pydantic_ai import SubAgentConfig
+
+            for member in team_members:
+                if registry.exists(member.name):
+                    continue
+                config = SubAgentConfig(
+                    name=member.name,
+                    description=f"[Team {team_name}] {member.description}",
+                    instructions=member.instructions,
+                    model=member.model,
+                )
+                if agent_factory is not None:
+                    config["agent_factory"] = agent_factory
+                from subagents_pydantic_ai.toolset import _compile_subagent
+
+                compiled = _compile_subagent(config, member.model)
+                registry.register(config, compiled.agent)
+
         lines = [f"Team '{team_name}' created with {len(handles)} members:"]
         for name in handles:
             lines.append(f"- {name}")
+        if registry is not None:
+            lines.append("\nMembers registered as subagents. Use assign_task to start execution.")
         return "\n".join(lines)
 
     @toolset.tool(description=_descs.get("assign_task", ASSIGN_TASK_DESCRIPTION))
@@ -428,16 +431,7 @@ def create_team_toolset(  # noqa: C901
         member_name: str,
         task_description: str,
     ) -> str:
-        """Assign a task to a team member.
-
-        Args:
-            ctx: Run context.
-            member_name: Name of the team member.
-            task_description: Description of the task.
-
-        Returns:
-            Confirmation with task ID.
-        """
+        """Assign a task to a team member and start execution."""
         if _team[0] is None:
             return "Error: No team is active. Use spawn_team first."
         team = _team[0]
@@ -445,21 +439,45 @@ def create_team_toolset(  # noqa: C901
             available = ", ".join(team._handles.keys())
             return f"Error: Member '{member_name}' not found. Available: {available}"
 
+        handle = team._handles[member_name]
+        if handle.status == "running":
+            return f"Error: Member '{member_name}' is already running. Check status first."
+
+        # Add to shared todos
         item_id = await team.assign(member_name, task_description)
+
+        # Delegate execution to subagent system
+        if task_fn is not None:
+            try:
+                result = await task_fn(
+                    ctx,
+                    description=task_description,
+                    subagent_type=member_name,
+                    mode="async",
+                )
+                handle.status = "running"
+                # Extract task_id from subagent result if available
+                if "Task ID:" in str(result):
+                    for part in str(result).split():
+                        if len(part) == 8 and part.isalnum():
+                            handle.task_id = part
+                            break
+                return (
+                    f"Task assigned to '{member_name}' (todo: {item_id}). "
+                    f"Agent running in background.\n{result}"
+                )
+            except Exception as e:
+                handle.status = "failed"
+                handle.error = str(e)
+                return f"Error starting task for '{member_name}': {e}"
+
         return f"Task assigned to '{member_name}' (ID: {item_id})"
 
     @toolset.tool(description=_descs.get("check_teammates", CHECK_TEAMMATES_DESCRIPTION))
     async def check_teammates(
         ctx: RunContext[Any],
     ) -> str:
-        """Check the status of all team members and shared tasks.
-
-        Args:
-            ctx: Run context.
-
-        Returns:
-            Summary of team status.
-        """
+        """Check the status of all team members and shared tasks."""
         if _team[0] is None:
             return "No team is active."
         team = _team[0]
@@ -467,12 +485,34 @@ def create_team_toolset(  # noqa: C901
         lines = [f"Team '{team.name}' status:"]
         lines.append("")
 
-        # Members
         lines.append("Members:")
         for name, handle in team._handles.items():
-            lines.append(f"- {name}: {handle.status}")
+            status = handle.status
 
-        # Shared todos
+            # If running and task_manager available, get live status
+            if handle.task_id and task_manager is not None:
+                th = task_manager.get_handle(handle.task_id)
+                if th is not None:
+                    status = th.status.value
+                    if th.result:
+                        handle.result = th.result
+                        handle.status = "completed"
+                        status = "completed"
+                    elif th.error:
+                        handle.error = th.error
+                        handle.status = "failed"
+                        status = "failed"
+
+            status_line = f"- {name}: {status}"
+            if handle.status == "completed" and handle.result:
+                preview = handle.result[:200]
+                if len(handle.result) > 200:
+                    preview += "..."
+                status_line += f"\n  Result: {preview}"
+            elif handle.status == "failed" and handle.error:
+                status_line += f"\n  Error: {handle.error}"
+            lines.append(status_line)
+
         todos = await team.shared_todos.get_all()
         if todos:
             lines.append("")
@@ -489,16 +529,7 @@ def create_team_toolset(  # noqa: C901
         member_name: str,
         message: str,
     ) -> str:
-        """Send a message to a specific team member.
-
-        Args:
-            ctx: Run context.
-            member_name: Name of the team member.
-            message: The message content.
-
-        Returns:
-            Confirmation.
-        """
+        """Send a message to a specific team member."""
         if _team[0] is None:
             return "Error: No team is active."
         team = _team[0]
@@ -513,18 +544,17 @@ def create_team_toolset(  # noqa: C901
     async def dissolve_team(
         ctx: RunContext[Any],
     ) -> str:
-        """Shut down the team and clean up resources.
-
-        Args:
-            ctx: Run context.
-
-        Returns:
-            Confirmation.
-        """
+        """Shut down the team and clean up resources."""
         if _team[0] is None:
             return "No team is active."
 
         team_name = _team[0].name
+
+        # Clean up registry entries
+        if registry is not None:
+            for name in _team[0]._handles:
+                registry.remove(name)
+
         await _team[0].dissolve()
         _team[0] = None
         return f"Team '{team_name}' dissolved."

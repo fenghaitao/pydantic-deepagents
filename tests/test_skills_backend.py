@@ -29,9 +29,7 @@ from pydantic_deep.toolsets.skills.exceptions import (
 from pydantic_deep.toolsets.skills.toolset import SkillsToolset
 from pydantic_deep.toolsets.skills.types import SkillScript
 
-# ==========================================================================
 # Helper: create a mock SandboxProtocol (StateBackend + execute)
-# ==========================================================================
 
 
 class MockSandboxBackend(StateBackend):  # type: ignore[misc]
@@ -51,11 +49,6 @@ class MockSandboxBackend(StateBackend):  # type: ignore[misc]
     @property
     def id(self) -> str:
         return "mock-sandbox"
-
-
-# ==========================================================================
-# Utility functions
-# ==========================================================================
 
 
 class TestUtilityFunctions:
@@ -85,11 +78,6 @@ class TestUtilityFunctions:
         # When base == file path (trailing slash scenario), falls back to filename
         result = _get_relative_path("/skills/my-skill/", "/skills/my-skill/")
         assert result == ""  # empty after stripping
-
-
-# ==========================================================================
-# BackendSkillResource
-# ==========================================================================
 
 
 class TestBackendSkillResource:
@@ -214,11 +202,6 @@ class TestBackendSkillResource:
         assert result == "all: build"
 
 
-# ==========================================================================
-# BackendSkillScriptExecutor
-# ==========================================================================
-
-
 class TestBackendSkillScriptExecutor:
     """Tests for BackendSkillScriptExecutor."""
 
@@ -332,11 +315,6 @@ class TestBackendSkillScriptExecutor:
             await executor.run(script)
 
 
-# ==========================================================================
-# BackendSkillScript
-# ==========================================================================
-
-
 class TestBackendSkillScript:
     """Tests for BackendSkillScript."""
 
@@ -374,11 +352,6 @@ class TestBackendSkillScript:
             await script.run(ctx=None)
 
 
-# ==========================================================================
-# Factory functions
-# ==========================================================================
-
-
 class TestFactoryFunctions:
     """Tests for create_backend_resource and create_backend_script."""
 
@@ -412,11 +385,6 @@ class TestFactoryFunctions:
         assert script.skill_name == "test-skill"
         assert script.executor is executor
         assert script.description == "Test script"
-
-
-# ==========================================================================
-# Discovery functions
-# ==========================================================================
 
 
 class TestDiscovery:
@@ -488,11 +456,6 @@ class TestDiscovery:
 
         paths = [s.uri for s in scripts]
         assert len(paths) == len(set(paths))
-
-
-# ==========================================================================
-# BackendSkillsDirectory
-# ==========================================================================
 
 
 class TestBackendSkillsDirectory:
@@ -699,11 +662,6 @@ class TestBackendSkillsDirectory:
         assert directory.skills == {}
 
 
-# ==========================================================================
-# Integration: SkillsToolset with BackendSkillsDirectory
-# ==========================================================================
-
-
 class TestToolsetIntegration:
     """Test SkillsToolset integration with BackendSkillsDirectory."""
 
@@ -740,11 +698,6 @@ class TestToolsetIntegration:
         assert "backend-skill" in toolset.skills
 
 
-# ==========================================================================
-# Agent integration
-# ==========================================================================
-
-
 class TestAgentIntegration:
     """Test create_deep_agent with BackendSkillsDirectory."""
 
@@ -764,11 +717,6 @@ class TestAgentIntegration:
             include_subagents=False,
         )
         assert agent is not None
-
-
-# ==========================================================================
-# Edge cases for coverage
-# ==========================================================================
 
 
 class TestCoverageEdgeCases:

@@ -6,7 +6,9 @@ import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from cli.local_context import (
+import pytest
+
+from apps.cli.local_context import (
     IGNORE_PATTERNS,
     LocalContextToolset,
     format_local_context,
@@ -23,7 +25,7 @@ class TestGetGitInfo:
         result = get_git_info(tmp_path)
         assert result == {} or "branch" in result  # depends on parent git repo
 
-    @patch("cli.local_context._get_git_executable")
+    @patch("apps.cli.local_context._get_git_executable")
     def test_returns_empty_when_git_not_installed(
         self, mock_git: MagicMock, tmp_path: Path
     ) -> None:
@@ -31,8 +33,8 @@ class TestGetGitInfo:
         result = get_git_info(tmp_path)
         assert result == {}
 
-    @patch("cli.local_context.subprocess.run")
-    @patch("cli.local_context._get_git_executable")
+    @patch("apps.cli.local_context.subprocess.run")
+    @patch("apps.cli.local_context._get_git_executable")
     def test_returns_branch_info(
         self, mock_git: MagicMock, mock_run: MagicMock, tmp_path: Path
     ) -> None:
@@ -48,8 +50,8 @@ class TestGetGitInfo:
         assert "main" in result["main_branches"]
         assert result["uncommitted"] == 1
 
-    @patch("cli.local_context.subprocess.run")
-    @patch("cli.local_context._get_git_executable")
+    @patch("apps.cli.local_context.subprocess.run")
+    @patch("apps.cli.local_context._get_git_executable")
     def test_handles_non_git_directory(
         self, mock_git: MagicMock, mock_run: MagicMock, tmp_path: Path
     ) -> None:
@@ -59,8 +61,8 @@ class TestGetGitInfo:
         result = get_git_info(tmp_path)
         assert result == {}
 
-    @patch("cli.local_context.subprocess.run")
-    @patch("cli.local_context._get_git_executable")
+    @patch("apps.cli.local_context.subprocess.run")
+    @patch("apps.cli.local_context._get_git_executable")
     def test_handles_timeout(
         self, mock_git: MagicMock, mock_run: MagicMock, tmp_path: Path
     ) -> None:
@@ -70,8 +72,8 @@ class TestGetGitInfo:
         result = get_git_info(tmp_path)
         assert result == {}
 
-    @patch("cli.local_context.subprocess.run")
-    @patch("cli.local_context._get_git_executable")
+    @patch("apps.cli.local_context.subprocess.run")
+    @patch("apps.cli.local_context._get_git_executable")
     def test_branch_list_fails(
         self, mock_git: MagicMock, mock_run: MagicMock, tmp_path: Path
     ) -> None:
@@ -207,22 +209,25 @@ class TestLocalContextToolset:
         toolset = LocalContextToolset(root_dir=tmp_path)
         assert toolset._root == tmp_path
 
-    def test_get_instructions_returns_string(self, tmp_path: Path) -> None:
+    @pytest.mark.anyio
+    async def test_get_instructions_returns_list(self, tmp_path: Path) -> None:
         (tmp_path / "test.py").write_text("print('hello')")
         toolset = LocalContextToolset(root_dir=tmp_path)
 
         ctx = MagicMock()
-        result = toolset.get_instructions(ctx)
-        assert isinstance(result, str)
-        assert "### Local Context" in result
-        assert "test.py" in result
+        result = await toolset.get_instructions(ctx)
+        assert isinstance(result, list)
+        joined = "\n\n".join(result)
+        assert "### Local Context" in joined
+        assert "test.py" in joined
 
-    def test_caches_context(self, tmp_path: Path) -> None:
+    @pytest.mark.anyio
+    async def test_caches_context(self, tmp_path: Path) -> None:
         toolset = LocalContextToolset(root_dir=tmp_path)
         ctx = MagicMock()
 
-        result1 = toolset.get_instructions(ctx)
-        result2 = toolset.get_instructions(ctx)
+        result1 = await toolset.get_instructions(ctx)
+        result2 = await toolset.get_instructions(ctx)
         assert result1 == result2
         assert toolset._cached_context is not None
 

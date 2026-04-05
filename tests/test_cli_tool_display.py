@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cli.tool_display import (
+from apps.cli.tool_display import (
     _abbreviate_path,
     _truncate,
     format_tool_call,
@@ -185,7 +185,7 @@ class TestRenderToolCall:
         assert "[" in result  # Rich markup tags
 
     def test_with_custom_glyphs(self) -> None:
-        from cli.theme import ASCII_GLYPHS
+        from apps.cli.theme import ASCII_GLYPHS
 
         result = render_tool_call("ls", {"path": "."}, glyphs=ASCII_GLYPHS)
         assert ASCII_GLYPHS.tool_prefix in result
@@ -201,7 +201,7 @@ class TestRenderToolResult:
         assert "[" in result  # Rich markup tags
 
     def test_with_custom_glyphs(self) -> None:
-        from cli.theme import ASCII_GLYPHS
+        from apps.cli.theme import ASCII_GLYPHS
 
         result = render_tool_result("write_file", "ok", glyphs=ASCII_GLYPHS)
         assert ASCII_GLYPHS.output_prefix in result

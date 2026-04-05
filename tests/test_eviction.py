@@ -33,8 +33,6 @@ from pydantic_deep.processors.eviction import _content_to_str, _sanitize_id
 
 TEST_MODEL = TestModel()
 
-# --- Helpers ---
-
 
 def _make_ctx(backend: StateBackend | None = None) -> RunContext[DeepAgentDeps]:
     """Create a RunContext with DeepAgentDeps for testing."""
@@ -86,11 +84,6 @@ def _make_request_with_tool_return(
 def _make_large_content(num_lines: int = 100, line_length: int = 100) -> str:
     """Create large content string with specified number of lines."""
     return "\n".join(f"line {i}: {'x' * line_length}" for i in range(num_lines))
-
-
-# ============================================================================
-# Tests for create_content_preview
-# ============================================================================
 
 
 class TestCreateContentPreview:
@@ -147,11 +140,6 @@ class TestCreateContentPreview:
         assert result == ""
 
 
-# ============================================================================
-# Tests for _content_to_str
-# ============================================================================
-
-
 class TestContentToStr:
     """Tests for the _content_to_str helper."""
 
@@ -191,11 +179,6 @@ class TestContentToStr:
         assert isinstance(result, str)
 
 
-# ============================================================================
-# Tests for _sanitize_id
-# ============================================================================
-
-
 class TestSanitizeId:
     """Tests for the _sanitize_id helper."""
 
@@ -214,11 +197,6 @@ class TestSanitizeId:
     def test_empty_string(self):
         """Empty string returns empty."""
         assert _sanitize_id("") == ""
-
-
-# ============================================================================
-# Tests for EvictionProcessor
-# ============================================================================
 
 
 class TestEvictionProcessor:
@@ -603,11 +581,6 @@ class TestEvictionProcessor:
         assert result[0] is original  # Same object reference
 
 
-# ============================================================================
-# Tests for _resolve_backend
-# ============================================================================
-
-
 class TestResolveBackend:
     """Tests for runtime backend resolution."""
 
@@ -653,11 +626,6 @@ class TestResolveBackend:
         assert evicted == large_content.encode()
 
 
-# ============================================================================
-# Tests for create_eviction_processor factory
-# ============================================================================
-
-
 class TestCreateEvictionProcessor:
     """Tests for the create_eviction_processor factory function."""
 
@@ -685,10 +653,70 @@ class TestCreateEvictionProcessor:
         assert processor.head_lines == 10
         assert processor.tail_lines == 3
 
+    def test_on_eviction_forwarded(self):
+        """Factory forwards on_eviction callback."""
+        backend = StateBackend()
+        cb = MagicMock()
+        processor = create_eviction_processor(backend, on_eviction=cb)
+        assert processor.on_eviction is cb
 
-# ============================================================================
-# Tests for constants and exports
-# ============================================================================
+
+class TestOnEvictionCallback:
+    """Tests for the on_eviction callback on EvictionProcessor."""
+
+    @pytest.mark.anyio
+    async def test_sync_callback_invoked(self):
+        """Sync on_eviction callback is called on eviction."""
+        backend = StateBackend()
+        calls: list[tuple[str, str, int, int]] = []
+
+        def on_eviction(tool_name: str, file_path: str, orig: int, preview: int) -> None:
+            calls.append((tool_name, file_path, orig, preview))
+
+        processor = EvictionProcessor(backend=backend, token_limit=10, on_eviction=on_eviction)
+        ctx = _make_ctx(backend)
+
+        large_content = _make_large_content(20)
+        messages: list[ModelMessage] = [_make_request_with_tool_return(large_content)]
+        await processor(ctx, messages)
+
+        assert len(calls) == 1
+        assert calls[0][0] == "grep"
+        assert "/large_tool_results/" in calls[0][1]
+        assert calls[0][2] == len(large_content)
+        assert calls[0][3] > 0
+
+    @pytest.mark.anyio
+    async def test_async_callback_invoked(self):
+        """Async on_eviction callback is awaited."""
+        backend = StateBackend()
+        calls: list[str] = []
+
+        async def on_eviction(tool_name: str, file_path: str, orig: int, preview: int) -> None:
+            calls.append(tool_name)
+
+        processor = EvictionProcessor(backend=backend, token_limit=10, on_eviction=on_eviction)
+        ctx = _make_ctx(backend)
+
+        large_content = _make_large_content(20)
+        messages: list[ModelMessage] = [_make_request_with_tool_return(large_content)]
+        await processor(ctx, messages)
+
+        assert len(calls) == 1
+        assert calls[0] == "grep"
+
+    @pytest.mark.anyio
+    async def test_no_callback_when_not_evicted(self):
+        """on_eviction is NOT called when content is small."""
+        backend = StateBackend()
+        cb = MagicMock()
+        processor = EvictionProcessor(backend=backend, token_limit=100, on_eviction=cb)
+        ctx = _make_ctx(backend)
+
+        messages: list[ModelMessage] = [_make_request_with_tool_return("small")]
+        await processor(ctx, messages)
+
+        cb.assert_not_called()
 
 
 class TestExports:
@@ -711,11 +739,6 @@ class TestExports:
         assert "{file_path}" in EVICTION_MESSAGE_TEMPLATE
         assert "{content_sample}" in EVICTION_MESSAGE_TEMPLATE
         assert "read_file" in EVICTION_MESSAGE_TEMPLATE
-
-
-# ============================================================================
-# Tests for agent integration
-# ============================================================================
 
 
 class TestAgentIntegration:
@@ -769,16 +792,13 @@ class TestAgentIntegration:
             include_filesystem=False,
             include_subagents=False,
             include_skills=False,
+            web_search=False,
+            web_fetch=False,
         )
 
         deps = DeepAgentDeps(backend=StateBackend())
         result = await agent.run("Hello", deps=deps)
         assert result.output is not None
-
-
-# ============================================================================
-# Tests for eviction preview content format
-# ============================================================================
 
 
 class TestEvictionPreviewFormat:
@@ -830,11 +850,6 @@ class TestEvictionPreviewFormat:
         # Read back from backend
         stored = backend._read_bytes("/large_tool_results/call_read")
         assert stored.decode() == original_content
-
-
-# ============================================================================
-# Tests for edge cases
-# ============================================================================
 
 
 class TestEdgeCases:

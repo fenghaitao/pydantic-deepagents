@@ -37,10 +37,6 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.toolsets import FunctionToolset
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 SEARCH_HISTORY_DESCRIPTION = """\
 Search through the full conversation history, including messages that \
 were compressed away to save context space.
@@ -65,9 +61,7 @@ _MAX_MATCHES = 10
 """Maximum number of matching excerpts to return."""
 
 
-# ---------------------------------------------------------------------------
 # Message formatting (for search results)
-# ---------------------------------------------------------------------------
 
 
 def _format_message(msg: ModelMessage) -> str:
@@ -124,11 +118,6 @@ def _load_messages(messages_path: str) -> list[ModelMessage]:
     except Exception:  # pragma: no cover
         pass
     return []
-
-
-# ---------------------------------------------------------------------------
-# Search toolset
-# ---------------------------------------------------------------------------
 
 
 def create_history_search_toolset(

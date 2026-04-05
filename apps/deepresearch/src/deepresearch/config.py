@@ -16,9 +16,6 @@ from pydantic_deep.litellm import infer_litellm_model
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Paths
-# ---------------------------------------------------------------------------
 
 APP_DIR = Path(__file__).resolve().parent.parent.parent  # deepresearch/
 SKILLS_DIR = APP_DIR / "skills"
@@ -26,9 +23,6 @@ WORKSPACE_DIR = APP_DIR / "workspace"
 WORKSPACES_DIR = APP_DIR / "workspaces"
 STATIC_DIR = APP_DIR / "static"
 
-# ---------------------------------------------------------------------------
-# Model
-# ---------------------------------------------------------------------------
 
 
 def _resolve_model_name() -> str | Model:
@@ -59,15 +53,8 @@ def _resolve_model_name() -> str | Model:
 
 MODEL_NAME: str | Model = _resolve_model_name()
 
-# ---------------------------------------------------------------------------
-# Excalidraw Canvas
-# ---------------------------------------------------------------------------
 
 EXCALIDRAW_CANVAS_URL: str = os.getenv("EXCALIDRAW_CANVAS_URL", "http://localhost:3000")
-
-# ---------------------------------------------------------------------------
-# MCP Servers
-# ---------------------------------------------------------------------------
 
 
 def _docker_available() -> bool:

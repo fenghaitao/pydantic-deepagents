@@ -5,6 +5,125 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] - 2026-04-02
+
+### Changed
+
+- Default models changed: main agent `anthropic:claude-opus-4-6`, subagents `anthropic:claude-sonnet-4-6`, summarization `anthropic:claude-haiku-4-5-20251001`
+- Replaced `include_general_purpose_subagent` with `include_builtin_subagents` — adds a built-in "research" deep agent (filesystem + web + memory) instead of a plain pydantic-ai Agent
+- **Subagents are now deep agents by default** — all subagents (built-in and custom) are created via `create_deep_agent()` with filesystem, web, memory, eviction, and patch support. Custom subagents that don't specify `agent` or `agent_factory` automatically get the deep agent factory
+- Removed `skills` parameter from `create_deep_agent()` — pass pre-loaded skills via `SkillsToolset(skills=[...])` in the `toolsets` parameter instead
+- Removed `image_support` parameter from `create_deep_agent()` — image support is now always enabled (multimodal `read_file` for `.png`, `.jpg`, `.gif`, `.webp`)
+- Changed `include_memory` default from `False` to `True` — persistent agent memory is now enabled by default
+- Changed `max_nesting_depth` default from `0` to `1` — subagents can now spawn their own subagents by default
+- Simplified context file discovery to `AGENTS.md` and `SOUL.md` only (removed DEEP.md, AGENT.md, CLAUDE.md). Subagents see only `AGENTS.md`; `SOUL.md` is main-agent-only
+- Replaced `include_web` with separate `web_search` and `web_fetch` parameters (both default `True`) — allows independent control of WebSearch and WebFetch capabilities
+- Added `thinking` parameter (default `"high"`) — enables model thinking/reasoning via pydantic-ai `Thinking` capability. Supports `True`/`False`/`"minimal"`/`"low"`/`"medium"`/`"high"`/`"xhigh"`
+- Changed `eviction_token_limit` default from `None` to `20_000` — large tool outputs automatically saved to files
+- Changed `patch_tool_calls` default from `False` to `True` — orphaned tool calls fixed automatically
+- `BASE_PROMPT` is now always included in system prompt — `instructions` parameter appends to it instead of replacing it
+- Moved `model_settings` parameter next to `model` in `create_deep_agent()` signature
+
+### Added
+
+- 5 new hook events: `BEFORE_RUN`, `AFTER_RUN`, `RUN_ERROR`, `BEFORE_MODEL_REQUEST`, `AFTER_MODEL_REQUEST` — maps to pydantic-ai lifecycle hooks for session tracking, LLM call logging, and error alerts
+- `compact_conversation` tool — agent can manually trigger context compression with optional focus topic (uses `ContextManagerCapability.request_compact()`)
+- Anthropic prompt caching enabled by default (`anthropic_cache_instructions`, `anthropic_cache_tool_definitions`, `anthropic_cache_messages`) — silently ignored by non-Anthropic models
+- Built-in "research" subagent (`pydantic_deep/subagents.py`) — full deep agent for codebase exploration and web research
+- `upload_files()` batch method on `DeepAgentDeps` for uploading multiple files at once
+- `approve_tools` config in CLI — configure which tools require user approval (default: `["execute"]`). Set via `/config set approve_tools "execute,write_file,edit_file"` or in `config.toml`
+- Skills as slash commands in CLI — type `/code-review` to activate a skill directly from the picker
+- 3-tier skill discovery: built-in (`apps/cli/skills/`) → user (`~/.pydantic-deep/skills/`) → project (`.pydantic-deep/skills/`), with later sources overriding earlier by name
+- Provider setup wizard in CLI — first-run auto-detects missing API keys and guides through provider selection (Anthropic, OpenAI, Google, OpenRouter) with key input. Keys saved to `.pydantic-deep/.env`
+- `/provider` slash command — switch AI provider and model mid-session
+- `/config` slash command in CLI — view and change settings interactively (e.g., `/config set include_teams true`)
+- `web_search`, `web_fetch`, `thinking_effort`, and `include_teams` as configurable options in `config.toml`
+- ACP (Agent Client Protocol) adapter in `apps/acp/` — enables pydantic-deep agents to run inside editors like Zed. Streaming text deltas, tool call visibility with arguments and results, model switching, session management, auto-detect provider from API keys
+- Enhanced `BASE_PROMPT` with Claude Code-inspired sections: code quality, executing actions with care, tone and formatting
+- MCP documentation (`docs/advanced/mcp.md`) — shows how to use pydantic-ai's `MCP` capability with deep agents
+- Documentation for `BackendSkillsDirectory` in `docs/concepts/skills.md` — covers usage with `StateBackend`, `LocalBackend`, `DockerSandbox`, and mixed configurations
+- Cross-reference to backend-aware skills in `docs/concepts/backends.md`
+
+### Fixed
+
+- CLI bundled skills fallback path — was resolving to non-existent `apps/pydantic_deep/bundled_skills`, now correctly points to `apps/cli/skills/`
+
+## [0.3.2] - 2026-03-31
+
+### Added
+
+- `capabilities` parameter on `create_deep_agent()` for user-provided capabilities ([#55](https://github.com/vstorm-co/pydantic-deepagents/pull/55))
+
+### Fixed
+
+- Pre-existing mypy `unused-ignore` error in `spec.py`
+
+## [0.3.1] - 2026-03-31
+
+### Changed
+
+- Bump minimum `pydantic-ai-slim` to `>=1.74.0`
+- Toolset `get_instructions()` methods are now `async` and return `list[str] | None` to match pydantic-ai 1.74.0's `AbstractToolset` signature
+- Removed manual `get_instructions()` calls from `create_deep_agent()` — pydantic-ai 1.74.0's `CombinedToolset` handles this automatically
+- Capability inner instruction callables are now `async` to properly `await` toolset `get_instructions()`
+
+### Fixed
+
+- Compatibility with pydantic-ai 1.74.0 which changed `CombinedToolset.get_instructions()` to use `asyncio.gather` ([#53](https://github.com/vstorm-co/pydantic-deepagents/issues/53))
+
+## [0.3.0] - 2026-03-30
+
+### Breaking Changes
+
+- **Full migration to pydantic-ai Capabilities API** (requires `pydantic-ai>=1.71.0`)
+- Removed `pydantic-ai-middleware` dependency entirely — replaced by `pydantic-ai-shields>=0.3.0`
+- `HooksMiddleware` renamed to `HooksCapability` (extends `AbstractCapability`), moved from `pydantic_deep.middleware.hooks` to `pydantic_deep.capabilities.hooks`
+- `CheckpointMiddleware` now extends `AbstractCapability` instead of `AgentMiddleware`
+- Removed `LoopDetectionMiddleware` old API — now extends `AbstractCapability`
+- Removed `web_search_provider`, `permission_handler`, `middleware_context` params from `create_deep_agent()`
+- Removed `toolsets/web.py` — use pydantic-ai built-in `WebSearch()` and `WebFetch()` instead
+- Removed ALL old middleware exports from `__init__.py` (`AgentMiddleware`, `MiddlewareAgent`, `MiddlewareChain`, etc.)
+- Removed deprecated types: `LegacySkill`, `SkillFrontmatter`, `SkillDirectory`
+- Tool hook method names changed: `before_tool_call` → `before_tool_execute`, `after_tool_call` → `after_tool_execute`, `on_tool_error` → `on_tool_execute_error`
+- Deny semantics changed: `ToolPermissionResult(DENY)` → `raise ModelRetry("reason")`
+- Moved `cli/` to `apps/cli/` — import paths changed from `cli.` to `apps.cli.`
+- Removed `apps/harbor_agent/` and `apps/swebench_agent/`
+
+### Added
+
+- 5 internal capabilities: `SkillsCapability`, `ContextFilesCapability`, `MemoryCapability`, `TeamCapability`, `PlanCapability`
+- **`DeepAgent`** and **`DeepAgentSpec`** — declarative YAML/JSON agent specs via `DeepAgent.from_file("agent.yaml")` and `DeepAgent.from_spec({...})`
+- `on_eviction` callback on `EvictionProcessor` — notifies when tool output is saved to file
+- `on_before_compress`, `on_after_compress` callbacks forwarded through `create_deep_agent()`
+- CLI observability: compression start notice, eviction notice, active tasks in status bar
+- **Teams + subagents integration** — `create_team_toolset()` accepts `registry`, `task_fn`, `task_manager`, `agent_factory` to delegate team member execution to the subagent engine. `spawn_team` registers members as subagents, `assign_task` runs them via `task()` in async mode
+- Capabilities-first architecture: everything is now an `AbstractCapability`
+
+### Changed
+
+- `CostTracking` from `pydantic-ai-shields` replaces `CostTrackingMiddleware`
+- `ContextManagerCapability` from `pydantic-ai-summarization` replaces `ContextManagerMiddleware`
+- All capabilities use `before_tool_execute`/`after_tool_execute` instead of old `before_tool_call`/`after_tool_call`
+- Web tools now use pydantic-ai built-in `WebSearch()` and `WebFetch()` capabilities
+- Requires `subagents-pydantic-ai>=0.2.0` (custom agent support)
+
+### Fixed
+
+- **`examples/full_app`**: `DeepAgentDeps` was passed `checkpoint_store=` which is not a valid field — removed ([#40](https://github.com/vstorm-co/pydantic-deepagents/issues/40))
+- **Skills URI leak in sandbox** — skill URIs (host filesystem paths) were exposed in system prompt and `load_skill` output, causing agents in Docker sandboxes to attempt `read_file` on non-existent paths. URIs are now omitted from prompts — agents use `load_skill`/`read_skill_resource` tools instead ([#43](https://github.com/vstorm-co/pydantic-deepagents/issues/43))
+- **`examples/full_app`**: Updated from old middleware API to capabilities (`AuditCapability`, `PermissionCapability`)
+- **`apps/deepresearch`**: Updated from old middleware API to capabilities
+
+### Removed
+
+- `pydantic_deep/middleware/` directory (hooks moved to `pydantic_deep/capabilities/hooks.py`)
+- `pydantic_deep/toolsets/web.py` (replaced by pydantic-ai built-in)
+- `apps/harbor_agent/`, `apps/swebench_agent/`
+- `tests/test_web_toolset.py`, `tests/test_cost_tracking.py`, `tests/test_middleware_integration.py`
+- Old middleware exports: `AgentMiddleware`, `MiddlewareAgent`, `MiddlewareChain`, `MiddlewareContext`, `PermissionHandler`, `ToolDecision`, `ToolPermissionResult`, `CostTrackingMiddleware`, `CostCallback`, `create_cost_tracking_middleware`, `UsageCallback`, `create_context_manager_middleware`, `before_run`, `after_run`, `before_model_request`, `before_tool_call`, `after_tool_call`, `on_tool_error`, `on_error`
+- Deprecated types: `LegacySkill`, `SkillFrontmatter`, `SkillDirectory`
+- `web-tools` optional dependency group
+
 ## [0.2.21] - 2026-03-19
 
 ### Fixed
@@ -27,7 +146,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`deps.todos` not synchronized with todo tools** — `create_todo_toolset()` was called without `storage=` parameter, creating an isolated `TodoStorage` disconnected from `deps.todos`. Todo tools wrote to their own internal list while `deps.todos`, `get_todo_prompt()`, and `share_todos` remained empty. Fixed with `_DepsTodoProxy` pattern that delegates reads/writes to `deps.todos` at runtime. Subagent todo toolsets use the same proxy pattern for consistency. ([#35](https://github.com/vstorm-co/pydantic-deepagents/issues/35))
-- **`Model` objects discarded for subagents** — `isinstance(model, str)` guard silently replaced `Model` objects (e.g. `TestModel()`, `AnthropicModel()`) with `DEFAULT_MODEL`. Subagents always used `openai:gpt-4.1` regardless of the model passed to `create_deep_agent()`. Changed to `model or DEFAULT_MODEL`. ([#34](https://github.com/vstorm-co/pydantic-deepagents/pull/34), by [@ret2libc](https://github.com/ret2libc))
+- **`Model` objects discarded for subagents** — `isinstance(model, str)` guard silently replaced `Model` objects (e.g. `TestModel()`, `AnthropicModel()`) with `DEFAULT_MODEL`. Subagents always used `anthropic:claude-sonnet-4-6` regardless of the model passed to `create_deep_agent()`. Changed to `model or DEFAULT_MODEL`. ([#34](https://github.com/vstorm-co/pydantic-deepagents/pull/34), by [@ret2libc](https://github.com/ret2libc))
 - **Binary file upload tests flaky on Linux** — `chardet` detected encoding for small byte sequences on Linux but not macOS, causing `line_count` assertions to fail in CI. Tests now mock `chardet.detect` for deterministic behavior.
 
 ### Changed
@@ -174,7 +293,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `CLAUDE.md` - corrected `CompositeBackend` API signature (uses `default` and `routes`, not `backends`)
 - Fixed `README.md` - corrected import path `pydantic_deep.processors` to `pydantic_deep`
 - Fixed `docs/api/agent.md` - added missing `include_execute` parameter to signature and parameters table
-- Fixed `pydantic_deep/agent.py` - corrected docstring model default from "Claude Sonnet 4" to "openai:gpt-4.1"
+- Fixed `pydantic_deep/agent.py` - corrected docstring model default from "Claude Sonnet 4" to "anthropic:claude-sonnet-4-6"
 
 ## [0.2.13] - 2025-01-17
 

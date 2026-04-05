@@ -110,9 +110,12 @@ plugins:
           - advanced/context-files.md: Project context file injection
           - advanced/eviction.md: Large output eviction
           - advanced/cost-tracking.md: Token and cost tracking
-          - advanced/middleware.md: Middleware system
+          - advanced/middleware.md: Capabilities system
+          - advanced/agent-spec.md: Agent spec (YAML/JSON)
           - advanced/plan-mode.md: Plan mode subagent
-          - advanced/web-tools.md: Web search, fetch, and HTTP tools
+          - advanced/web-tools.md: Web tools (built-in)
+          - advanced/mcp.md: MCP servers
+          - advanced/acp.md: ACP editor integration (Zed)
           - advanced/multi-user.md: Multi-user isolation patterns
         CLI:
           - cli/index.md: CLI installation, commands, and features
@@ -222,6 +225,8 @@ nav:
     - advanced/middleware.md
     - advanced/plan-mode.md
     - advanced/web-tools.md
+    - advanced/mcp.md
+    - advanced/acp.md
     - advanced/multi-user.md
   - CLI: cli/index.md
   - Examples:
@@ -235,6 +240,9 @@ nav:
       - examples/custom-tools.md
       - examples/skills.md
       - examples/file-uploads.md
+      - examples/thinking.md
+      - examples/web-tools.md
+      - examples/mcp.md
     - Execution:
       - examples/docker-sandbox.md
       - examples/docker-runtimes.md

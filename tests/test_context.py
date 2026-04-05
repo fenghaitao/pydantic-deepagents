@@ -22,9 +22,6 @@ from pydantic_deep.toolsets.context import _truncate_content
 TEST_MODEL = TestModel()
 
 
-# --- Helpers ---
-
-
 def _make_ctx(backend: StateBackend | None = None) -> RunContext[DeepAgentDeps]:
     """Create a RunContext with DeepAgentDeps for testing."""
     b = backend or StateBackend()
@@ -36,9 +33,6 @@ def _make_ctx(backend: StateBackend | None = None) -> RunContext[DeepAgentDeps]:
     )
 
 
-# --- Unit Tests: ContextFile ---
-
-
 class TestContextFile:
     """Tests for ContextFile dataclass."""
 
@@ -48,9 +42,6 @@ class TestContextFile:
         assert cf.name == "DEEP.md"
         assert cf.path == "/DEEP.md"
         assert cf.content == "# Hello"
-
-
-# --- Unit Tests: load_context_files ---
 
 
 class TestLoadContextFiles:
@@ -119,27 +110,24 @@ class TestLoadContextFiles:
         assert files[0].path == "/project/config/DEEP.md"
 
 
-# --- Unit Tests: discover_context_files ---
-
-
 class TestDiscoverContextFiles:
     """Tests for discover_context_files function."""
 
     def test_discover_at_root(self):
         """Test discovering context files at root."""
         backend = StateBackend()
-        backend.write("/AGENT.md", "# Agent")
+        backend.write("/AGENTS.md", "# Agents")
 
         found = discover_context_files(backend)
-        assert "/AGENT.md" in found
+        assert "/AGENTS.md" in found
 
     def test_discover_partial(self):
         """Test discovering when only some files exist."""
         backend = StateBackend()
-        backend.write("/AGENT.md", "# Agent")
+        backend.write("/AGENTS.md", "# Agents")
 
         found = discover_context_files(backend)
-        assert found == ["/AGENT.md"]
+        assert found == ["/AGENTS.md"]
 
     def test_discover_none_found(self):
         """Test discovering when no files exist."""
@@ -161,21 +149,18 @@ class TestDiscoverContextFiles:
     def test_discover_custom_search_path(self):
         """Test discovering at a custom search path."""
         backend = StateBackend()
-        backend.write("/project/AGENT.md", "# Agent")
+        backend.write("/project/AGENTS.md", "# Agents")
 
         found = discover_context_files(backend, search_path="/project")
-        assert found == ["/project/AGENT.md"]
+        assert found == ["/project/AGENTS.md"]
 
     def test_discover_trailing_slash(self):
         """Test that trailing slash is handled correctly."""
         backend = StateBackend()
-        backend.write("/project/AGENT.md", "# Agent")
+        backend.write("/project/AGENTS.md", "# Agents")
 
         found = discover_context_files(backend, search_path="/project/")
-        assert found == ["/project/AGENT.md"]
-
-
-# --- Unit Tests: _truncate_content ---
+        assert found == ["/project/AGENTS.md"]
 
 
 class TestTruncateContent:
@@ -216,9 +201,6 @@ class TestTruncateContent:
         assert "[500 chars truncated]" in result
 
 
-# --- Unit Tests: format_context_prompt ---
-
-
 class TestFormatContextPrompt:
     """Tests for format_context_prompt function."""
 
@@ -252,15 +234,13 @@ class TestFormatContextPrompt:
     def test_subagent_filtering(self):
         """Test that subagent mode filters out non-allowed files."""
         files = [
-            ContextFile(name="AGENT.md", path="/AGENT.md", content="# Agent"),
+            ContextFile(name="AGENTS.md", path="/AGENTS.md", content="# Agents"),
             ContextFile(name="SOUL.md", path="/SOUL.md", content="# Soul"),
-            ContextFile(name="CLAUDE.md", path="/CLAUDE.md", content="# Claude"),
         ]
         result = format_context_prompt(files, is_subagent=True)
 
-        assert "### AGENT.md" in result
+        assert "### AGENTS.md" in result
         assert "SOUL.md" not in result
-        assert "CLAUDE.md" not in result
 
     def test_subagent_all_filtered(self):
         """Test subagent mode when all files are filtered out."""
@@ -303,9 +283,6 @@ class TestFormatContextPrompt:
         assert "### SOUL.md" in result
 
 
-# --- Unit Tests: ContextToolset ---
-
-
 class TestContextToolset:
     """Tests for ContextToolset class."""
 
@@ -326,31 +303,33 @@ class TestContextToolset:
         ctx = _make_ctx(backend)
 
         toolset = ContextToolset(context_files=["/DEEP.md"])
-        result = toolset.get_instructions(ctx)
+        result = await toolset.get_instructions(ctx)
 
         assert result is not None
-        assert "## Project Context" in result
-        assert "### DEEP.md" in result
-        assert "# Project Rules" in result
+        joined = "\n\n".join(result)
+        assert "## Project Context" in joined
+        assert "### DEEP.md" in joined
+        assert "# Project Rules" in joined
 
     async def test_get_instructions_discovery(self):
         """Test get_instructions with auto-discovery."""
         backend = StateBackend()
-        backend.write("/AGENT.md", "# Agent instructions")
+        backend.write("/AGENTS.md", "# Agent instructions")
         ctx = _make_ctx(backend)
 
         toolset = ContextToolset(context_discovery=True)
-        result = toolset.get_instructions(ctx)
+        result = await toolset.get_instructions(ctx)
 
         assert result is not None
-        assert "### AGENT.md" in result
+        joined = "\n\n".join(result)
+        assert "### AGENTS.md" in joined
 
     async def test_get_instructions_no_config(self):
         """Test get_instructions with no files or discovery returns None."""
         ctx = _make_ctx()
 
         toolset = ContextToolset()
-        result = toolset.get_instructions(ctx)
+        result = await toolset.get_instructions(ctx)
         assert result is None
 
     async def test_get_instructions_missing_files(self):
@@ -358,25 +337,26 @@ class TestContextToolset:
         ctx = _make_ctx()
 
         toolset = ContextToolset(context_files=["/MISSING.md"])
-        result = toolset.get_instructions(ctx)
+        result = await toolset.get_instructions(ctx)
         assert result is None
 
     async def test_get_instructions_subagent(self):
         """Test get_instructions with is_subagent=True filters files."""
         backend = StateBackend()
-        backend.write("/AGENT.md", "# Agent")
+        backend.write("/AGENTS.md", "# Agents")
         backend.write("/SOUL.md", "# Soul")
         ctx = _make_ctx(backend)
 
         toolset = ContextToolset(
-            context_files=["/AGENT.md", "/SOUL.md"],
+            context_files=["/AGENTS.md", "/SOUL.md"],
             is_subagent=True,
         )
-        result = toolset.get_instructions(ctx)
+        result = await toolset.get_instructions(ctx)
 
         assert result is not None
-        assert "### AGENT.md" in result
-        assert "SOUL.md" not in result
+        joined = "\n\n".join(result)
+        assert "### AGENTS.md" in joined
+        assert "SOUL.md" not in joined
 
     async def test_get_instructions_subagent_all_filtered(self):
         """Test subagent with only non-allowed files returns None."""
@@ -388,7 +368,7 @@ class TestContextToolset:
             context_files=["/SOUL.md"],
             is_subagent=True,
         )
-        result = toolset.get_instructions(ctx)
+        result = await toolset.get_instructions(ctx)
         assert result is None
 
     async def test_get_instructions_custom_max_chars(self):
@@ -398,21 +378,19 @@ class TestContextToolset:
         ctx = _make_ctx(backend)
 
         toolset = ContextToolset(context_files=["/DEEP.md"], max_chars=1000)
-        result = toolset.get_instructions(ctx)
+        result = await toolset.get_instructions(ctx)
 
         assert result is not None
-        assert "chars truncated" in result
+        joined = "\n\n".join(result)
+        assert "chars truncated" in joined
 
     async def test_get_instructions_discovery_empty_backend(self):
         """Test discovery on empty backend returns None."""
         ctx = _make_ctx()
 
         toolset = ContextToolset(context_discovery=True)
-        result = toolset.get_instructions(ctx)
+        result = await toolset.get_instructions(ctx)
         assert result is None
-
-
-# --- Integration Tests: create_deep_agent ---
 
 
 class TestCreateDeepAgentContext:
@@ -452,9 +430,6 @@ class TestCreateDeepAgentContext:
             output_type=Result,
         )
         assert agent is not None
-
-
-# --- Per-Subagent Context Tests ---
 
 
 class TestPerSubagentContext:
@@ -516,14 +491,14 @@ class TestPerSubagentContext:
 
         create_deep_agent(model=TEST_MODEL, subagents=subagents)
 
-        # Should have both existing toolset + ContextToolset
-        assert len(config["toolsets"]) == 2
+        # Should have existing toolset + ContextToolset + AgentMemoryToolset
         toolset_types = [type(t).__name__ for t in config["toolsets"]]
         assert "FunctionToolset" in toolset_types
         assert "ContextToolset" in toolset_types
+        assert len(config["toolsets"]) >= 2
 
-    def test_per_subagent_no_context_files_no_injection(self):
-        """Test that configs without context_files are not modified."""
+    def test_per_subagent_no_context_files_no_context_injection(self):
+        """Test that configs without context_files don't get ContextToolset."""
         from pydantic_deep.types import SubAgentConfig
 
         config = SubAgentConfig(
@@ -535,8 +510,10 @@ class TestPerSubagentContext:
 
         create_deep_agent(model=TEST_MODEL, subagents=subagents)
 
-        # config should NOT have toolsets added
-        assert "toolsets" not in config
+        # config should NOT have ContextToolset added
+        if "toolsets" in config:
+            toolset_types = [type(t).__name__ for t in config["toolsets"]]
+            assert "ContextToolset" not in toolset_types
 
     def test_per_subagent_context_not_filtered(self):
         """Test that per-subagent context is NOT filtered by allowlist.
@@ -551,21 +528,17 @@ class TestPerSubagentContext:
         assert config_toolset._is_subagent is False
 
 
-# --- Constants Tests ---
-
-
 class TestContextConstants:
     """Tests for context module constants."""
 
     def test_default_filenames(self):
         """Test DEFAULT_CONTEXT_FILENAMES contains expected values."""
-        assert DEFAULT_CONTEXT_FILENAMES == ["AGENT.md"]
+        assert DEFAULT_CONTEXT_FILENAMES == ["AGENTS.md", "SOUL.md"]
 
     def test_subagent_allowlist(self):
         """Test SUBAGENT_CONTEXT_ALLOWLIST."""
-        assert frozenset({"AGENT.md"}) == SUBAGENT_CONTEXT_ALLOWLIST
+        assert frozenset({"AGENTS.md"}) == SUBAGENT_CONTEXT_ALLOWLIST
         assert "SOUL.md" not in SUBAGENT_CONTEXT_ALLOWLIST
-        assert "CLAUDE.md" not in SUBAGENT_CONTEXT_ALLOWLIST
 
     def test_default_max_chars(self):
         """Test DEFAULT_MAX_CONTEXT_CHARS is 20K."""

@@ -21,10 +21,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Repository Layout
 
-- `pydantic_deep/` — Core library (agent, deps, toolsets, middleware, processors)
-- `cli/` — CLI application (terminal AI assistant)
-- `apps/swebench_agent/` — SWE-bench evaluation agent
-- `apps/harbor_agent/` — Harbor benchmark agent
+- `pydantic_deep/` — Core library (agent, deps, toolsets, capabilities, processors)
+- `apps/cli/` — CLI application (terminal AI assistant)
 - `apps/deepresearch/` — Full-featured research reference app
 - `tests/` — Unit tests
 - `docs/` — Documentation source (MkDocs)
@@ -35,6 +33,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `create_deep_agent()`: Main factory function for creating configured agents
 - `create_default_deps()`: Helper for creating DeepAgentDeps with sensible defaults
 - Built on top of pydantic-ai's Agent class
+- Requires pydantic-ai>=1.71.0
 
 **Dependencies (`pydantic_deep/deps.py`)**
 - `DeepAgentDeps`: Dataclass holding agent dependencies (backend, working_dir, skills_dirs, subagents)
@@ -52,6 +51,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `create_console_toolset`: File operations (ls, read, write, edit, glob, grep, execute) - from [pydantic-ai-backend](https://github.com/vstorm-co/pydantic-ai-backend)
 - `SubAgentToolset`: Spawn and delegate to subagents - from [subagents-pydantic-ai](https://github.com/vstorm-co/subagents-pydantic-ai)
 - `SkillsToolset`: Load and use skill definitions from markdown files
+- Web search and fetch use pydantic-ai built-in `WebSearch()` and `WebFetch()` tools
 
 **Subagents (from [subagents-pydantic-ai](https://github.com/vstorm-co/subagents-pydantic-ai))**
 - `create_subagent_toolset()`: Factory function to create subagent toolsets
@@ -78,7 +78,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `CheckpointStore`: Protocol for storage backends (save, get, list_all, remove, etc.)
 - `InMemoryCheckpointStore`: Default in-memory store
 - `FileCheckpointStore`: Persistent JSON file store
-- `CheckpointMiddleware`: Auto-checkpoint via middleware hooks (every_tool, every_turn, manual_only)
+- `CheckpointMiddleware`: Auto-checkpoint capability extending `AbstractCapability` (every_tool, every_turn, manual_only)
 - `CheckpointToolset`: Agent tools (save_checkpoint, list_checkpoints, rewind_to)
 - `RewindRequested`: Exception for app-level rewind (propagates out of agent.run())
 - `fork_from_checkpoint()`: Utility for session forking
@@ -96,18 +96,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Output Styles (`pydantic_deep/styles.py`)**
 - `OutputStyle`: Dataclass (name, description, content)
 - `BUILTIN_STYLES`: Dict of 4 built-in styles (concise, explanatory, formal, conversational)
-- `resolve_style()`: Resolve style name → OutputStyle (built-ins → styles_dir → error)
+- `resolve_style()`: Resolve style name -> OutputStyle (built-ins -> styles_dir -> error)
 - `discover_styles()`: Discover .md style files from a directory
 - `load_style_from_file()`: Load a single style with frontmatter parsing
 - `format_style_prompt()`: Format for system prompt injection
 
-**Hooks (`pydantic_deep/middleware/hooks.py`)**
+**Hooks (`pydantic_deep/capabilities/hooks.py`)**
 - `HookEvent`: Enum (PRE_TOOL_USE, POST_TOOL_USE, POST_TOOL_USE_FAILURE)
 - `Hook`: Definition — event, command/handler, matcher regex, timeout, background
 - `HookInput`: Data passed to hooks (event, tool_name, tool_input, tool_result, tool_error)
 - `HookResult`: Result from hook (allow, reason, modified_args, modified_result)
-- `HooksMiddleware`: AgentMiddleware that dispatches hooks on tool events
+- `HooksCapability`: Capability (extends `AbstractCapability`) that dispatches hooks on tool events
+- Hook methods: `before_tool_execute`, `after_tool_execute`, `on_tool_execute_error`
 - `EXIT_ALLOW = 0`, `EXIT_DENY = 2`: Claude Code exit code conventions
+
+**Capabilities (`pydantic_deep/capabilities/`)**
+- `SkillsCapability`: Injects skills system prompt and manages skill discovery
+- `ContextFilesCapability`: Auto-discovers and injects context files (DEEP.md, AGENTS.md, CLAUDE.md, SOUL.md)
+- `MemoryCapability`: Persistent memory management with read/write/update tools
+- `TeamCapability`: Agent team coordination and management
+- `PlanCapability`: Planning mode with ask_user + save_plan tools
+- All extend pydantic-ai's `AbstractCapability`
 
 **Persistent Memory (`pydantic_deep/toolsets/memory.py`)**
 - `MemoryFile`: Loaded memory (agent_name, path, content)
@@ -131,10 +140,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `create_content_preview()`: Head/tail preview with truncation marker
 - Default threshold: 20,000 tokens (80,000 chars)
 - Uses runtime `ctx.deps.backend` for writing
+- Supports `on_eviction` callback for notification when content is evicted
 
-**Cost Tracking (from pydantic-ai-middleware)**
+**Cost Tracking (from pydantic_ai_shields)**
 - Enabled by default via `cost_tracking=True`
-- `CostTrackingMiddleware`: Tracks token usage and USD costs per run and cumulative
+- `CostTracking`: Capability that tracks token usage and USD costs per run and cumulative
 - `CostInfo`: Per-run and cumulative token/cost data
 - `BudgetExceededError`: Raised when cumulative cost exceeds `cost_budget_usd`
 - Pricing from `genai-prices` package
@@ -153,16 +163,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Context Manager (from summarization-pydantic-ai)**
 - Enabled by default via `context_manager=True`
-- `ContextManagerMiddleware`: Dual-protocol — history processor + AgentMiddleware
+- `ContextManagerCapability`: Capability extending `AbstractCapability` — handles history processing and token tracking
 - Token tracking with `on_context_update` callback (percentage, current, max)
 - Auto-compression when approaching token budget (compress_threshold=0.9)
-- `create_context_manager_middleware()`: Factory function
 
-**Middleware Integration (from pydantic-ai-middleware)**
-- `middleware` param: List of AgentMiddleware instances
-- `permission_handler`: Async callback for ToolDecision.ASK
-- `middleware_context`: Shared state between hooks
-- Automatically wraps Agent in MiddlewareAgent when any middleware is used
+**Capabilities Integration**
+- `capabilities` param on `create_deep_agent()`: List of `AbstractCapability` instances
+- Capabilities hook into the agent lifecycle via pydantic-ai's native Capabilities API
+- Tool event hooks: `before_tool_execute`, `after_tool_execute`, `on_tool_execute_error`
+- No wrapping needed — capabilities are registered directly on the Agent
 
 **`share_todos` on DeepAgentDeps**
 - `DeepAgentDeps.share_todos: bool = False`
@@ -197,8 +206,25 @@ from pydantic_ai_backends import create_console_toolset
 from pydantic_ai_todo import create_todo_toolset
 
 agent = create_deep_agent(
-    model="openai:gpt-4.1",
+    model="anthropic:claude-sonnet-4-6",
     toolsets=[create_todo_toolset(), create_console_toolset()],
+)
+```
+
+**Capabilities Registration**
+```python
+from pydantic_deep import create_deep_agent
+from pydantic_ai_shields import CostTracking
+from pydantic_deep.capabilities.hooks import HooksCapability, Hook, HookEvent
+
+agent = create_deep_agent(
+    model="anthropic:claude-sonnet-4-6",
+    capabilities=[
+        CostTracking(cost_budget_usd=5.0),
+        HooksCapability(hooks=[
+            Hook(event=HookEvent.PRE_TOOL_USE, handler=my_handler),
+        ]),
+    ],
 )
 ```
 
@@ -268,6 +294,7 @@ agent = create_deep_agent(history_processors=[processor])
 - **Async-First**: Most operations are async, use `await` appropriately
 - **Type Safety**: Full type annotations with Pyright strict mode
 - **Sandbox Support**: DockerSandbox requires `docker` optional dependency
+- **Minimum pydantic-ai version**: Requires pydantic-ai>=1.71.0 for native Capabilities API
 
 ## Documentation Development
 

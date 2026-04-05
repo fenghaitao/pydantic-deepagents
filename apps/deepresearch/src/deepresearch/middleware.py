@@ -1,7 +1,7 @@
-"""Audit and permission middleware for DeepResearch.
+"""Audit and permission capabilities for DeepResearch.
 
-- AuditMiddleware: tracks tool usage stats (call count, duration, breakdown)
-- PermissionMiddleware: blocks access to sensitive paths
+- AuditCapability: tracks tool usage stats (call count, duration, breakdown)
+- PermissionCapability: blocks access to sensitive paths via ModelRetry
 """
 
 from __future__ import annotations
@@ -13,7 +13,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
 
-from pydantic_ai_middleware import AgentMiddleware, ToolDecision, ToolPermissionResult
+from pydantic_ai import ModelRetry
+from pydantic_ai.capabilities import AbstractCapability
 
 from pydantic_deep.deps import DeepAgentDeps
 
@@ -30,12 +31,12 @@ class ToolUsageStats:
     tools_used: dict[str, int] = field(default_factory=lambda: defaultdict(int))
 
 
-class AuditMiddleware(AgentMiddleware[DeepAgentDeps]):
-    """Middleware that tracks tool usage for frontend display."""
+@dataclass
+class AuditCapability(AbstractCapability[DeepAgentDeps]):
+    """Capability that tracks tool usage for frontend display."""
 
-    def __init__(self) -> None:
-        self.stats = ToolUsageStats()
-        self._tool_start_times: dict[str, float] = {}
+    stats: ToolUsageStats = field(default_factory=ToolUsageStats)
+    _tool_start_times: dict[str, float] = field(default_factory=dict, repr=False)
 
     def get_stats(self) -> ToolUsageStats:
         return self.stats
@@ -44,24 +45,26 @@ class AuditMiddleware(AgentMiddleware[DeepAgentDeps]):
         self.stats = ToolUsageStats()
         self._tool_start_times.clear()
 
-    async def before_tool_call(
+    async def before_tool_execute(
         self,
-        tool_name: str,
-        tool_args: dict[str, Any],
-        deps: DeepAgentDeps | None = None,
-        ctx: Any = None,
-    ) -> dict[str, Any]:
-        self._tool_start_times[tool_name] = time.monotonic()
-        return tool_args
+        ctx: Any,
+        *,
+        call: Any,
+        tool_def: Any,
+        args: Any,
+    ) -> None:
+        self._tool_start_times[tool_def.name] = time.monotonic()
 
-    async def after_tool_call(
+    async def after_tool_execute(
         self,
-        tool_name: str,
-        tool_args: dict[str, Any],
+        ctx: Any,
+        *,
+        call: Any,
+        tool_def: Any,
+        args: Any,
         result: Any,
-        deps: DeepAgentDeps | None = None,
-        ctx: Any = None,
     ) -> Any:
+        tool_name = tool_def.name
         self.stats.call_count += 1
         self.stats.last_tool = tool_name
         self.stats.tools_used[tool_name] += 1
@@ -92,30 +95,32 @@ BLOCKED_PATH_PATTERNS = [
 FILE_TOOLS = {"read_file", "write_file", "edit_file", "glob", "grep"}
 
 
-class PermissionMiddleware(AgentMiddleware[DeepAgentDeps]):
-    """Middleware that blocks access to sensitive paths."""
+@dataclass
+class PermissionCapability(AbstractCapability[DeepAgentDeps]):
+    """Capability that blocks access to sensitive paths via ModelRetry."""
 
-    async def before_tool_call(
+    async def before_tool_execute(
         self,
-        tool_name: str,
-        tool_args: dict[str, Any],
-        deps: DeepAgentDeps | None = None,
-        ctx: Any = None,
-    ) -> dict[str, Any] | ToolPermissionResult:
+        ctx: Any,
+        *,
+        call: Any,
+        tool_def: Any,
+        args: Any,
+    ) -> None:
+        tool_name = tool_def.name
         if tool_name not in FILE_TOOLS:
-            return tool_args
+            return
 
+        tool_args = args if isinstance(args, dict) else {}
         path = tool_args.get("path", "") or tool_args.get("pattern", "")
 
         for pattern in BLOCKED_PATH_PATTERNS:
             if re.search(pattern, str(path)):
                 logger.warning(
-                    f"PermissionMiddleware BLOCKED: {tool_name}(path={path}) "
+                    f"PermissionCapability BLOCKED: {tool_name}(path={path}) "
                     f"matches pattern '{pattern}'"
                 )
-                return ToolPermissionResult(
-                    decision=ToolDecision.DENY,
-                    reason=f"Access denied: path matches blocked pattern '{pattern}'",
+                raise ModelRetry(
+                    f"Access denied: path matches blocked pattern '{pattern}'. "
+                    f"Try a different path."
                 )
-
-        return tool_args

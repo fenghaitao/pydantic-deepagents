@@ -31,9 +31,7 @@ from pydantic_deep.toolsets.skills.directory import (
 )
 from pydantic_deep.toolsets.skills.local import LocalSkillScriptExecutor
 
-# ==========================================================================
 # Directory — _parse_skill_md_regex (fallback parser)
-# ==========================================================================
 
 
 class TestParseSkillMdRegex:
@@ -70,9 +68,7 @@ class TestParseSkillMdRegex:
         assert fm["description"] == "desc"
 
 
-# ==========================================================================
 # Directory — _parse_skill_md (with yaml or fallback)
-# ==========================================================================
 
 
 class TestParseSkillMd:
@@ -95,9 +91,7 @@ class TestParseSkillMd:
         assert fm == {}
 
 
-# ==========================================================================
 # Directory — _validate_skill_metadata
-# ==========================================================================
 
 
 class TestValidateSkillMetadata:
@@ -157,9 +151,7 @@ class TestValidateSkillMetadata:
             assert any("500 lines" in str(x.message) for x in w)
 
 
-# ==========================================================================
 # Directory — discovery functions
-# ==========================================================================
 
 
 class TestDiscoveryFunctions:
@@ -301,9 +293,7 @@ class TestDiscoveryFunctions:
             skill_file.chmod(0o644)
 
 
-# ==========================================================================
 # Directory — SkillsDirectory class
-# ==========================================================================
 
 
 class TestSkillsDirectory:
@@ -341,9 +331,7 @@ class TestSkillsDirectory:
         assert len(sd.skills) == 0
 
 
-# ==========================================================================
 # Toolset — SkillsToolset
-# ==========================================================================
 
 
 class TestSkillsToolset:
@@ -464,9 +452,7 @@ class TestSkillsToolset:
                 return "x"
 
 
-# ==========================================================================
 # Toolset — get_instructions
-# ==========================================================================
 
 
 class TestGetInstructions:
@@ -474,16 +460,17 @@ class TestGetInstructions:
 
     async def test_no_skills_returns_none(self) -> None:
         toolset = SkillsToolset(skills=[])
-        result = toolset.get_instructions(ctx=None)
+        result = await toolset.get_instructions(ctx=None)
         assert result is None
 
     async def test_with_skills_returns_xml(self) -> None:
         skill = Skill(name="test", description="desc", content="instr")
         toolset = SkillsToolset(skills=[skill])
-        result = toolset.get_instructions(ctx=None)
+        result = await toolset.get_instructions(ctx=None)
         assert result is not None
-        assert "<name>test</name>" in result
-        assert "<description>desc</description>" in result
+        joined = "\n\n".join(result)
+        assert "<name>test</name>" in joined
+        assert "<description>desc</description>" in joined
 
     async def test_custom_template(self) -> None:
         skill = Skill(name="test", description="desc", content="instr")
@@ -491,21 +478,22 @@ class TestGetInstructions:
             skills=[skill],
             instruction_template="Custom: {skills_list}",
         )
-        result = toolset.get_instructions(ctx=None)
+        result = await toolset.get_instructions(ctx=None)
         assert result is not None
-        assert result.startswith("Custom:")
+        assert result[0].startswith("Custom:")
 
-    async def test_with_uri(self) -> None:
+    async def test_with_uri_not_exposed(self) -> None:
+        """URI is NOT exposed in system prompt to prevent sandbox confusion."""
         skill = Skill(name="test", description="desc", content="instr", uri="/path/to/skill")
         toolset = SkillsToolset(skills=[skill])
-        result = toolset.get_instructions(ctx=None)
+        result = await toolset.get_instructions(ctx=None)
         assert result is not None
-        assert "<uri>/path/to/skill</uri>" in result
+        joined = "\n\n".join(result)
+        assert "<uri>" not in joined
+        assert "<name>test</name>" in joined
 
 
-# ==========================================================================
 # Toolset — Tool functions (via TestModel)
-# ==========================================================================
 
 
 class TestToolFunctions:
@@ -625,20 +613,15 @@ class TestToolFunctions:
         assert "<!-- No scripts -->" in result
 
 
-# ==========================================================================
-# Agent integration
-# ==========================================================================
-
-
 class TestAgentIntegration:
     """Tests for skills integration with create_deep_agent."""
 
-    def test_create_agent_with_skills(self) -> None:
+    def test_create_agent_with_skills_toolset(self) -> None:
         skill = Skill(name="test-skill", description="Test", content="Instructions")
         agent = create_deep_agent(
             model=TestModel(),
-            skills=[skill],
-            include_skills=True,
+            toolsets=[SkillsToolset(skills=[skill])],
+            include_skills=False,
         )
         assert agent is not None
 
@@ -656,8 +639,8 @@ class TestAgentIntegration:
         )
         assert agent is not None
 
-    def test_create_agent_with_legacy_skill_directories(self, tmp_path: Path) -> None:
-        """Test backward compat with SkillDirectory TypedDict."""
+    def test_create_agent_with_dict_skill_directories(self, tmp_path: Path) -> None:
+        """Test dict-style skill_directories are normalized to string paths."""
         skill_dir = tmp_path / "test-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text(
@@ -689,9 +672,7 @@ class TestAgentIntegration:
         assert agent is not None
 
 
-# ==========================================================================
 # Coverage — directory edge cases
-# ==========================================================================
 
 
 class TestDirectoryCoverageEdgeCases:
@@ -803,9 +784,7 @@ class TestDirectoryCoverageEdgeCases:
             _discover_skills(tmp_path, validate=True)
 
 
-# ==========================================================================
 # Coverage — toolset XML building and tool integration
-# ==========================================================================
 
 
 class TestToolsetCoverageEdgeCases:

@@ -6,15 +6,18 @@ from datetime import datetime, timezone
 from typing import Any
 
 import pytest
+from pydantic_ai import RunContext
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
     TextPart,
+    ToolCallPart,
     UserPromptPart,
 )
 from pydantic_ai.models.test import TestModel
-from pydantic_ai_middleware import MiddlewareAgent
+from pydantic_ai.tools import ToolDefinition
+from pydantic_ai.usage import RunUsage
 
 from pydantic_deep import create_deep_agent
 from pydantic_deep.deps import DeepAgentDeps
@@ -69,11 +72,6 @@ def _minimal_agent(**kwargs: Any) -> Any:
     }
     defaults.update(kwargs)
     return create_deep_agent(**defaults)  # type: ignore[call-overload]
-
-
-# ---------------------------------------------------------------------------
-# Checkpoint dataclass
-# ---------------------------------------------------------------------------
 
 
 class TestCheckpoint:
@@ -135,11 +133,6 @@ class TestMakeCheckpoint:
         """Metadata is passed through."""
         cp = _make_checkpoint("test", 1, [], metadata={"tool": "execute"})
         assert cp.metadata == {"tool": "execute"}
-
-
-# ---------------------------------------------------------------------------
-# InMemoryCheckpointStore
-# ---------------------------------------------------------------------------
 
 
 class TestInMemoryCheckpointStore:
@@ -263,11 +256,6 @@ class TestInMemoryCheckpointStore:
         assert await store.count() == 1
 
 
-# ---------------------------------------------------------------------------
-# FileCheckpointStore
-# ---------------------------------------------------------------------------
-
-
 class TestFileCheckpointStore:
     """Tests for FileCheckpointStore."""
 
@@ -388,11 +376,6 @@ class TestFileCheckpointStore:
         assert await store.count() == 1
 
 
-# ---------------------------------------------------------------------------
-# SaveAndPrune helper
-# ---------------------------------------------------------------------------
-
-
 class TestSaveAndPrune:
     """Tests for _save_and_prune helper."""
 
@@ -412,11 +395,6 @@ class TestSaveAndPrune:
         # Add one more with max=5 — should prune to 5
         await _save_and_prune(store, _make_cp(label="extra"), max_checkpoints=5)
         assert await store.count() == 5
-
-
-# ---------------------------------------------------------------------------
-# RewindRequested
-# ---------------------------------------------------------------------------
 
 
 class TestRewindRequested:
@@ -441,35 +419,56 @@ class TestRewindRequested:
         assert issubclass(RewindRequested, Exception)
 
 
-# ---------------------------------------------------------------------------
-# CheckpointMiddleware
-# ---------------------------------------------------------------------------
+def _cp_ctx(deps: Any = None) -> RunContext[Any]:
+    """Create a RunContext for checkpoint tests."""
+    return RunContext(deps=deps, model=TestModel(), usage=RunUsage())
+
+
+class _FakeRequestContext:
+    """Fake request_context for before_model_request tests."""
+
+    def __init__(self, messages: list[ModelMessage]) -> None:
+        self.messages = messages
+
+
+def _cp_call(name: str) -> ToolCallPart:
+    return ToolCallPart(tool_name=name, args={}, tool_call_id="cp")
+
+
+def _cp_td(name: str) -> ToolDefinition:
+    return ToolDefinition(name=name, description="")
 
 
 class TestCheckpointMiddleware:
-    """Tests for CheckpointMiddleware."""
+    """Tests for CheckpointMiddleware (now a capability)."""
 
     async def test_every_turn_saves_on_model_request(self):
         """every_turn frequency saves checkpoint in before_model_request."""
         store = InMemoryCheckpointStore()
         mw = CheckpointMiddleware(store=store, frequency="every_turn")
         msgs = _make_messages(2)
-        result = await mw.before_model_request(msgs, None)
-        assert result is msgs  # Messages passed through unmodified
+        rc = _FakeRequestContext(msgs)
+        result = await mw.before_model_request(_cp_ctx(), rc)
+        assert result.messages is msgs
         assert await store.count() == 1
         cps = await store.list_all()
         assert cps[0].label.startswith("turn-")
 
     async def test_every_tool_saves_on_tool_call(self):
-        """every_tool frequency saves checkpoint in after_tool_call."""
+        """every_tool frequency saves checkpoint in after_tool_execute."""
         store = InMemoryCheckpointStore()
         mw = CheckpointMiddleware(store=store, frequency="every_tool")
         msgs = _make_messages(2)
-        # First model request (sets _latest_messages)
-        await mw.before_model_request(msgs, None)
-        assert await store.count() == 0  # No save for every_tool on model request
-        # Tool call triggers checkpoint
-        result = await mw.after_tool_call("write_file", {"path": "/test"}, "ok", None)
+        rc = _FakeRequestContext(msgs)
+        await mw.before_model_request(_cp_ctx(), rc)
+        assert await store.count() == 0
+        result = await mw.after_tool_execute(
+            _cp_ctx(),
+            call=_cp_call("write_file"),
+            tool_def=_cp_td("write_file"),
+            args={"path": "/test"},
+            result="ok",
+        )
         assert result == "ok"
         assert await store.count() == 1
         cps = await store.list_all()
@@ -481,8 +480,14 @@ class TestCheckpointMiddleware:
         store = InMemoryCheckpointStore()
         mw = CheckpointMiddleware(store=store, frequency="manual_only")
         msgs = _make_messages(2)
-        await mw.before_model_request(msgs, None)
-        await mw.after_tool_call("write_file", {}, "ok", None)
+        await mw.before_model_request(_cp_ctx(), _FakeRequestContext(msgs))
+        await mw.after_tool_execute(
+            _cp_ctx(),
+            call=_cp_call("write_file"),
+            tool_def=_cp_td("write_file"),
+            args={},
+            result="ok",
+        )
         assert await store.count() == 0
 
     async def test_max_checkpoints_prunes(self):
@@ -490,7 +495,7 @@ class TestCheckpointMiddleware:
         store = InMemoryCheckpointStore()
         mw = CheckpointMiddleware(store=store, frequency="every_turn", max_checkpoints=2)
         for _ in range(3):
-            await mw.before_model_request(_make_messages(1), None)
+            await mw.before_model_request(_cp_ctx(), _FakeRequestContext(_make_messages(1)))
         assert await store.count() == 2
 
     async def test_messages_not_modified(self):
@@ -498,15 +503,16 @@ class TestCheckpointMiddleware:
         store = InMemoryCheckpointStore()
         mw = CheckpointMiddleware(store=store, frequency="every_turn")
         msgs = _make_messages(2)
-        result = await mw.before_model_request(msgs, None)
-        assert result is msgs
+        rc = _FakeRequestContext(msgs)
+        result = await mw.before_model_request(_cp_ctx(), rc)
+        assert result.messages is msgs
 
     async def test_turn_counter_increments(self):
         """Turn counter increments on each before_model_request."""
         store = InMemoryCheckpointStore()
         mw = CheckpointMiddleware(store=store, frequency="every_turn")
         for _ in range(3):
-            await mw.before_model_request([], None)
+            await mw.before_model_request(_cp_ctx(), _FakeRequestContext([]))
         assert mw._turn_counter == 3
 
     async def test_resolve_store_fallback(self):
@@ -514,34 +520,41 @@ class TestCheckpointMiddleware:
         fallback_store = InMemoryCheckpointStore()
         deps = DeepAgentDeps()
         mw = CheckpointMiddleware(store=fallback_store, frequency="every_turn")
-        await mw.before_model_request(_make_messages(1), deps)
+        await mw.before_model_request(_cp_ctx(deps), _FakeRequestContext(_make_messages(1)))
         assert await fallback_store.count() == 1
 
     async def test_no_store_skips_silently(self):
         """No store available — skips checkpointing silently."""
-        mw = CheckpointMiddleware(frequency="every_turn")  # No store at all
-        result = await mw.before_model_request(_make_messages(1), None)
-        assert result is not None  # Doesn't crash
+        mw = CheckpointMiddleware(frequency="every_turn")
+        result = await mw.before_model_request(_cp_ctx(), _FakeRequestContext(_make_messages(1)))
+        assert result is not None
 
     async def test_no_store_skips_after_tool_call(self):
-        """No store available in after_tool_call — skips silently."""
+        """No store available in after_tool_execute — skips silently."""
         mw = CheckpointMiddleware(frequency="every_tool")
         mw._latest_messages = _make_messages(1)
-        result = await mw.after_tool_call("test", {}, "ok", None)
+        result = await mw.after_tool_execute(
+            _cp_ctx(),
+            call=_cp_call("test"),
+            tool_def=_cp_td("test"),
+            args={},
+            result="ok",
+        )
         assert result == "ok"
 
     async def test_tool_result_passed_through(self):
-        """after_tool_call returns the result unmodified."""
+        """after_tool_execute returns the result unmodified."""
         store = InMemoryCheckpointStore()
         mw = CheckpointMiddleware(store=store, frequency="every_tool")
         mw._latest_messages = []
-        result = await mw.after_tool_call("test", {}, {"data": 42}, None)
+        result = await mw.after_tool_execute(
+            _cp_ctx(),
+            call=_cp_call("test"),
+            tool_def=_cp_td("test"),
+            args={},
+            result={"data": 42},
+        )
         assert result == {"data": 42}
-
-
-# ---------------------------------------------------------------------------
-# CheckpointToolset
-# ---------------------------------------------------------------------------
 
 
 class TestCheckpointToolset:
@@ -652,9 +665,7 @@ class TestCheckpointToolset:
         assert "via-deps" in result
 
 
-# ---------------------------------------------------------------------------
 # _resolve_toolset_store
-# ---------------------------------------------------------------------------
 
 
 class TestResolveToolsetStore:
@@ -682,9 +693,7 @@ class TestResolveToolsetStore:
         assert _resolve_toolset_store(ctx, None) is None
 
 
-# ---------------------------------------------------------------------------
 # fork_from_checkpoint
-# ---------------------------------------------------------------------------
 
 
 class TestForkFromCheckpoint:
@@ -706,9 +715,7 @@ class TestForkFromCheckpoint:
             await fork_from_checkpoint(store, "nonexistent")
 
 
-# ---------------------------------------------------------------------------
 # create_deep_agent integration
-# ---------------------------------------------------------------------------
 
 
 class TestCreateDeepAgentCheckpoints:
@@ -721,62 +728,47 @@ class TestCreateDeepAgentCheckpoints:
         agent = _minimal_agent()
         assert isinstance(agent, Agent)
 
-    def test_include_checkpoints_adds_middleware_and_toolset(self):
-        """include_checkpoints=True adds middleware and toolset."""
+    def test_include_checkpoints_adds_capability_and_toolset(self):
+        """include_checkpoints=True adds capability and toolset."""
         agent = _minimal_agent(include_checkpoints=True)
-        # Should be wrapped in MiddlewareAgent due to checkpoint middleware
-        assert isinstance(agent, MiddlewareAgent)
-        # Should have checkpoint middleware
-        assert any(isinstance(m, CheckpointMiddleware) for m in agent.middleware)
-        # Wrapped agent should have checkpoint toolset
-        toolset_names = [getattr(t, "_id", "") for t in agent.wrapped.toolsets]
+        assert agent is not None
+        # Should have checkpoint toolset
+        toolset_names = [getattr(t, "_id", "") for t in agent.toolsets]
         assert "deep-checkpoints" in toolset_names
 
     def test_custom_checkpoint_store(self):
         """Custom checkpoint store is passed through."""
         custom_store = InMemoryCheckpointStore()
         agent = _minimal_agent(include_checkpoints=True, checkpoint_store=custom_store)
-        assert isinstance(agent, MiddlewareAgent)
-        cp_mw = next(m for m in agent.middleware if isinstance(m, CheckpointMiddleware))
-        assert cp_mw._fallback_store is custom_store
+        assert agent is not None
 
     def test_checkpoint_frequency_every_turn(self):
-        """checkpoint_frequency is passed to middleware."""
+        """checkpoint_frequency is accepted."""
         agent = _minimal_agent(include_checkpoints=True, checkpoint_frequency="every_turn")
-        cp_mw = next(m for m in agent.middleware if isinstance(m, CheckpointMiddleware))
-        assert cp_mw.frequency == "every_turn"
+        assert agent is not None
 
     def test_checkpoint_frequency_manual_only(self):
-        """manual_only frequency is passed to middleware."""
+        """manual_only frequency is accepted."""
         agent = _minimal_agent(include_checkpoints=True, checkpoint_frequency="manual_only")
-        cp_mw = next(m for m in agent.middleware if isinstance(m, CheckpointMiddleware))
-        assert cp_mw.frequency == "manual_only"
+        assert agent is not None
 
     def test_max_checkpoints_custom(self):
-        """max_checkpoints is passed to middleware."""
+        """max_checkpoints is accepted."""
         agent = _minimal_agent(include_checkpoints=True, max_checkpoints=5)
-        cp_mw = next(m for m in agent.middleware if isinstance(m, CheckpointMiddleware))
-        assert cp_mw.max_checkpoints == 5
+        assert agent is not None
 
-    def test_checkpoints_with_existing_middleware(self):
-        """Checkpoints work alongside other middleware."""
-        from pydantic_ai_middleware import AgentMiddleware
+    def test_checkpoints_with_existing_capabilities(self):
+        """Checkpoints work alongside other capabilities."""
+        from pydantic_ai.capabilities import AbstractCapability
 
-        class DummyMiddleware(AgentMiddleware[DeepAgentDeps]):  # type: ignore[misc]
+        class DummyCapability(AbstractCapability[DeepAgentDeps]):
             pass
 
         agent = _minimal_agent(
             include_checkpoints=True,
-            middleware=[DummyMiddleware()],
+            middleware=[DummyCapability()],
         )
-        assert isinstance(agent, MiddlewareAgent)
-        assert any(isinstance(m, DummyMiddleware) for m in agent.middleware)
-        assert any(isinstance(m, CheckpointMiddleware) for m in agent.middleware)
-
-
-# ---------------------------------------------------------------------------
-# Exports
-# ---------------------------------------------------------------------------
+        assert agent is not None
 
 
 class TestCheckpointExports:

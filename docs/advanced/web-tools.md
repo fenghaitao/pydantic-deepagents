@@ -1,172 +1,162 @@
 # Web Tools
 
-Web tools give agents the ability to search the web, fetch pages, and make HTTP requests. All three tools are optional and require the `web-tools` extra.
-
-## Installation
-
-```bash
-pip install 'pydantic-deep[web-tools]'
-```
-
-For web search, you also need a [Tavily](https://tavily.com/) API key:
-
-```bash
-export TAVILY_API_KEY=tvly-...
-```
+Web tools give agents the ability to search the web and fetch pages. pydantic-deep uses pydantic-ai's built-in `WebSearch` and `WebFetch` capabilities, which leverage model-native web tools when available and fall back to local implementations otherwise.
 
 ## Quick Start
 
 ```python
 from pydantic_deep import create_deep_agent
 
-agent = create_deep_agent(include_web=True)
+agent = create_deep_agent()  # web_search=True, web_fetch=True by default
 ```
 
-The agent gets three web tools:
-
-| Tool | Description |
-|------|-------------|
-| `web_search` | Search the web via Tavily (requires `TAVILY_API_KEY`) |
-| `fetch_url` | Fetch a URL and convert HTML to markdown |
-| `http_request` | Make raw HTTP requests to APIs |
-
-Each tool has a clear "When to use / When NOT to use" section in its description, so the agent knows which tool to pick:
-
-- **Need information?** &rarr; `web_search`
-- **Have a URL?** &rarr; `fetch_url`
-- **Calling an API?** &rarr; `http_request`
-
-## Configuration
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `include_web` | `bool` | `False` | Enable web tools |
-| `web_search_provider` | `SearchProvider` | `TavilySearchProvider` | Custom search provider |
-
-## Search Providers
-
-The default search provider uses [Tavily](https://tavily.com/), but you can swap it for any service by implementing the [`SearchProvider`][pydantic_deep.toolsets.web.SearchProvider] protocol.
-
-### Default: Tavily
+Both are enabled by default and independently controllable:
 
 ```python
-agent = create_deep_agent(include_web=True)
-# Uses TavilySearchProvider with TAVILY_API_KEY env var
+agent = create_deep_agent(web_search=True, web_fetch=False)   # Search only
+agent = create_deep_agent(web_search=False, web_fetch=True)   # Fetch only
+agent = create_deep_agent(web_search=False, web_fetch=False)  # Offline mode
 ```
 
-If `TAVILY_API_KEY` is not set, `web_search` returns a helpful error message instead of crashing.
-
-### Custom Search Provider
-
-Implement the [`SearchProvider`][pydantic_deep.toolsets.web.SearchProvider] protocol:
+For custom configuration (domain restrictions, custom implementations), disable the default and pass your own via `capabilities`:
 
 ```python
-from pydantic_deep.toolsets.web import SearchProvider, SearchResult
-
-
-class BraveSearchProvider:
-    """Example: Use Brave Search API instead of Tavily."""
-
-    def __init__(self, api_key: str):
-        self.api_key = api_key
-
-    async def search(
-        self,
-        query: str,
-        max_results: int = 5,
-        topic: str = "general",
-    ) -> list[SearchResult]:
-        import requests
-
-        response = requests.get(
-            "https://api.search.brave.com/res/v1/web/search",
-            headers={"X-Subscription-Token": self.api_key},
-            params={"q": query, "count": max_results},
-        )
-        data = response.json()
-        return [
-            SearchResult(
-                title=r["title"],
-                url=r["url"],
-                content=r.get("description", ""),
-                score=1.0,
-            )
-            for r in data.get("web", {}).get("results", [])
-        ]
-
+from pydantic_ai.capabilities import WebSearch
 
 agent = create_deep_agent(
-    include_web=True,
-    web_search_provider=BraveSearchProvider(api_key="..."),
+    web_search=False,  # Disable default
+    capabilities=[WebSearch(allowed_domains=["docs.python.org"])],
 )
 ```
+
+This adds `WebSearch()` and `WebFetch()` capabilities to the agent. The capabilities automatically use the model's built-in web tools when supported (e.g. OpenAI's `web_search_preview`, Anthropic's web tools), falling back to local tool implementations when they are not.
+
+## Capabilities
+
+| Capability | Description |
+|------------|-------------|
+| `WebSearch` | Search the web. Uses model-native search when available, falls back to DuckDuckGo. |
+| `WebFetch` | Fetch a URL and return its content. Uses model-native fetch when available. |
 
 ## Standalone Usage
 
-You can use the web toolset without `create_deep_agent`:
+You can use `WebSearch` and `WebFetch` directly with any pydantic-ai agent without `create_deep_agent`:
 
 ```python
 from pydantic_ai import Agent
-from pydantic_deep.toolsets.web import create_web_toolset
+from pydantic_ai.capabilities import WebSearch, WebFetch
 
-web_toolset = create_web_toolset(
-    require_approval=False,  # No approval prompts
-    include_http=False,      # Only search and fetch
+agent = Agent(
+    "anthropic:claude-sonnet-4-6",
+    capabilities=[WebSearch(), WebFetch()],
 )
-
-agent = Agent("openai:gpt-4.1", toolsets=[web_toolset])
 ```
 
-### Factory Parameters
+## WebSearch Configuration
+
+`WebSearch` supports several configuration options:
+
+```python
+from pydantic_ai.capabilities import WebSearch
+
+search = WebSearch(
+    search_context_size="medium",  # "low", "medium", or "high"
+    blocked_domains=["example.com"],
+    allowed_domains=["docs.python.org"],
+    max_uses=10,  # Max searches per run
+)
+```
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `id` | `str` | `"deep-web"` | Toolset identifier |
-| `search_provider` | `SearchProvider` | `TavilySearchProvider` | Search provider instance |
-| `include_search` | `bool` | `True` | Include `web_search` tool |
-| `include_fetch` | `bool` | `True` | Include `fetch_url` tool |
-| `include_http` | `bool` | `True` | Include `http_request` tool |
-| `require_approval` | `bool` | `True` | Require user approval for web requests |
-| `user_agent` | `str` | `"Mozilla/5.0 (...)"` | User-Agent header for HTTP requests |
-| `descriptions` | `dict[str, str] \| None` | `None` | Custom tool descriptions (keys: `web_search`, `fetch_url`, `http_request`) |
+| `builtin` | `bool \| WebSearchTool \| Callable` | `True` | Control built-in tool usage. `True` = auto-detect, `False` = local only. |
+| `local` | `Tool \| Callable \| False \| None` | `None` | Custom local fallback tool. `None` = DuckDuckGo. `False` = no fallback. |
+| `search_context_size` | `"low" \| "medium" \| "high" \| None` | `None` | How much context to retrieve. Builtin-only. |
+| `user_location` | `WebSearchUserLocation \| None` | `None` | Localize results. Builtin-only. |
+| `blocked_domains` | `list[str] \| None` | `None` | Exclude results from these domains. Requires builtin support. |
+| `allowed_domains` | `list[str] \| None` | `None` | Only include results from these domains. Requires builtin support. |
+| `max_uses` | `int \| None` | `None` | Max searches per run. Requires builtin support. |
 
-### Custom Tool Descriptions
+## WebFetch Configuration
 
-Override the default tool descriptions with the `descriptions` parameter:
+`WebFetch` fetches a URL and returns its content:
 
 ```python
-from pydantic_deep.toolsets.web import create_web_toolset
+from pydantic_ai.capabilities import WebFetch
 
-web_toolset = create_web_toolset(
-    descriptions={
-        "web_search": "Search the internet for up-to-date information",
-        "fetch_url": "Download and read the contents of a web page",
-    },
+fetch = WebFetch(
+    allowed_domains=["docs.python.org", "github.com"],
+    max_uses=20,
+    max_content_tokens=5000,
 )
 ```
 
-Only the keys you provide are overridden; any missing keys fall back to the built-in descriptions. Supported keys: `web_search`, `fetch_url`, `http_request`.
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `builtin` | `bool \| WebFetchTool \| Callable` | `True` | Control built-in tool usage. `True` = auto-detect, `False` = local only. |
+| `local` | `Tool \| Callable \| False \| None` | `None` | Custom local fallback tool. `None` = no default fallback. `False` = no fallback. |
+| `allowed_domains` | `list[str] \| None` | `None` | Only fetch from these domains. Requires builtin support. |
+| `blocked_domains` | `list[str] \| None` | `None` | Never fetch from these domains. Requires builtin support. |
+| `max_uses` | `int \| None` | `None` | Max fetches per run. Requires builtin support. |
+| `enable_citations` | `bool \| None` | `None` | Enable citations for fetched content. Builtin-only. |
+| `max_content_tokens` | `int \| None` | `None` | Max content length in tokens. Builtin-only. |
 
-## Error Handling
+## Builtin vs. Local Tools
 
-All web tools return error messages as strings instead of raising exceptions. This lets the agent handle errors gracefully:
+Both `WebSearch` and `WebFetch` follow a **builtin-or-local** pattern:
 
-- **Missing package**: `"Error: Required package not installed. Install with: pip install 'pydantic-deep[web-tools]'"`
-- **Missing API key**: `"Error: TAVILY_API_KEY environment variable is not set."`
-- **Timeout**: `"Error: Request timed out after 30s for https://..."`
-- **HTTP error**: `"Error fetching https://...: 404 Not Found"`
+1. If the model supports the capability natively (e.g. OpenAI models support `web_search_preview`), the builtin tool is used. This is typically faster and more integrated with the model.
+2. If the model does not support the capability natively, a local tool function is registered instead. For `WebSearch`, the default local fallback uses DuckDuckGo (requires `duckduckgo-search` package). `WebFetch` has no default local fallback.
 
-## Components
+You can force local-only mode by setting `builtin=False`:
 
-| Component | Description |
-|-----------|-------------|
-| [`create_web_toolset`][pydantic_deep.toolsets.web.create_web_toolset] | Factory function for web tools |
-| [`SearchProvider`][pydantic_deep.toolsets.web.SearchProvider] | Protocol for pluggable search providers |
-| [`TavilySearchProvider`][pydantic_deep.toolsets.web.TavilySearchProvider] | Default Tavily-based search |
-| [`SearchResult`][pydantic_deep.toolsets.web.SearchResult] | TypedDict for search results |
+```python
+from pydantic_ai.capabilities import WebSearch
+
+# Always use local DuckDuckGo search, even if model supports builtin
+search = WebSearch(builtin=False)
+```
+
+Or provide a custom local tool:
+
+```python
+from pydantic_ai.capabilities import WebSearch
+
+
+async def my_search(query: str) -> str:
+    # Your custom search implementation
+    ...
+
+
+search = WebSearch(local=my_search)
+```
+
+## Full Example
+
+```python
+from pydantic_ai import Agent
+from pydantic_ai.capabilities import WebSearch, WebFetch
+
+agent = Agent(
+    "anthropic:claude-sonnet-4-6",
+    capabilities=[
+        WebSearch(
+            search_context_size="high",
+            max_uses=5,
+        ),
+        WebFetch(
+            allowed_domains=["docs.python.org"],
+            max_content_tokens=10000,
+        ),
+    ],
+)
+
+result = await agent.run("What's new in Python 3.13?")
+print(result.output)
+```
 
 ## Next Steps
 
-- [Toolsets](../concepts/toolsets.md) &mdash; Overview of all available toolsets
-- [Human-in-the-Loop](human-in-the-loop.md) &mdash; Approval gates for tool calls
-- [Cost Tracking](cost-tracking.md) &mdash; Monitor token usage from web tool responses
+- [Capabilities](middleware.md) -- Overview of the Capabilities API
+- [Toolsets](../concepts/toolsets.md) -- Overview of all available toolsets
+- [Cost Tracking](cost-tracking.md) -- Monitor token usage from web tool responses

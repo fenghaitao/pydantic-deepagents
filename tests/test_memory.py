@@ -21,9 +21,6 @@ from pydantic_deep import (
 TEST_MODEL = TestModel()
 
 
-# --- Helpers ---
-
-
 def _make_ctx(backend: StateBackend | None = None) -> RunContext[DeepAgentDeps]:
     """Create a RunContext with DeepAgentDeps for testing."""
     b = backend or StateBackend()
@@ -33,9 +30,6 @@ def _make_ctx(backend: StateBackend | None = None) -> RunContext[DeepAgentDeps]:
         model=TEST_MODEL,
         usage=RunUsage(),
     )
-
-
-# --- Unit Tests: MemoryFile ---
 
 
 class TestMemoryFile:
@@ -62,9 +56,6 @@ class TestMemoryFile:
         assert mf.agent_name == "code-reviewer"
 
 
-# --- Unit Tests: get_memory_path ---
-
-
 class TestGetMemoryPath:
     """Tests for get_memory_path function."""
 
@@ -87,9 +78,6 @@ class TestGetMemoryPath:
         """Test that trailing slash is handled correctly."""
         path = get_memory_path("/.deep/memory/", "main")
         assert path == "/.deep/memory/main/MEMORY.md"
-
-
-# --- Unit Tests: load_memory ---
 
 
 class TestLoadMemory:
@@ -129,9 +117,6 @@ class TestLoadMemory:
         mem = load_memory(backend, "/mem/MEMORY.md")
         assert mem is not None
         assert mem.agent_name == "main"
-
-
-# --- Unit Tests: format_memory_prompt ---
 
 
 class TestFormatMemoryPrompt:
@@ -183,9 +168,6 @@ class TestFormatMemoryPrompt:
         assert "## Agent Memory (main)" in result
 
 
-# --- Unit Tests: AgentMemoryToolset ---
-
-
 class TestAgentMemoryToolset:
     """Tests for AgentMemoryToolset class."""
 
@@ -225,7 +207,7 @@ class TestAgentMemoryToolset:
         """Test get_instructions when no memory file exists."""
         ctx = _make_ctx()
         toolset = AgentMemoryToolset()
-        result = toolset.get_instructions(ctx)
+        result = await toolset.get_instructions(ctx)
         assert result is None
 
     async def test_get_instructions_with_memory(self):
@@ -235,11 +217,12 @@ class TestAgentMemoryToolset:
         ctx = _make_ctx(backend)
 
         toolset = AgentMemoryToolset()
-        result = toolset.get_instructions(ctx)
+        result = await toolset.get_instructions(ctx)
 
         assert result is not None
-        assert "## Agent Memory (main)" in result
-        assert "Important item" in result
+        joined = "\n\n".join(result)
+        assert "## Agent Memory (main)" in joined
+        assert "Important item" in joined
 
     async def test_get_instructions_truncated(self):
         """Test get_instructions truncates long memory."""
@@ -249,13 +232,11 @@ class TestAgentMemoryToolset:
         ctx = _make_ctx(backend)
 
         toolset = AgentMemoryToolset(max_lines=50)
-        result = toolset.get_instructions(ctx)
+        result = await toolset.get_instructions(ctx)
 
         assert result is not None
-        assert "250 more lines in memory" in result
-
-
-# --- Unit Tests: Memory Tools ---
+        joined = "\n\n".join(result)
+        assert "250 more lines in memory" in joined
 
 
 class TestMemoryTools:
@@ -360,9 +341,6 @@ class TestMemoryTools:
         assert b"Review notes" in raw
 
 
-# --- Integration Tests: create_deep_agent ---
-
-
 class TestCreateDeepAgentMemory:
     """Tests for create_deep_agent with memory parameters."""
 
@@ -401,9 +379,6 @@ class TestCreateDeepAgentMemory:
             output_type=Result,
         )
         assert agent is not None
-
-
-# --- Per-Subagent Memory Tests ---
 
 
 class TestPerSubagentMemory:
@@ -518,9 +493,6 @@ class TestPerSubagentMemory:
             assert "AgentMemoryToolset" not in toolset_types
 
 
-# --- Constants Tests ---
-
-
 class TestMemoryConstants:
     """Tests for memory module constants."""
 
@@ -535,9 +507,6 @@ class TestMemoryConstants:
     def test_default_max_memory_lines(self):
         """Test DEFAULT_MAX_MEMORY_LINES value."""
         assert DEFAULT_MAX_MEMORY_LINES == 200
-
-
-# --- Export Tests ---
 
 
 class TestMemoryExports:

@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from cli.non_interactive import (
+from apps.cli.non_interactive import (
     _stream_execution,
     _truncate,
     run_non_interactive,
@@ -42,7 +42,7 @@ class TestTruncate:
 class TestRunNonInteractive:
     """Tests for run_non_interactive()."""
 
-    @patch("cli.non_interactive.create_cli_agent")
+    @patch("apps.cli.non_interactive.create_cli_agent")
     async def test_returns_zero_on_success(self, mock_create: MagicMock, tmp_path: Path) -> None:
         mock_agent = AsyncMock()
         mock_result = MagicMock()
@@ -58,7 +58,7 @@ class TestRunNonInteractive:
         )
         assert exit_code == 0
 
-    @patch("cli.non_interactive.create_cli_agent")
+    @patch("apps.cli.non_interactive.create_cli_agent")
     async def test_returns_one_on_error(self, mock_create: MagicMock) -> None:
         mock_create.side_effect = ValueError("Model not found")
 
@@ -68,7 +68,7 @@ class TestRunNonInteractive:
         )
         assert exit_code == 1
 
-    @patch("cli.non_interactive.create_cli_agent")
+    @patch("apps.cli.non_interactive.create_cli_agent")
     async def test_quiet_mode(
         self, mock_create: MagicMock, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
@@ -89,7 +89,7 @@ class TestRunNonInteractive:
         captured = capsys.readouterr()
         assert "Done" in captured.out
 
-    @patch("cli.non_interactive.create_cli_agent")
+    @patch("apps.cli.non_interactive.create_cli_agent")
     async def test_passes_shell_allow_list(self, mock_create: MagicMock, tmp_path: Path) -> None:
         mock_agent = AsyncMock()
         mock_result = MagicMock()
@@ -108,7 +108,7 @@ class TestRunNonInteractive:
         call_kwargs = mock_create.call_args[1]
         assert call_kwargs["shell_allow_list"] == ["python", "pip"]
 
-    @patch("cli.non_interactive.create_cli_agent")
+    @patch("apps.cli.non_interactive.create_cli_agent")
     async def test_response_ending_with_newline(
         self, mock_create: MagicMock, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
@@ -131,7 +131,7 @@ class TestRunNonInteractive:
         # Should have exactly one newline at end
         assert captured.out == "Done\n"
 
-    @patch("cli.non_interactive.create_cli_agent")
+    @patch("apps.cli.non_interactive.create_cli_agent")
     async def test_empty_response(
         self, mock_create: MagicMock, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
@@ -153,7 +153,7 @@ class TestRunNonInteractive:
         captured = capsys.readouterr()
         assert captured.out == ""
 
-    @patch("cli.non_interactive.create_cli_agent")
+    @patch("apps.cli.non_interactive.create_cli_agent")
     async def test_stream_mode(
         self, mock_create: MagicMock, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
@@ -182,7 +182,7 @@ class TestRunNonInteractive:
         captured = capsys.readouterr()
         assert "stream result" in captured.out
 
-    @patch("cli.non_interactive.create_cli_agent")
+    @patch("apps.cli.non_interactive.create_cli_agent")
     async def test_keyboard_interrupt(self, mock_create: MagicMock) -> None:
         """Test keyboard interrupt returns 130."""
         mock_agent = AsyncMock()
@@ -196,7 +196,7 @@ class TestRunNonInteractive:
         )
         assert exit_code == 130
 
-    @patch("cli.non_interactive.create_cli_agent")
+    @patch("apps.cli.non_interactive.create_cli_agent")
     async def test_cost_callback_called(self, mock_create: MagicMock, tmp_path: Path) -> None:
         """Verify on_cost_update is passed to create_cli_agent."""
         mock_agent = AsyncMock()
@@ -221,7 +221,7 @@ class TestRunNonInteractive:
         cost_info.run_cost_usd = 0.01
         callback(cost_info)  # Should not raise
 
-    @patch("cli.non_interactive.create_cli_agent")
+    @patch("apps.cli.non_interactive.create_cli_agent")
     async def test_cost_callback_quiet(self, mock_create: MagicMock, tmp_path: Path) -> None:
         """Cost callback does nothing in quiet mode."""
         mock_agent = AsyncMock()
@@ -246,7 +246,7 @@ class TestRunNonInteractive:
         cost_info.run_cost_usd = 0.01
         callback(cost_info)  # Should not raise
 
-    @patch("cli.non_interactive.create_cli_agent")
+    @patch("apps.cli.non_interactive.create_cli_agent")
     async def test_cost_callback_no_run_cost(self, mock_create: MagicMock, tmp_path: Path) -> None:
         """Cost callback handles missing run_cost_usd."""
         mock_agent = AsyncMock()

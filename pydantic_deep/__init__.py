@@ -18,7 +18,7 @@ Example:
 
     # Create agent with file tools
     agent = create_deep_agent(
-        model="openai:gpt-4.1",
+        model="anthropic:claude-sonnet-4-6",
         instructions="You are a helpful coding assistant",
     )
 
@@ -68,51 +68,43 @@ from pydantic_ai_backends import (
     get_console_system_prompt,
     get_runtime,
 )
-from pydantic_ai_middleware import (
-    AgentMiddleware,
+from pydantic_ai_shields import (
     BudgetExceededError,
-    CostCallback,
     CostInfo,
-    CostTrackingMiddleware,
+    CostTracking,
     InputBlocked,
-    MiddlewareAgent,
-    MiddlewareChain,
-    MiddlewareContext,
     OutputBlocked,
-    PermissionHandler,
     ToolBlocked,
-    ToolDecision,
-    ToolPermissionResult,
-    after_run,
-    after_tool_call,
-    before_model_request,
-    before_run,
-    before_tool_call,
-    create_cost_tracking_middleware,
-    on_error,
-    on_tool_error,
 )
 from pydantic_ai_summarization import (
-    ContextManagerMiddleware,
+    ContextManagerCapability,
+    LimitWarnerCapability,
+    SlidingWindowCapability,
     SlidingWindowProcessor,
+    SummarizationCapability,
     SummarizationProcessor,
-    UsageCallback,
-    create_context_manager_middleware,
     create_sliding_window_processor,
     create_summarization_processor,
 )
 
 from pydantic_deep.agent import create_deep_agent, create_default_deps, run_with_files
-from pydantic_deep.deps import DeepAgentDeps
-from pydantic_deep.middleware.hooks import (
+from pydantic_deep.capabilities import (
+    ContextFilesCapability,
+    MemoryCapability,
+    PlanCapability,
+    SkillsCapability,
+    TeamCapability,
+)
+from pydantic_deep.capabilities.hooks import (
     EXIT_ALLOW,
     EXIT_DENY,
     Hook,
     HookEvent,
     HookInput,
     HookResult,
-    HooksMiddleware,
+    HooksCapability,
 )
+from pydantic_deep.deps import DeepAgentDeps
 from pydantic_deep.processors.eviction import (
     DEFAULT_EVICTION_PATH,
     DEFAULT_TOKEN_LIMIT,
@@ -124,6 +116,7 @@ from pydantic_deep.processors.eviction import (
 )
 from pydantic_deep.processors.patch import CANCELLED_MESSAGE, patch_tool_calls_processor
 from pydantic_deep.prompts import BASE_PROMPT
+from pydantic_deep.spec import DeepAgent, DeepAgentSpec
 from pydantic_deep.styles import (
     BUILTIN_STYLES,
     OutputStyle,
@@ -197,8 +190,6 @@ from pydantic_deep.toolsets.teams import (
 from pydantic_deep.types import (
     CompiledSubAgent,
     ResponseFormat,
-    SkillDirectory,
-    SkillFrontmatter,
     SubAgentConfig,
     Todo,
     UploadedFile,
@@ -218,6 +209,8 @@ __all__ = [
     "create_default_deps",
     "run_with_files",
     "DeepAgentDeps",
+    "DeepAgent",
+    "DeepAgentSpec",
     # Backends (from pydantic-ai-backend)
     "BackendProtocol",
     "SandboxProtocol",
@@ -232,6 +225,18 @@ __all__ = [
     "get_runtime",
     # Session Management
     "SessionManager",
+    # Capabilities (pydantic-ai AbstractCapability)
+    "SkillsCapability",
+    "ContextFilesCapability",
+    "MemoryCapability",
+    "TeamCapability",
+    "PlanCapability",
+    "HooksCapability",
+    "ContextManagerCapability",
+    "SummarizationCapability",
+    "SlidingWindowCapability",
+    "LimitWarnerCapability",
+    "CostTracking",
     # Toolsets
     "TodoToolset",
     "create_console_toolset",
@@ -292,17 +297,13 @@ __all__ = [
     # Processors (from summarization-pydantic-ai)
     "SummarizationProcessor",
     "SlidingWindowProcessor",
-    "ContextManagerMiddleware",
-    "UsageCallback",
     "create_summarization_processor",
     "create_sliding_window_processor",
-    "create_context_manager_middleware",
     # Hooks (Claude Code-style lifecycle hooks)
     "Hook",
     "HookEvent",
     "HookInput",
     "HookResult",
-    "HooksMiddleware",
     "EXIT_ALLOW",
     "EXIT_DENY",
     # Checkpointing
@@ -333,33 +334,13 @@ __all__ = [
     # Patch tool calls processor
     "patch_tool_calls_processor",
     "CANCELLED_MESSAGE",
-    # Middleware (from pydantic-ai-middleware, optional)
-    "AgentMiddleware",
-    "MiddlewareAgent",
-    "MiddlewareChain",
-    "MiddlewareContext",
-    "PermissionHandler",
-    "ToolDecision",
-    "ToolPermissionResult",
-    # Cost tracking (from pydantic-ai-middleware)
-    "CostTrackingMiddleware",
+    # Shields (from pydantic-ai-shields)
     "CostInfo",
-    "CostCallback",
     "BudgetExceededError",
-    "create_cost_tracking_middleware",
-    # Middleware decorators
-    "before_run",
-    "after_run",
-    "before_model_request",
-    "before_tool_call",
-    "after_tool_call",
-    "on_tool_error",
-    "on_error",
-    # Middleware exceptions
     "InputBlocked",
     "ToolBlocked",
     "OutputBlocked",
-    # Types (legacy)
+    # Types
     "FileData",
     "FileInfo",
     "WriteResult",
@@ -369,8 +350,6 @@ __all__ = [
     "Todo",
     "SubAgentConfig",
     "CompiledSubAgent",
-    "SkillDirectory",
-    "SkillFrontmatter",
     "UploadedFile",
     "ResponseFormat",
 ]

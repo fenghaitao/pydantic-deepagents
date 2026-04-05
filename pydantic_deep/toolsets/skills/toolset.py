@@ -58,7 +58,6 @@ Use progressive disclosure: load only what you need, when you need it."""
 LOAD_SKILL_TEMPLATE = """<skill>
 <name>{skill_name}</name>
 <description>{description}</description>
-<uri>{uri}</uri>
 
 <resources>
 {resources_list}
@@ -128,7 +127,7 @@ class SkillsToolset(FunctionToolset):
         from pydantic_deep.toolsets.skills import SkillsToolset
 
         agent = Agent(
-            model='openai:gpt-4.1',
+            model='anthropic:claude-sonnet-4-6',
             instructions="You are a helpful assistant.",
             toolsets=[SkillsToolset(directories=["./skills"])]
         )
@@ -142,7 +141,7 @@ class SkillsToolset(FunctionToolset):
             content="Instructions here",
         )
         agent = Agent(
-            model='openai:gpt-4.1',
+            model='anthropic:claude-sonnet-4-6',
             toolsets=[SkillsToolset(skills=[custom_skill])]
         )
         ```
@@ -382,7 +381,6 @@ class SkillsToolset(FunctionToolset):
             return LOAD_SKILL_TEMPLATE.format(
                 skill_name=skill.name,
                 description=skill.description,
-                uri=skill.uri or "N/A",
                 resources_list=resources_list,
                 scripts_list=scripts_list,
                 content=skill.content,
@@ -454,7 +452,7 @@ class SkillsToolset(FunctionToolset):
 
             return str(await script.run(ctx=ctx, args=args))
 
-    def get_instructions(self, ctx: RunContext[Any]) -> str | None:
+    async def get_instructions(self, ctx: RunContext[Any]) -> list[str] | None:
         """Return instructions to inject into the agent's system prompt.
 
         Args:
@@ -472,15 +470,13 @@ class SkillsToolset(FunctionToolset):
             skills_list_lines.append("<skill>")
             skills_list_lines.append(f"<name>{skill.name}</name>")
             skills_list_lines.append(f"<description>{skill.description}</description>")
-            if skill.uri:
-                skills_list_lines.append(f"<uri>{skill.uri}</uri>")
             skills_list_lines.append("</skill>")
         skills_list = "\n".join(skills_list_lines)
 
         if self._instruction_template:
-            return self._instruction_template.format(skills_list=skills_list)
+            return [self._instruction_template.format(skills_list=skills_list)]
 
-        return _INSTRUCTION_SKILLS_HEADER.format(skills_list=skills_list)
+        return [_INSTRUCTION_SKILLS_HEADER.format(skills_list=skills_list)]
 
     def skill(
         self,

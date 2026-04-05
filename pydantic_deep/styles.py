@@ -58,8 +58,6 @@ class OutputStyle:
     content: str
 
 
-# --- Built-in styles ---
-
 CONCISE_STYLE = OutputStyle(
     name="concise",
     description="Minimal output, just the essentials",
@@ -121,8 +119,6 @@ BUILTIN_STYLES: dict[str, OutputStyle] = {
 """Registry of built-in output styles, keyed by name."""
 
 
-# --- Frontmatter parsing ---
-
 _FRONTMATTER_PATTERN = re.compile(r"^---\s*\n(.*?)^---\s*\n", re.DOTALL | re.MULTILINE)
 _KV_PATTERN = re.compile(r"^(\w+)\s*:\s*(.+)$", re.MULTILINE)
 
@@ -154,9 +150,6 @@ def _parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
         frontmatter[key] = value
 
     return frontmatter, body
-
-
-# --- File loading ---
 
 
 def load_style_from_file(path: str | Path) -> OutputStyle:
@@ -230,9 +223,6 @@ def discover_styles(directory: str | Path) -> dict[str, OutputStyle]:
     return styles
 
 
-# --- Resolution ---
-
-
 def resolve_style(
     style: str | OutputStyle,
     styles_dir: str | list[str] | None = None,
@@ -277,9 +267,6 @@ def resolve_style(
 
     available = list(BUILTIN_STYLES.keys())
     raise ValueError(f"Unknown output style '{style}'. Available built-in styles: {available}")
-
-
-# --- Formatting ---
 
 
 def format_style_prompt(style: OutputStyle) -> str:

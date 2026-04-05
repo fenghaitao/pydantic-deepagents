@@ -7,20 +7,20 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from typer.testing import CliRunner
 
-from cli.main import app, main
+from apps.cli.main import app, main
 
 runner = CliRunner()
 
 
 # Patch ensure_initialized for all run/chat tests to avoid creating dirs
-_PATCH_INIT = patch("cli.init.ensure_initialized", return_value=Path("/tmp"))
+_PATCH_INIT = patch("apps.cli.init.ensure_initialized", return_value=Path("/tmp"))
 
 
 class TestRunCommand:
     """Tests for the 'run' command."""
 
     @_PATCH_INIT
-    @patch("cli.main.asyncio.run")
+    @patch("apps.cli.main.asyncio.run")
     def test_run_basic(self, mock_asyncio_run: AsyncMock, _: MagicMock) -> None:
         mock_asyncio_run.return_value = 0
         result = runner.invoke(app, ["run", "Create hello.py"])
@@ -28,35 +28,35 @@ class TestRunCommand:
         assert result.exit_code == 0
 
     @_PATCH_INIT
-    @patch("cli.main.asyncio.run")
+    @patch("apps.cli.main.asyncio.run")
     def test_run_with_model(self, mock_asyncio_run: AsyncMock, _: MagicMock) -> None:
         mock_asyncio_run.return_value = 0
         result = runner.invoke(app, ["run", "test", "--model", "openai:gpt-4o"])
         assert result.exit_code == 0
 
     @_PATCH_INIT
-    @patch("cli.main.asyncio.run")
+    @patch("apps.cli.main.asyncio.run")
     def test_run_with_working_dir(self, mock_asyncio_run: AsyncMock, _: MagicMock) -> None:
         mock_asyncio_run.return_value = 0
         result = runner.invoke(app, ["run", "test", "--working-dir", "/tmp"])
         assert result.exit_code == 0
 
     @_PATCH_INIT
-    @patch("cli.main.asyncio.run")
+    @patch("apps.cli.main.asyncio.run")
     def test_run_with_quiet(self, mock_asyncio_run: AsyncMock, _: MagicMock) -> None:
         mock_asyncio_run.return_value = 0
         result = runner.invoke(app, ["run", "test", "--quiet"])
         assert result.exit_code == 0
 
     @_PATCH_INIT
-    @patch("cli.main.asyncio.run")
+    @patch("apps.cli.main.asyncio.run")
     def test_run_with_no_stream(self, mock_asyncio_run: AsyncMock, _: MagicMock) -> None:
         mock_asyncio_run.return_value = 0
         result = runner.invoke(app, ["run", "test", "--no-stream"])
         assert result.exit_code == 0
 
     @_PATCH_INIT
-    @patch("cli.main.asyncio.run")
+    @patch("apps.cli.main.asyncio.run")
     def test_run_with_shell_allow_list(self, mock_asyncio_run: AsyncMock, _: MagicMock) -> None:
         mock_asyncio_run.return_value = 0
         result = runner.invoke(
@@ -65,7 +65,7 @@ class TestRunCommand:
         assert result.exit_code == 0
 
     @_PATCH_INIT
-    @patch("cli.main.asyncio.run")
+    @patch("apps.cli.main.asyncio.run")
     def test_run_error_exit_code(self, mock_asyncio_run: AsyncMock, _: MagicMock) -> None:
         mock_asyncio_run.return_value = 1
         result = runner.invoke(app, ["run", "test"])
@@ -76,21 +76,21 @@ class TestChatCommand:
     """Tests for the 'chat' command."""
 
     @_PATCH_INIT
-    @patch("cli.main.asyncio.run")
+    @patch("apps.cli.main.asyncio.run")
     def test_chat_basic(self, mock_asyncio_run: AsyncMock, _: MagicMock) -> None:
         mock_asyncio_run.return_value = None
         result = runner.invoke(app, ["chat"])
         assert result.exit_code == 0
 
     @_PATCH_INIT
-    @patch("cli.main.asyncio.run")
+    @patch("apps.cli.main.asyncio.run")
     def test_chat_with_model(self, mock_asyncio_run: AsyncMock, _: MagicMock) -> None:
         mock_asyncio_run.return_value = None
         result = runner.invoke(app, ["chat", "--model", "openai:gpt-4o"])
         assert result.exit_code == 0
 
     @_PATCH_INIT
-    @patch("cli.main.asyncio.run")
+    @patch("apps.cli.main.asyncio.run")
     def test_chat_with_working_dir(self, mock_asyncio_run: AsyncMock, _: MagicMock) -> None:
         mock_asyncio_run.return_value = None
         result = runner.invoke(app, ["chat", "--working-dir", "/tmp"])
@@ -100,7 +100,7 @@ class TestChatCommand:
 class TestMainFunction:
     """Tests for the main() entry point."""
 
-    @patch("cli.main.app")
+    @patch("apps.cli.main.app")
     def test_main_calls_app(self, mock_app: AsyncMock) -> None:
         main()
         mock_app.assert_called_once()

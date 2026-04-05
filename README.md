@@ -5,7 +5,7 @@
 <h1 align="center">Pydantic Deep Agents</h1>
 
 <p align="center">
-  <b>From framework to terminal — autonomous AI agents that plan, code, and ship</b>
+  <b>From framework to terminal -- autonomous AI agents that plan, code, and ship</b>
 </p>
 
 <p align="center">
@@ -26,42 +26,43 @@
 </p>
 
 <p align="center">
-  <b>🔄 Unlimited Context</b>
+  <b>Unlimited Context</b>
   &nbsp;&bull;&nbsp;
-  <b>🤖 Subagent Delegation</b>
+  <b>Subagent Delegation</b>
   &nbsp;&bull;&nbsp;
-  <b>🧠 Persistent Memory</b>
+  <b>Persistent Memory</b>
   &nbsp;&bull;&nbsp;
-  <b>🛡️ Lifecycle Hooks</b>
+  <b>Lifecycle Hooks</b>
 </p>
 
 ---
 
 ### Same Architecture as the Best
 
-pydantic-deep implements the **deep agent pattern** — the same architecture powering:
+pydantic-deep implements the **deep agent pattern** -- the same architecture powering:
 
 | | Product | What They Built |
 |:-:|---------|-----------------|
-| 🤖 | [**Claude Code**](https://claude.ai/code) | Anthropic's AI coding assistant |
-| 🦾 | [**Manus AI**](https://manus.ai) | Autonomous task execution |
-| 👨‍💻 | [**Devin**](https://devin.ai) | AI software engineer |
+| | [**Claude Code**](https://claude.ai/code) | Anthropic's AI coding assistant |
+| | [**Manus AI**](https://manus.ai) | Autonomous task execution |
+| | [**Devin**](https://devin.ai) | AI software engineer |
 
-**Now you can build the same thing** — or just use the CLI.
+**Now you can build the same thing** -- or just use the CLI.
 
 > **Inspired by:** [LangChain's Deep Agents](https://github.com/langchain-ai/deepagents) research on autonomous agent architectures.
 
 ---
 
-**pydantic-deep** is three things:
+**pydantic-deep** is four things:
 
 1. **A Python framework** for building Claude Code-style agents with planning, filesystem access, subagents, memory, and unlimited context
 2. **A CLI** that gives you a terminal AI assistant out of the box
-3. **DeepResearch** — a full-featured research agent with web UI, web search, diagrams, and sandboxed code execution
+3. **An ACP adapter** that runs deep agents inside editors like Zed
+4. **DeepResearch** -- a full-featured research agent with web UI, web search, diagrams, and sandboxed code execution
 
 ---
 
-## CLI — Terminal AI Assistant
+## CLI -- Terminal AI Assistant
 
 <p align="center">
   <img src="assets/cli_demo.gif" alt="pydantic-deep CLI demo" width="700">
@@ -96,18 +97,20 @@ pydantic-deep run "Build a web scraper" --sandbox
 pydantic-deep chat --model anthropic:claude-sonnet-4-20250514
 
 # Manage config
-pydantic-deep config set model openai:gpt-4.1
+pydantic-deep config set model anthropic:claude-sonnet-4-6
 ```
 
 > See [CLI docs](docs/cli/index.md) for the full reference.
 
 ---
 
-## Framework — Build Your Own Agent
+## Framework -- Build Your Own Agent
 
 ```bash
 pip install pydantic-deep
 ```
+
+**Requires pydantic-ai >= 1.71.0.**
 
 ```python
 from pydantic_ai_backends import StateBackend
@@ -123,7 +126,7 @@ One function call gives you an agent with planning, filesystem tools, subagents,
 
 ```python
 agent = create_deep_agent(
-    model="openai:gpt-4.1",
+    model="anthropic:claude-sonnet-4-6",
     include_todo=True,          # Task planning
     include_filesystem=True,    # File read/write/edit/execute
     include_subagents=True,     # Delegate to subagents
@@ -131,7 +134,9 @@ agent = create_deep_agent(
     include_memory=True,        # Persistent MEMORY.md across sessions
     include_plan=True,          # Structured planning before execution
     include_teams=True,         # Multi-agent teams with shared TODOs
-    include_web=True,           # Web search and URL fetching
+    web_search=True,            # WebSearch capability
+    web_fetch=True,             # WebFetch capability
+    thinking="high",            # Thinking/reasoning effort
     context_manager=True,       # Auto-summarization for unlimited context
     cost_tracking=True,         # Token/USD budget enforcement
     include_checkpoints=True,   # Save, rewind, and fork conversations
@@ -190,7 +195,23 @@ agent = create_deep_agent(
 )
 ```
 
-### Custom Subagents
+### MCP Servers
+
+Connect to any [MCP](https://modelcontextprotocol.io/) server via pydantic-ai's `MCP` capability:
+
+```python
+from pydantic_ai.capabilities import MCP
+
+agent = create_deep_agent(
+    capabilities=[
+        MCP(url="https://mcp.example.com/api"),
+    ],
+)
+```
+
+### Subagents
+
+A built-in **research** subagent is included by default. Add your own:
 
 ```python
 agent = create_deep_agent(
@@ -198,18 +219,75 @@ agent = create_deep_agent(
         {
             "name": "code-reviewer",
             "description": "Reviews code for quality issues",
-            "instructions": "You are a senior code reviewer...",
-            "preferred_mode": "sync",
+            "instructions": "Check for security, performance, error handling...",
         },
     ],
 )
+# The main agent delegates: task(description="Review auth.py", subagent_type="code-reviewer")
 ```
+
+All subagents are full deep agents with filesystem, web, and memory tools. You only provide the specialized `instructions` — the framework adds `BASE_PROMPT` automatically.
+
+### Project Files
+
+pydantic-deep recognizes three special markdown files:
+
+| File | Purpose | Who Sees It |
+|------|---------|-------------|
+| `AGENTS.md` | Project instructions, conventions, architecture | Main agent + subagents |
+| `SOUL.md` | Agent personality, style, user preferences | Main agent only |
+| `MEMORY.md` | Persistent memory across sessions (read/write/update tools) | Per-agent (isolated) |
+
+```python
+agent = create_deep_agent(
+    context_discovery=True,  # Auto-discover AGENTS.md and SOUL.md at backend root
+    include_memory=True,     # MEMORY.md with read/write/update tools (on by default)
+)
+```
+
+`AGENTS.md` follows the [agents.md spec](https://agents.md/) — compatible with other agent frameworks.
 
 > See the full [API reference](https://vstorm-co.github.io/pydantic-deepagents/api/toolsets/) for all options.
 
 ---
 
-## DeepResearch — Reference App
+## ACP -- Editor Integration (Zed)
+![zed.png](assets/zed.png)
+
+Run pydantic-deep agents inside [Zed](https://zed.dev) via the [Agent Client Protocol](https://agentclientprotocol.com):
+
+```bash
+pip install pydantic-deep[acp]
+python -m apps.acp
+```
+
+Add to Zed settings (`Cmd+,`):
+
+```json
+{
+  "agent_servers": {
+    "pydantic-deep": {
+      "type": "custom",
+      "command": "/path/to/venv/bin/python",
+      "args": ["-m", "apps.acp"],
+      "cwd": "/path/to/pydantic-deep"
+    }
+  }
+}
+```
+
+API keys are loaded from `~/.pydantic-deep/.env` (global) or `.pydantic-deep/.env` (per-project):
+
+```bash
+mkdir -p ~/.pydantic-deep
+echo 'OPENROUTER_API_KEY=sk-or-your-key' > ~/.pydantic-deep/.env
+```
+
+> See [ACP README](apps/acp/README.md) for full configuration.
+
+---
+
+## DeepResearch -- Reference App
 
 A full-featured research agent with web UI, built entirely on pydantic-deep.
 
@@ -217,21 +295,21 @@ A full-featured research agent with web UI, built entirely on pydantic-deep.
 <tr>
 <td width="50%">
 <a href="apps/deepresearch/"><img src="assets/planner_asks_question.png" alt="Planner subagent asks clarifying questions"></a>
-<p align="center"><b>Plan Mode</b> — planner asks clarifying questions</p>
+<p align="center"><b>Plan Mode</b> -- planner asks clarifying questions</p>
 </td>
 <td width="50%">
 <a href="apps/deepresearch/"><img src="assets/spawn_subagents_deepresearch.png" alt="Parallel subagent research"></a>
-<p align="center"><b>Parallel Subagents</b> — 5 agents researching simultaneously</p>
+<p align="center"><b>Parallel Subagents</b> -- 5 agents researching simultaneously</p>
 </td>
 </tr>
 <tr>
 <td width="50%">
 <a href="apps/deepresearch/"><img src="assets/excalidraw_in_deepresearch.png" alt="Excalidraw canvas"></a>
-<p align="center"><b>Excalidraw Canvas</b> — live diagrams synced with agent</p>
+<p align="center"><b>Excalidraw Canvas</b> -- live diagrams synced with agent</p>
 </td>
 <td width="50%">
 <a href="apps/deepresearch/"><img src="assets/display_files_deepresearch.png" alt="File browser"></a>
-<p align="center"><b>File Browser</b> — workspace files with inline preview</p>
+<p align="center"><b>File Browser</b> -- workspace files with inline preview</p>
 </td>
 </tr>
 </table>
@@ -251,7 +329,33 @@ uv run deepresearch    # Open http://localhost:8080
 
 ## Architecture
 
-pydantic-deep implements the **deep agent pattern** — the same architecture powering Claude Code, Devin, and Manus AI. Every component is modular and works standalone:
+pydantic-deep v0.3.0 uses pydantic-ai's native **Capabilities API** (`Agent(capabilities=[...])`) for all cross-cutting concerns. This replaces the previous middleware wrapping approach and provides a cleaner, more composable architecture.
+
+### Capabilities
+
+All lifecycle features are implemented as capabilities that extend `AbstractCapability` from pydantic-ai:
+
+| Capability | Package | What It Does |
+|-----------|---------|--------------|
+| **CostTracking** | [pydantic-ai-shields](https://github.com/vstorm-co/pydantic-ai-shields) | Token/USD budget enforcement and real-time cost callbacks |
+| **ContextManagerCapability** | [summarization-pydantic-ai](https://github.com/vstorm-co/summarization-pydantic-ai) | Auto-compression when approaching token budget |
+| **HooksCapability** | pydantic-deep | Claude Code-style lifecycle hooks on tool events |
+| **CheckpointMiddleware** | pydantic-deep | Save, rewind, and fork conversation state |
+| **WebSearch / WebFetch** | pydantic-ai (built-in) | Web search and URL fetching |
+
+pydantic-deep also provides 5 **internal capabilities** that are automatically wired up when their corresponding `include_*` flags are set:
+
+| Internal Capability | Activated By | What It Does |
+|-----------|---------|--------------|
+| **SkillsCapability** | `include_skills=True` | Domain-specific skills from SKILL.md files |
+| **ContextFilesCapability** | `context_files` / `context_discovery` | Auto-discover and inject DEEP.md, AGENTS.md, CLAUDE.md |
+| **MemoryCapability** | `include_memory=True` | Persistent MEMORY.md across sessions |
+| **TeamCapability** | `include_teams=True` | Multi-agent teams with shared TODOs and message bus |
+| **PlanCapability** | `include_plan=True` | Structured planning before execution |
+
+### Component Packages
+
+Every component is modular and works standalone:
 
 | Component | Package | What It Does |
 |-----------|---------|--------------|
@@ -259,32 +363,32 @@ pydantic-deep implements the **deep agent pattern** — the same architecture po
 | **Planning** | [pydantic-ai-todo](https://github.com/vstorm-co/pydantic-ai-todo) | Task tracking with dependencies |
 | **Subagents** | [subagents-pydantic-ai](https://github.com/vstorm-co/subagents-pydantic-ai) | Sync/async delegation, cancellation |
 | **Summarization** | [summarization-pydantic-ai](https://github.com/vstorm-co/summarization-pydantic-ai) | LLM summaries or sliding window |
-| **Middleware** | [pydantic-ai-middleware](https://github.com/vstorm-co/pydantic-ai-middleware) | Lifecycle hooks, permissions |
+| **Shields** | [pydantic-ai-shields](https://github.com/vstorm-co/pydantic-ai-shields) | Cost tracking, input/output/tool blocking |
 
 ```
                               pydantic-deep
-┌─────────────────────────────────────────────────────────────────────┐
-│                                                                     │
-│   ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌─────────┐   │
-│   │ Planning │ │Filesystem│ │ Subagents│ │  Skills  │ │  Teams  │   │
-│   └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬────┘   │
-│        │            │            │            │            │        │
-│        └────────────┴─────┬──────┴────────────┴────────────┘        │
-│                           │                                         │
-│                           ▼                                         │
-│  Summarization ──► ┌──────────────────┐ ◄── Middleware              │
-│  Checkpointing ──► │    Deep Agent    │ ◄── Hooks                   │
-│  Cost Tracking ──► │   (pydantic-ai)  │ ◄── Memory                  │
-│                    └────────┬─────────┘                             │
-│                             │                                       │
-│           ┌─────────────────┼─────────────────┐                     │
-│           ▼                 ▼                 ▼                     │
-│    ┌────────────┐    ┌────────────┐    ┌────────────┐               │
-│    │   State    │    │   Local    │    │   Docker   │               │
-│    │  Backend   │    │  Backend   │    │  Sandbox   │               │
-│    └────────────┘    └────────────┘    └────────────┘               │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
++---------------------------------------------------------------------+
+|                                                                     |
+|   +----------+ +----------+ +----------+ +----------+ +---------+   |
+|   | Planning | |Filesystem| | Subagents| |  Skills  | |  Teams  |   |
+|   +----+-----+ +----+-----+ +----+-----+ +----+-----+ +----+----+   |
+|        |            |            |            |            |        |
+|        +------------+-----+------+------------+------------+        |
+|                           |                                         |
+|                           v                                         |
+|  Summarization --> +------------------+ <-- Capabilities            |
+|  Checkpointing --> |    Deep Agent    | <-- Hooks                   |
+|  Cost Tracking --> |   (pydantic-ai)  | <-- Memory                  |
+|                    +--------+---------+                             |
+|                             |                                       |
+|           +-----------------+-----------------+                     |
+|           v                 v                 v                     |
+|    +------------+    +------------+    +------------+               |
+|    |   State    |    |   Local    |    |   Docker   |               |
+|    |  Backend   |    |  Backend   |    |  Sandbox   |               |
+|    +------------+    +------------+    +------------+               |
+|                                                                     |
++---------------------------------------------------------------------+
 ```
 
 ---
@@ -296,31 +400,39 @@ pydantic-deep implements the **deep agent pattern** — the same architecture po
 
 ### Core Toolsets
 
-- **Planning** — Task tracking with subtasks, dependencies, cycle detection. PostgreSQL storage. Event system.
-- **Filesystem** — `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `execute`. Docker sandbox. Permission system.
-- **Subagents** — Sync/async delegation. Background task management. Soft/hard cancellation.
-- **Summarization** — LLM-based summaries or zero-cost sliding window. Trigger on tokens, messages, or fraction.
-- **Middleware** — 7 lifecycle hooks. Composable chains. Permission handling.
+- **Planning** -- Task tracking with subtasks, dependencies, cycle detection. PostgreSQL storage. Event system.
+- **Filesystem** -- `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `execute`. Docker sandbox. Permission system.
+- **Subagents** -- Sync/async delegation. Background task management. Soft/hard cancellation.
+- **Summarization** -- LLM-based summaries or zero-cost sliding window. Trigger on tokens, messages, or fraction.
+
+### Capabilities
+
+- **CostTracking** -- Token/USD budgets with automatic enforcement and real-time callbacks (from `pydantic-ai-shields`).
+- **ContextManagerCapability** -- Auto-compression when approaching token budget (from `summarization-pydantic-ai`).
+- **HooksCapability** -- Claude Code-style lifecycle hooks. Shell commands on tool events. Audit logging, safety gates.
+- **CheckpointMiddleware** -- Save state at intervals. Rewind or fork sessions. In-memory and file-based stores. Extends `AbstractCapability`.
+- **WebSearch / WebFetch** -- Built-in pydantic-ai capabilities for web search and URL fetching.
+- **SkillsCapability** -- Domain-specific skills loaded from SKILL.md files.
+- **ContextFilesCapability** -- Auto-discover and inject DEEP.md, AGENTS.md, CLAUDE.md, SOUL.md into the system prompt.
+- **MemoryCapability** -- Persistent MEMORY.md across sessions, auto-injected into system prompt.
+- **TeamCapability** -- Multi-agent teams with shared TODO lists, claiming, dependency tracking, and peer-to-peer message bus.
+- **PlanCapability** -- Dedicated planner subagent for structured planning before execution.
 
 ### Advanced
 
-- **Checkpointing** — Save state at intervals. Rewind or fork sessions. In-memory and file-based stores.
-- **Agent Teams** — Shared TODO lists with claiming and dependency tracking. Peer-to-peer message bus.
-- **Hooks** — Claude Code-style lifecycle hooks. Shell commands on tool events. Audit logging, safety gates.
-- **Persistent Memory** — `MEMORY.md` that persists across sessions. Auto-injected into system prompt.
-- **Context Files** — Auto-discover and inject `AGENT.md` into the system prompt.
-- **Output Styles** — Built-in (concise, explanatory, formal, conversational) or custom from files.
-- **Plan Mode** — Dedicated planner subagent for structured planning before execution.
-- **Cost Tracking** — Token/USD budgets with automatic enforcement and real-time callbacks.
-- **Eviction Processor** — Evict large tool outputs to files. Keep context lean while preserving data.
-- **Patch Tool Calls** — On resume, patch stale tool call results for clean history.
-- **Custom Tool Descriptions** — Override any tool's description via `descriptions` parameter.
-- **Custom Commands** — `/commit`, `/pr`, `/review`, `/test`, `/fix`, `/explain`. Three-scope discovery: built-in, user, project.
-- **Web Tools** — Web search (Tavily) and URL fetching with automatic markdown conversion.
-- **Structured Output** — Type-safe responses with Pydantic models via `output_type`.
-- **Human-in-the-Loop** — Confirmation workflows for sensitive operations.
-- **Streaming** — Full streaming support for real-time responses.
-- **Image Support** — Multi-modal analysis with image inputs.
+- **Agent Teams** -- Shared TODO lists with claiming and dependency tracking. Peer-to-peer message bus.
+- **Persistent Memory** -- `MEMORY.md` that persists across sessions. Auto-injected into system prompt.
+- **Context Files** -- Auto-discover and inject `AGENT.md` into the system prompt.
+- **Output Styles** -- Built-in (concise, explanatory, formal, conversational) or custom from files.
+- **Plan Mode** -- Dedicated planner subagent for structured planning before execution.
+- **Eviction Processor** -- Evict large tool outputs to files. Keep context lean while preserving data.
+- **Patch Tool Calls** -- On resume, patch stale tool call results for clean history.
+- **Custom Tool Descriptions** -- Override any tool's description via `descriptions` parameter.
+- **Custom Commands** -- `/commit`, `/pr`, `/review`, `/test`, `/fix`, `/explain`. Three-scope discovery: built-in, user, project.
+- **Structured Output** -- Type-safe responses with Pydantic models via `output_type`.
+- **Human-in-the-Loop** -- Confirmation workflows for sensitive operations.
+- **Streaming** -- Full streaming support for real-time responses.
+- **Image Support** -- Multi-modal analysis with image inputs.
 
 </details>
 
@@ -350,7 +462,7 @@ make all   # lint + typecheck + test
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+MIT -- see [LICENSE](LICENSE)
 
 ---
 
@@ -358,7 +470,7 @@ MIT — see [LICENSE](LICENSE)
 
 ### Need help implementing this in your company?
 
-<p>We're <a href="https://vstorm.co"><b>Vstorm</b></a> — an Applied Agentic AI Engineering Consultancy<br>with 30+ production AI agent implementations.</p>
+<p>We're <a href="https://vstorm.co"><b>Vstorm</b></a> -- an Applied Agentic AI Engineering Consultancy<br>with 30+ production AI agent implementations.</p>
 
 <a href="https://vstorm.co/contact-us/">
   <img src="https://img.shields.io/badge/Talk%20to%20us%20%E2%86%92-0066FF?style=for-the-badge&logoColor=white" alt="Talk to us">
@@ -366,6 +478,6 @@ MIT — see [LICENSE](LICENSE)
 
 <br><br>
 
-Made with &#10084;&#65039; by <a href="https://vstorm.co"><b>Vstorm</b></a>
+Made with <b>care</b> by <a href="https://vstorm.co"><b>Vstorm</b></a>
 
 </div>

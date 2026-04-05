@@ -51,11 +51,6 @@ if TYPE_CHECKING:
     pass
 
 
-# ---------------------------------------------------------------------------
-# Checkpoint dataclass
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class Checkpoint:
     """Immutable snapshot of conversation state at a point in time.
@@ -77,11 +72,6 @@ class Checkpoint:
     message_count: int
     created_at: datetime
     metadata: dict[str, Any] = field(default_factory=dict)
-
-
-# ---------------------------------------------------------------------------
-# RewindRequested exception
-# ---------------------------------------------------------------------------
 
 
 class RewindRequested(Exception):
@@ -107,9 +97,7 @@ class RewindRequested(Exception):
         super().__init__(f"Rewind requested to checkpoint '{label}' ({checkpoint_id})")
 
 
-# ---------------------------------------------------------------------------
 # CheckpointStore protocol + implementations
-# ---------------------------------------------------------------------------
 
 
 @runtime_checkable
@@ -297,11 +285,6 @@ class FileCheckpointStore:
             path.unlink()
 
 
-# ---------------------------------------------------------------------------
-# Checkpoint helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_checkpoint(
     label: str,
     turn: int,
@@ -331,23 +314,21 @@ async def _save_and_prune(
         await store.remove_oldest()
 
 
-# ---------------------------------------------------------------------------
-# CheckpointMiddleware
-# ---------------------------------------------------------------------------
+from dataclasses import dataclass  # noqa: E402
+from dataclasses import field as dataclass_field  # noqa: E402
 
-from pydantic_ai_middleware import AgentMiddleware  # noqa: E402
+from pydantic_ai.capabilities import AbstractCapability  # noqa: E402
+from pydantic_ai.messages import ToolCallPart  # noqa: E402
+from pydantic_ai.tools import ToolDefinition  # noqa: E402
 
 
-class CheckpointMiddleware(AgentMiddleware["Any"]):  # type: ignore[misc]
-    """Middleware that auto-saves conversation checkpoints.
+@dataclass
+class CheckpointMiddleware(AbstractCapability[Any]):
+    """Capability that auto-saves conversation checkpoints.
 
     Uses ``before_model_request`` (for ``every_turn`` frequency) and
-    ``after_tool_call`` (for ``every_tool`` frequency) hooks to
+    ``after_tool_execute`` (for ``every_tool`` frequency) hooks to
     automatically snapshot the conversation.
-
-    The checkpoint store is resolved at runtime from ``deps.checkpoint_store``
-    (falling back to the ``store`` passed at init). This allows a shared
-    agent to use per-session stores.
 
     Args:
         store: Fallback checkpoint store (used if deps has no store).
@@ -358,35 +339,31 @@ class CheckpointMiddleware(AgentMiddleware["Any"]):  # type: ignore[misc]
         max_checkpoints: Maximum number of checkpoints to keep.
     """
 
-    def __init__(
-        self,
-        store: CheckpointStore | None = None,
-        frequency: str = "every_tool",
-        max_checkpoints: int = 20,
-    ) -> None:
-        self._fallback_store = store
-        self.frequency = frequency
-        self.max_checkpoints = max_checkpoints
-        self._turn_counter = 0
-        self._latest_messages: list[ModelMessage] = []
+    store: CheckpointStore | None = None
+    frequency: str = "every_tool"
+    max_checkpoints: int = 20
+    _turn_counter: int = dataclass_field(default=0, init=False, repr=False)
+    _latest_messages: list[ModelMessage] = dataclass_field(
+        default_factory=list, init=False, repr=False
+    )
 
     def _resolve_store(self, deps: Any) -> CheckpointStore | None:
         """Get checkpoint store from deps or fallback."""
-        store = getattr(deps, "checkpoint_store", None)
-        return store or self._fallback_store
+        dep_store = getattr(deps, "checkpoint_store", None)
+        return dep_store or self.store
 
     async def before_model_request(
         self,
-        messages: list[ModelMessage],
-        deps: Any,
-        ctx: Any = None,
-    ) -> list[ModelMessage]:
+        ctx: RunContext[Any],
+        request_context: Any,
+    ) -> Any:
         """Track messages and optionally auto-checkpoint before model calls."""
+        messages: list[ModelMessage] = request_context.messages
         self._turn_counter += 1
         self._latest_messages = list(messages)
 
         if self.frequency == "every_turn":
-            store = self._resolve_store(deps)
+            store = self._resolve_store(ctx.deps)
             if store is not None:
                 cp = _make_checkpoint(
                     label=f"turn-{self._turn_counter}",
@@ -395,34 +372,30 @@ class CheckpointMiddleware(AgentMiddleware["Any"]):  # type: ignore[misc]
                 )
                 await _save_and_prune(store, cp, self.max_checkpoints)
 
-        return messages
+        return request_context
 
-    async def after_tool_call(
+    async def after_tool_execute(
         self,
-        tool_name: str,
-        tool_args: dict[str, Any],
+        ctx: RunContext[Any],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: dict[str, Any],
         result: Any,
-        deps: Any,
-        ctx: Any = None,
     ) -> Any:
         """Auto-checkpoint after tool calls (when frequency is every_tool)."""
         if self.frequency == "every_tool":
-            store = self._resolve_store(deps)
+            store = self._resolve_store(ctx.deps)
             if store is not None:
                 cp = _make_checkpoint(
-                    label=f"tool-{self._turn_counter}-{tool_name}",
+                    label=f"tool-{self._turn_counter}-{call.tool_name}",
                     turn=self._turn_counter,
                     messages=self._latest_messages,
-                    metadata={"last_tool": tool_name},
+                    metadata={"last_tool": call.tool_name},
                 )
                 await _save_and_prune(store, cp, self.max_checkpoints)
 
         return result
-
-
-# ---------------------------------------------------------------------------
-# CheckpointToolset
-# ---------------------------------------------------------------------------
 
 
 SAVE_CHECKPOINT_DESCRIPTION = """\
@@ -562,11 +535,6 @@ def _resolve_toolset_store(
     """Resolve checkpoint store from ctx.deps or fallback."""
     store = getattr(ctx.deps, "checkpoint_store", None)
     return store or fallback
-
-
-# ---------------------------------------------------------------------------
-# Fork utility
-# ---------------------------------------------------------------------------
 
 
 async def fork_from_checkpoint(

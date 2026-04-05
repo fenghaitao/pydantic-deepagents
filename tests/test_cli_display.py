@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 from rich.console import Console
 from rich.markdown import Markdown
 
-from cli.display import (
+from apps.cli.display import (
     SimpleCodeBlock,
     _get_git_branch,
     format_cost_line,
@@ -66,25 +66,25 @@ class TestGetGitBranch:
 class TestPrintWelcomeBanner:
     """Tests for print_welcome_banner()."""
 
-    @patch("cli.display._get_git_branch", return_value="main")
+    @patch("apps.cli.display._get_git_branch", return_value="main")
     def test_with_all_info(self, _mock: MagicMock) -> None:
         console = MagicMock()
         print_welcome_banner(console, model="gpt-4o", working_dir="/tmp")
         assert console.print.call_count >= 3
 
-    @patch("cli.display._get_git_branch", return_value=None)
+    @patch("apps.cli.display._get_git_branch", return_value=None)
     def test_without_branch(self, _mock: MagicMock) -> None:
         console = MagicMock()
         print_welcome_banner(console)
         assert console.print.called
 
-    @patch("cli.display._get_git_branch", return_value="main")
+    @patch("apps.cli.display._get_git_branch", return_value="main")
     def test_without_model(self, _mock: MagicMock) -> None:
         console = MagicMock()
         print_welcome_banner(console, working_dir="/tmp")
         assert console.print.called
 
-    @patch("cli.display._get_git_branch", return_value="main")
+    @patch("apps.cli.display._get_git_branch", return_value="main")
     def test_without_working_dir(self, _mock: MagicMock) -> None:
         console = MagicMock()
         print_welcome_banner(console, model="gpt-4o")

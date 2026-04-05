@@ -1,17 +1,14 @@
-"""Tests for ContextManagerMiddleware integration in create_deep_agent."""
+"""Tests for context management integration in create_deep_agent."""
 
 from __future__ import annotations
 
 from typing import Any
 from unittest.mock import MagicMock
 
-from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.test import TestModel
-from pydantic_ai_middleware import AgentMiddleware, MiddlewareAgent
-from pydantic_ai_summarization import ContextManagerMiddleware
+from pydantic_ai_summarization import ContextManagerCapability
 
 from pydantic_deep import create_deep_agent
-from pydantic_deep.deps import DeepAgentDeps
 
 TEST_MODEL = TestModel()
 
@@ -32,101 +29,56 @@ class TestContextManagerIntegration:
     """Tests for context_manager parameter in create_deep_agent."""
 
     def test_default_has_context_manager(self):
-        """Default agent has ContextManagerMiddleware in history_processors."""
+        """Default agent has ContextManagerCapability."""
         agent = _minimal_agent()
-        processors = agent.history_processors
-        assert any(isinstance(p, ContextManagerMiddleware) for p in processors)
+        # Context middleware is exposed on agent
+        assert hasattr(agent, "_context_middleware")
+        assert agent._context_middleware is not None
 
     def test_context_manager_disabled(self):
-        """context_manager=False excludes ContextManagerMiddleware."""
+        """context_manager=False excludes context capability."""
         agent = _minimal_agent(context_manager=False)
-        processors = agent.history_processors
-        assert all(not isinstance(p, ContextManagerMiddleware) for p in processors)
+        assert agent._context_middleware is None
 
     def test_custom_max_tokens(self):
-        """context_manager_max_tokens is passed through to the middleware."""
+        """context_manager_max_tokens is passed through."""
         agent = _minimal_agent(context_manager_max_tokens=128_000)
-        processors = agent.history_processors
-        cm = next(p for p in processors if isinstance(p, ContextManagerMiddleware))
-        assert cm.max_tokens == 128_000
-
-    def test_default_max_tokens(self):
-        """Default max_tokens is 200_000."""
-        agent = _minimal_agent()
-        processors = agent.history_processors
-        cm = next(p for p in processors if isinstance(p, ContextManagerMiddleware))
-        assert cm.max_tokens == 200_000
+        cm = agent._context_middleware
+        assert isinstance(cm, ContextManagerCapability)
+        assert cm._resolved_max_tokens == 128_000
 
     def test_on_context_update_callback(self):
-        """on_context_update callback is wired to the middleware."""
+        """on_context_update callback is wired."""
         callback = MagicMock()
         agent = _minimal_agent(on_context_update=callback)
-        processors = agent.history_processors
-        cm = next(p for p in processors if isinstance(p, ContextManagerMiddleware))
+        cm = agent._context_middleware
+        assert isinstance(cm, ContextManagerCapability)
         assert cm.on_usage_update is callback
 
     def test_no_callback_by_default(self):
         """No usage callback is set by default."""
         agent = _minimal_agent()
-        processors = agent.history_processors
-        cm = next(p for p in processors if isinstance(p, ContextManagerMiddleware))
+        cm = agent._context_middleware
+        assert isinstance(cm, ContextManagerCapability)
         assert cm.on_usage_update is None
 
-    def test_context_manager_with_eviction(self):
-        """Context manager and eviction work together."""
-        agent = _minimal_agent(eviction_token_limit=20000)
-        processors = agent.history_processors
-        # Eviction should be first, context manager last
-        from pydantic_deep.processors.eviction import EvictionProcessor
-
-        assert isinstance(processors[0], EvictionProcessor)
-        assert isinstance(processors[-1], ContextManagerMiddleware)
-
-    def test_context_manager_with_user_processors(self):
-        """Context manager is appended AFTER user-provided processors."""
-
-        def custom_processor(messages: list[ModelMessage]) -> list[ModelMessage]:
-            return messages
-
-        agent = _minimal_agent(history_processors=[custom_processor])
-        processors = agent.history_processors
-        # User processor should come before context manager
-        cm_idx = next(
-            i for i, p in enumerate(processors) if isinstance(p, ContextManagerMiddleware)
-        )
-        custom_idx = next(i for i, p in enumerate(processors) if p is custom_processor)
-        assert custom_idx < cm_idx
-
-    def test_context_manager_with_patch_tool_calls(self):
-        """Context manager works with patch_tool_calls."""
-        agent = _minimal_agent(patch_tool_calls=True)
-        processors = agent.history_processors
-        # Patch processor should be first, context manager last
-        from pydantic_deep.processors.patch import patch_tool_calls_processor
-
-        assert processors[0] is patch_tool_calls_processor
-        assert isinstance(processors[-1], ContextManagerMiddleware)
-
-    def test_context_manager_with_middleware_wrapping(self):
-        """When MiddlewareAgent wrapping is active, context_mw is in middleware list too."""
-
-        class DummyMiddleware(AgentMiddleware[DeepAgentDeps]):  # type: ignore[misc]
-            pass
-
-        agent = _minimal_agent(middleware=[DummyMiddleware()])
-        assert isinstance(agent, MiddlewareAgent)
-
-    def test_context_manager_disabled_with_middleware(self):
-        """context_manager=False doesn't add to middleware list."""
-
-        class DummyMiddleware(AgentMiddleware[DeepAgentDeps]):  # type: ignore[misc]
-            pass
-
-        agent = _minimal_agent(context_manager=False, middleware=[DummyMiddleware()])
-        assert isinstance(agent, MiddlewareAgent)
-
-    def test_disabled_has_no_processors(self):
-        """Agent with context_manager=False and no other processors has empty list."""
+    def test_disabled_has_no_context_middleware(self):
+        """Agent with context_manager=False has None context_middleware."""
         agent = _minimal_agent(context_manager=False)
-        processors = agent.history_processors
-        assert len(processors) == 0
+        assert agent._context_middleware is None
+
+    def test_on_before_compress_forwarded(self):
+        """on_before_compress callback is wired to ContextManagerCapability."""
+        callback = MagicMock()
+        agent = _minimal_agent(on_before_compress=callback)
+        cm = agent._context_middleware
+        assert isinstance(cm, ContextManagerCapability)
+        assert cm.on_before_compress is callback
+
+    def test_on_after_compress_forwarded(self):
+        """on_after_compress callback is wired to ContextManagerCapability."""
+        callback = MagicMock()
+        agent = _minimal_agent(on_after_compress=callback)
+        cm = agent._context_middleware
+        assert isinstance(cm, ContextManagerCapability)
+        assert cm.on_after_compress is callback

@@ -19,9 +19,6 @@ from pydantic_ai.toolsets.function import FunctionToolset
 # Default plans directory (relative to backend root)
 DEFAULT_PLANS_DIR = "/plans"
 
-# ---------------------------------------------------------------------------
-# Planner subagent configuration
-# ---------------------------------------------------------------------------
 
 PLANNER_DESCRIPTION = (
     "Plans implementation of complex tasks. Analyzes code, asks clarifying "
