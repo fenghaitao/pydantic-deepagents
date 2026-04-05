@@ -63,9 +63,6 @@ def init_project(root: Path | None = None, *, quiet: bool = False) -> Path:
     (pd_dir / "skills").mkdir(exist_ok=True)
     (pd_dir / "sessions").mkdir(exist_ok=True)
 
-    # Copy built-in skills (skip if already populated)
-    _copy_builtin_skills(pd_dir / "skills", quiet=quiet)
-
     # Create memory template
     memory_dir = pd_dir / "main"
     memory_dir.mkdir(exist_ok=True)
