@@ -114,6 +114,16 @@ def _save_env_key(env_var: str, value: str) -> Path:
 
 def has_any_provider_configured() -> bool:
     """Check if any provider has a non-empty API key configured."""
+    # litellm models (e.g. GitHub Copilot) don't need an API key
+    from apps.cli.config import load_config
+
+    try:
+        config = load_config()
+        if config.model.startswith("litellm:"):
+            return True
+    except Exception:
+        pass
+
     for provider in PROVIDERS:
         key = _load_env_key(provider["env_var"])
         if key and len(key) > 5:  # Sanity check — not just whitespace/garbage

@@ -30,9 +30,11 @@ The agent reads and updates this file across sessions.
 """
 
 _DEFAULT_CONFIG_TOML = """\
-model = "anthropic:claude-sonnet-4-6"
+model = "litellm:github_copilot/gpt-4o"
 show_cost = true
 show_tokens = true
+web_search = false
+web_fetch = false
 
 # Tools that require user approval before execution
 # Use /config set approve_tools "execute,write_file" to change

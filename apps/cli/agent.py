@@ -111,21 +111,11 @@ def create_cli_agent(  # noqa: C901
     config = load_config(config_path)
 
     # Apply config defaults — explicit params override.
-    # If no explicit model/env override is set and config still has the default,
-    # auto-select by available provider credentials, with LiteLLM as final fallback.
     effective_model = model or config.model
-    if (
-        model is None
-        and "PYDANTIC_DEEP_MODEL" not in os.environ
-        and config.model == "openrouter:openai/gpt-4.1"
-    ):
-        from cli.providers import select_default_model
+    if isinstance(effective_model, str) and effective_model.startswith("litellm:"):
+        from pydantic_deep.litellm import infer_litellm_model
 
-        effective_model = select_default_model()
-        if isinstance(effective_model, str) and effective_model.startswith("litellm:"):
-            from pydantic_deep.litellm import infer_litellm_model
-
-            effective_model = infer_litellm_model(effective_model)
+        effective_model = infer_litellm_model(effective_model)
     effective_working_dir = working_dir or config.working_dir
     effective_allow_list = shell_allow_list or config.shell_allow_list or None
 
@@ -243,6 +233,9 @@ def create_cli_agent(  # noqa: C901
         session_dir = get_sessions_dir() / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
 
+    # WebSearchTool/WebFetchTool only work with OpenAIResponsesModel, not LiteLLM
+    _is_litellm = hasattr(effective_model, "system") and getattr(effective_model, "system", None) == "litellm"
+
     agent = create_deep_agent(
         model=effective_model,
         instructions=instructions,
@@ -269,9 +262,9 @@ def create_cli_agent(  # noqa: C901
         context_discovery=context_discovery if not lean else False,
         # Teams
         include_teams=config.include_teams,
-        # Web tools
-        web_search=config.web_search if not lean else False,
-        web_fetch=config.web_fetch if not lean else False,
+        # Web tools — WebSearchTool/WebFetchTool only works with OpenAIResponsesModel, not LiteLLM
+        web_search=False if _is_litellm else (config.web_search if not lean else False),
+        web_fetch=False if _is_litellm else (config.web_fetch if not lean else False),
         # Thinking
         thinking=config.thinking_effort if not lean else False,
         # History persistence — per-session messages.json

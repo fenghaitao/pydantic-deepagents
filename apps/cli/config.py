@@ -75,7 +75,7 @@ _FLOAT_FIELDS = frozenset({"temperature"})
 class CliConfig:
     """CLI configuration loaded from config.toml."""
 
-    model: str = "anthropic:claude-sonnet-4-6"
+    model: str = "litellm:github_copilot/gpt-4o"
     working_dir: str | None = None
     shell_allow_list: list[str] = field(default_factory=list)
     theme: str = "default"

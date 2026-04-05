@@ -1656,11 +1656,7 @@ def _raw_line_edit() -> str:  # noqa: C901
 
             # --- Ctrl+V → clipboard image paste ---
             if key == "paste":
-                from cli.clipboard import get_clipboard_image
-
-        # --- Ctrl+V → clipboard image paste ---
-        if key == "paste":
-            from apps.cli.clipboard import get_clipboard_image
+                from apps.cli.clipboard import get_clipboard_image
 
             # --- Enter → submit ---
             if key == "enter":
