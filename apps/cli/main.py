@@ -6,6 +6,7 @@ Usage:
     pydantic-deep skills list
     pydantic-deep config show
     pydantic-deep threads list
+    pydantic-deep projects delete <id>
 """
 
 from __future__ import annotations
@@ -698,6 +699,348 @@ def threads_export(
         typer.echo()
         for msg in messages:
             typer.echo(f"---\n{msg}\n")
+
+
+# ── Potpie code-graph sub-apps ────────────────────────────────────────────────
+
+
+def _make_potpie_backend(local: bool):
+    """Load CLI config, optionally override mode to 'local', return a PotpieBackend."""
+    from apps.cli.config import load_config
+    from pydantic_deep.toolsets.code_graph import make_backend
+
+    config = load_config()
+    if local:
+        config.potpie_mode = "local"
+    return make_backend(config)
+
+
+# ── parse sub-app ─────────────────────────────────────────────────────────────
+
+parse_app = typer.Typer(name="parse", help="Parse repositories into the code graph.", no_args_is_help=True)
+app.add_typer(parse_app)
+
+
+@parse_app.command("repo")
+def parse_repo(
+    path: Annotated[str, typer.Argument(help="Local path to the git repository")],
+    branch: Annotated[str, typer.Option("--branch", "-b", help="Branch name")] = "main",
+    repo_name: Annotated[
+        str | None,
+        typer.Option("--repo-name", help="Override repo name (default: directory name)"),
+    ] = None,
+    commit_id: Annotated[
+        str | None,
+        typer.Option("--commit", help="Specific commit SHA to parse"),
+    ] = None,
+    no_wait: Annotated[
+        bool,
+        typer.Option("--no-wait", help="Return immediately; do not poll for status"),
+    ] = False,
+    local: Annotated[
+        bool,
+        typer.Option("--local", help="Use direct PotpieRuntime instead of REST API"),
+    ] = False,
+) -> None:
+    """Parse a repository and build its code knowledge graph.
+
+    After parsing, the returned project_id can be set as the default:\n
+        pydantic-deep config set potpie_project_id <project_id>
+    """
+    import time
+
+    console = Console()
+
+    async def _run() -> None:
+        backend = _make_potpie_backend(local)
+        with console.status(f"[bold blue]Parsing {path} ({branch})…"):
+            result = await backend.parse(
+                repo_path=path,
+                repo_name=repo_name,
+                branch=branch,
+                commit_id=commit_id,
+            )
+
+        project_id = result.get("project_id", "")
+        status = result.get("status", "UNKNOWN")
+        message = result.get("message", "")
+
+        console.print(f"[bold]Project ID:[/bold] {project_id}")
+        console.print(f"[bold]Status:[/bold]     {status}")
+        if message:
+            console.print(f"[dim]{message}[/dim]")
+
+        if not no_wait and status not in ("READY", "ERROR") and project_id:
+            console.print("[dim]Polling for completion…[/dim]")
+            max_polls = 120
+            for _ in range(max_polls):
+                await asyncio.sleep(5)
+                st = await backend.parsing_status(project_id)
+                current = st.get("status", "UNKNOWN")
+                console.print(f"  status: {current}")
+                if current in ("READY", "ERROR", "DONE"):
+                    break
+            status = current
+
+        if status == "READY":
+            console.print(f"\n[green]Parsing complete.[/green]")
+            console.print(
+                f"[dim]Set as default: pydantic-deep config set potpie_project_id {project_id}[/dim]"
+            )
+        elif status == "ERROR":
+            console.print(f"\n[red]Parsing failed.[/red]")
+            raise typer.Exit(1)
+
+    asyncio.run(_run())
+
+
+@parse_app.command("status")
+def parse_status(
+    project_id: Annotated[str, typer.Argument(help="Project ID to check")],
+    local: Annotated[
+        bool,
+        typer.Option("--local", help="Use direct PotpieRuntime instead of REST API"),
+    ] = False,
+) -> None:
+    """Check the parsing status of a project."""
+    console = Console()
+
+    async def _run() -> None:
+        backend = _make_potpie_backend(local)
+        result = await backend.parsing_status(project_id)
+        status = result.get("status", "UNKNOWN")
+        style = "green" if status == "READY" else ("red" if status == "ERROR" else "yellow")
+        console.print(f"[bold]Project:[/bold] {project_id}")
+        console.print(f"[bold]Status:[/bold]  [{style}]{status}[/{style}]")
+
+    asyncio.run(_run())
+
+
+# ── projects sub-app ──────────────────────────────────────────────────────────
+
+projects_app = typer.Typer(name="projects", help="Manage parsed projects.", no_args_is_help=True)
+app.add_typer(projects_app)
+
+
+@projects_app.command("list")
+def projects_list(
+    output_json: Annotated[bool, typer.Option("--json", help="Output raw JSON")] = False,
+    local: Annotated[
+        bool,
+        typer.Option("--local", help="Use direct PotpieRuntime instead of REST API"),
+    ] = False,
+) -> None:
+    """List all indexed projects."""
+    console = Console()
+
+    async def _run() -> None:
+        backend = _make_potpie_backend(local)
+        projects = await backend.list_projects()
+
+        if output_json:
+            typer.echo(json.dumps(projects, indent=2, default=str))
+            return
+
+        if not projects:
+            console.print("[dim]No projects found.[/dim]")
+            return
+
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("ID", style="cyan")
+        table.add_column("Repo")
+        table.add_column("Branch")
+        table.add_column("Status")
+
+        for p in projects:
+            status = p.get("status", "")
+            style = "green" if status == "READY" else ("red" if status == "ERROR" else "yellow")
+            table.add_row(
+                p.get("id", ""),
+                p.get("repo_name", p.get("project_name", "")),
+                p.get("branch_name", ""),
+                Text(status, style=style),
+            )
+
+        console.print(table)
+
+    asyncio.run(_run())
+
+
+@projects_app.command("delete")
+def projects_delete(
+    project_id: Annotated[str, typer.Argument(help="Project ID to delete")],
+    force: Annotated[bool, typer.Option("--force", "-f", help="Skip confirmation")] = False,
+    local: Annotated[
+        bool,
+        typer.Option("--local", help="Use direct PotpieRuntime instead of REST API"),
+    ] = False,
+) -> None:
+    """Delete a project and its code graph data."""
+    if not force:
+        typer.confirm(f"Delete project {project_id}?", abort=True)
+
+    async def _run() -> None:
+        backend = _make_potpie_backend(local)
+        result = await backend.delete_project(project_id)
+        typer.echo(f"Deleted: {result.get('deleted', project_id)}")
+
+    asyncio.run(_run())
+
+
+@projects_app.command("delete-all")
+def projects_delete_all(
+    force: Annotated[bool, typer.Option("--force", "-f", help="Skip confirmation")] = False,
+    local: Annotated[
+        bool,
+        typer.Option("--local", help="Use direct PotpieRuntime instead of REST API"),
+    ] = False,
+) -> None:
+    """Delete ALL projects for this user."""
+    if not force:
+        typer.confirm("Delete ALL projects? This cannot be undone.", abort=True)
+
+    console = Console()
+
+    async def _run() -> None:
+        backend = _make_potpie_backend(local)
+        result = await backend.delete_all_projects()
+        console.print(f"[green]Deleted {result.get('deleted', 0)} project(s).[/green]")
+        if result.get("errors"):
+            for err in result["errors"]:
+                console.print(f"[red]Error: {err}[/red]")
+
+    asyncio.run(_run())
+
+
+# ── cache sub-app ─────────────────────────────────────────────────────────────
+
+cache_app = typer.Typer(name="cache", help="Manage inference cache.", no_args_is_help=True)
+app.add_typer(cache_app)
+
+
+@cache_app.command("stats")
+def cache_stats(
+    project_id: Annotated[
+        str | None,
+        typer.Option("--project-id", "-p", help="Show stats for a specific project"),
+    ] = None,
+    local: Annotated[
+        bool,
+        typer.Option("--local", help="Use direct PotpieRuntime instead of REST API"),
+    ] = False,
+) -> None:
+    """Show inference cache statistics."""
+    console = Console()
+
+    async def _run() -> None:
+        backend = _make_potpie_backend(local)
+        stats = await backend.cache_stats(project_id=project_id)
+
+        table = Table(show_header=False, show_lines=False, box=None)
+        table.add_column("Key", style="cyan")
+        table.add_column("Value")
+        for k, v in stats.items():
+            table.add_row(str(k), str(v))
+        console.print(table)
+
+    asyncio.run(_run())
+
+
+@cache_app.command("clean")
+def cache_clean(
+    all_entries: Annotated[
+        bool,
+        typer.Option("--all", help="Delete all inference cache rows"),
+    ] = False,
+    project_id: Annotated[
+        str | None,
+        typer.Option("--project-id", "-p", help="Delete rows for a specific project"),
+    ] = None,
+    expired: Annotated[
+        bool,
+        typer.Option("--expired", help="Delete expired rows"),
+    ] = False,
+    trim: Annotated[
+        bool,
+        typer.Option("--trim", help="Trim cache to --max-entries"),
+    ] = False,
+    max_entries: Annotated[
+        int,
+        typer.Option("--max-entries", help="Max entries to retain when trimming"),
+    ] = 100_000,
+    force: Annotated[bool, typer.Option("--force", "-f", help="Skip confirmation")] = False,
+    local: Annotated[
+        bool,
+        typer.Option("--local", help="Use direct PotpieRuntime instead of REST API"),
+    ] = False,
+) -> None:
+    """Clean the inference cache.
+
+    Must specify at least one of: --all, --project-id, --expired, --trim.
+    """
+    if not any([all_entries, project_id, expired, trim]):
+        typer.echo("Error: specify at least one of --all, --project-id, --expired, --trim", err=True)
+        raise typer.Exit(1)
+
+    if not force:
+        scope = "ALL entries" if all_entries else f"project {project_id}" if project_id else "selected entries"
+        typer.confirm(f"Clean cache ({scope})?", abort=True)
+
+    console = Console()
+
+    async def _run() -> None:
+        backend = _make_potpie_backend(local)
+        result = await backend.cache_clean(
+            all=all_entries,
+            project_id=project_id,
+            expired=expired,
+            trim=trim,
+            max_entries=max_entries,
+        )
+        for k, v in result.items():
+            console.print(f"[green]{k}: {v} removed[/green]")
+        if not result:
+            console.print("[dim]Nothing to clean.[/dim]")
+
+    asyncio.run(_run())
+
+
+# ── agents command ────────────────────────────────────────────────────────────
+
+@app.command("agents")
+def agents_list(
+    output_json: Annotated[bool, typer.Option("--json", help="Output raw JSON")] = False,
+    local: Annotated[
+        bool,
+        typer.Option("--local", help="Use direct PotpieRuntime instead of REST API"),
+    ] = False,
+) -> None:
+    """List available potpie agents."""
+    console = Console()
+
+    async def _run() -> None:
+        backend = _make_potpie_backend(local)
+        agents = await backend.list_agents()
+
+        if output_json:
+            typer.echo(json.dumps(agents, indent=2, default=str))
+            return
+
+        if not agents:
+            console.print("[dim]No agents found.[/dim]")
+            return
+
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("ID", style="cyan")
+        table.add_column("Name")
+        table.add_column("Description")
+
+        for a in agents:
+            table.add_row(a.get("id", ""), a.get("name", ""), a.get("description", ""))
+
+        console.print(table)
+
+    asyncio.run(_run())
 
 
 def main() -> None:

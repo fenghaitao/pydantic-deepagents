@@ -64,7 +64,8 @@ _BOOL_FIELDS = frozenset(
     }
 )
 
-_STR_FIELDS = frozenset({"model", "theme", "charset", "reasoning_effort", "thinking_effort"})
+_STR_FIELDS = frozenset({"model", "theme", "charset", "reasoning_effort", "thinking_effort",
+                          "potpie_url", "potpie_api_key", "potpie_project_id", "potpie_mode"})
 
 _INT_FIELDS = frozenset({"max_history", "thinking_budget"})
 
@@ -99,6 +100,16 @@ class CliConfig:
     temperature: float | None = None
     reasoning_effort: str | None = None
     logfire: bool = False
+    # ── Potpie code-graph integration ──────────────────────────────────────
+    potpie_url: str | None = None
+    """Potpie API base URL (e.g. ``http://localhost:8001``).
+    Auto-discovered from singularity if not set."""
+    potpie_api_key: str | None = None
+    """API key sent as ``X-API-Key`` header (REST mode only)."""
+    potpie_project_id: str | None = None
+    """Default project UUID injected into agent system prompt."""
+    potpie_mode: str = "rest"
+    """Backend mode: ``"rest"`` (default) or ``"local"`` (direct PotpieRuntime)."""
 
 
 def load_config(path: Path | None = None) -> CliConfig:
@@ -135,6 +146,23 @@ def _apply_env_overrides(config: CliConfig) -> None:
     env_charset = os.environ.get("PYDANTIC_DEEP_CHARSET")
     if env_charset:
         config.charset = env_charset
+
+    # Potpie integration overrides
+    env_potpie_url = os.environ.get("POTPIE_URL")
+    if env_potpie_url:
+        config.potpie_url = env_potpie_url
+
+    env_potpie_api_key = os.environ.get("POTPIE_API_KEY")
+    if env_potpie_api_key:
+        config.potpie_api_key = env_potpie_api_key
+
+    env_potpie_project_id = os.environ.get("POTPIE_PROJECT_ID")
+    if env_potpie_project_id:
+        config.potpie_project_id = env_potpie_project_id
+
+    env_potpie_mode = os.environ.get("POTPIE_MODE")
+    if env_potpie_mode:
+        config.potpie_mode = env_potpie_mode
 
 
 def validate_config(config: CliConfig) -> list[str]:

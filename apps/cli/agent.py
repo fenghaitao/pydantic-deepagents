@@ -161,6 +161,25 @@ def create_cli_agent(  # noqa: C901
 
         local_context = LocalContextToolset(root_dir=root)
 
+    # Collect extra toolsets; start with local context (if enabled)
+    toolsets_extra: list[Any] = [local_context] if local_context else []
+
+    # Potpie code-graph toolset — enabled when API key or local mode is configured
+    if config.potpie_api_key or config.potpie_mode == "local":
+        try:
+            from pydantic_deep.toolsets.code_graph import CodeGraphToolset, make_backend
+
+            cg_backend = make_backend(config)
+            toolsets_extra.append(
+                CodeGraphToolset(backend=cg_backend, project_id=config.potpie_project_id)
+            )
+        except Exception as _cg_err:
+            import sys
+            print(
+                f"[code-graph] Warning: could not initialize CodeGraphToolset: {_cg_err}",
+                file=sys.stderr,
+            )
+
     # Skills directories — searched in order, all matching dirs included:
     # 1. Bundled skills (shipped with CLI package)
     # 2. User-level skills (~/.pydantic-deep/skills/)
@@ -290,7 +309,7 @@ def create_cli_agent(  # noqa: C901
         # Middleware & hooks
         hooks=hooks or None,
         middleware=middleware or None,
-        toolsets=[local_context] if local_context else None,
+        toolsets=toolsets_extra or None,
     )
 
     # Extract context middleware for CLI commands (/compact, /context)
