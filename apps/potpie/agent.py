@@ -47,8 +47,17 @@ def create_potpie_agent(
     """
     kg_toolset = create_potpie_toolset(runtime, project_id, user_id)
 
+    # Resolve litellm: prefix the same way the CLI does
+    effective_model = model or DEFAULT_MODEL
+    if isinstance(effective_model, str) and effective_model.startswith("litellm:"):
+        from pydantic_deep.litellm import infer_litellm_model
+        effective_model = infer_litellm_model(effective_model)
+
+    # WebSearchTool only works with OpenAIResponsesModel, not LiteLLM
+    _is_litellm = hasattr(effective_model, "system") and getattr(effective_model, "system", None) == "litellm"
+
     agent = create_deep_agent(
-        model=model or DEFAULT_MODEL,
+        model=effective_model,
         toolsets=[kg_toolset],
         subagent_extra_toolsets=[kg_toolset],
         include_subagents=True,
@@ -56,6 +65,8 @@ def create_potpie_agent(
         include_memory=True,
         context_manager=True,
         eviction_token_limit=20_000,
+        web_search=False if _is_litellm else kwargs.pop("web_search", True),
+        web_fetch=False if _is_litellm else kwargs.pop("web_fetch", True),
         **kwargs,
     )
 

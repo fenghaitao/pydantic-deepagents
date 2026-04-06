@@ -28,6 +28,18 @@ console = Console()
 err_console = Console(stderr=True)
 
 
+def _resolve_model(model: str | None) -> str | None:
+    """Resolve model string, falling back to CLI config (same as pydantic-deep chat)."""
+    if model:
+        return model
+    try:
+        from apps.cli.config import load_config
+        config = load_config()
+        return config.model or None
+    except Exception:
+        return None
+
+
 # ---------------------------------------------------------------------------
 # parse
 # ---------------------------------------------------------------------------
@@ -133,7 +145,7 @@ async def _chat(project_id: str, model: str | None, user_id: str) -> None:
             runtime=runtime,
             project_id=project_id,
             user_id=user_id,
-            model=model,
+            model=_resolve_model(model),
         )
 
         _setup_readline()
@@ -217,7 +229,7 @@ async def _ask(query: str, project_id: str, model: str | None, user_id: str) -> 
             runtime=runtime,
             project_id=project_id,
             user_id=user_id,
-            model=model,
+            model=_resolve_model(model),
         )
 
         result = await agent.run(query, deps=deps)
