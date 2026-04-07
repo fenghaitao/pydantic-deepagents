@@ -97,6 +97,8 @@ async def run_non_interactive(  # noqa: C901
     verbose: bool = False,
     model_settings: dict[str, Any] | None = None,
     lean: bool = False,
+    project_id: str | None = None,
+    user_id: str = "default",
 ) -> int:
     """Run a single task non-interactively and exit.
 
@@ -151,6 +153,22 @@ async def run_non_interactive(  # noqa: C901
 
             sandbox_instance = backend
 
+        # Potpie KG toolset — injected when --project-id is provided
+        potpie_runtime = None
+        extra_toolsets: list[Any] = []
+        if project_id:
+            try:
+                from potpie import PotpieRuntime
+                from apps.potpie.toolset import create_potpie_toolset
+                potpie_runtime = PotpieRuntime.from_env()
+                await potpie_runtime.initialize()
+                kg_toolset = create_potpie_toolset(potpie_runtime, project_id, user_id)
+                extra_toolsets.append(kg_toolset)
+                if not effective_quiet:
+                    err_console.print(f"[dim]Potpie KG tools loaded for project {project_id}[/dim]")
+            except Exception as e:
+                err_console.print(f"[yellow]Warning: could not load Potpie KG tools: {e}[/yellow]")
+
         agent, deps = create_cli_agent(
             model=model,
             working_dir=working_dir,
@@ -161,6 +179,7 @@ async def run_non_interactive(  # noqa: C901
             lean=lean,
             model_settings=model_settings,
             session_id=session_id,
+            extra_toolsets=extra_toolsets or None,
         )
 
         show_tools = not effective_quiet or verbose
@@ -210,6 +229,11 @@ async def run_non_interactive(  # noqa: C901
     finally:
         if sandbox_instance is not None:
             _stop_sandbox(sandbox_instance, err_console)
+        if potpie_runtime is not None:
+            try:
+                await potpie_runtime.close()
+            except Exception:
+                pass
 
 
 def _write_output(console: Console, text: str, fmt: str) -> None:

@@ -60,6 +60,7 @@ def create_cli_agent(  # noqa: C901
     on_eviction: Any | None = None,
     summarization_model: str | None = None,
     extra_middleware: list[Any] | None = None,
+    extra_toolsets: list[Any] | None = None,
     backend: Any | None = None,
     *,
     include_skills: bool = True,
@@ -290,7 +291,7 @@ def create_cli_agent(  # noqa: C901
         # Middleware & hooks
         hooks=hooks or None,
         middleware=middleware or None,
-        toolsets=[local_context] if local_context else None,
+        toolsets=([local_context] if local_context else []) + (extra_toolsets or []) or None,
     )
 
     # Extract context middleware for CLI commands (/compact, /context)

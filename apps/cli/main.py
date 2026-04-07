@@ -188,6 +188,14 @@ def run(
         bool,
         typer.Option("--lean", help="Use minimal system prompt (less noise for benchmarks)"),
     ] = False,
+    project_id: Annotated[
+        str | None,
+        typer.Option("--project-id", "-p", help="Potpie project ID — adds KG tools to the agent"),
+    ] = None,
+    user_id: Annotated[
+        str,
+        typer.Option("--user-id", help="Potpie user ID (used with --project-id)"),
+    ] = "default",
 ) -> None:
     """Run a task non-interactively (benchmark mode)."""
     from apps.cli.init import ensure_initialized
@@ -213,6 +221,8 @@ def run(
             verbose=verbose,
             model_settings=settings,
             lean=lean,
+            project_id=project_id,
+            user_id=user_id,
         )
     )
     raise typer.Exit(exit_code)
