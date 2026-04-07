@@ -52,19 +52,29 @@ def _inject_project_id(tool: Tool) -> Tool:
     ctx.deps.potpie_project_id, removing it from the schema so the LLM never
     needs to supply it.
     """
-    schema = getattr(tool, "parameters_json_schema", None) or {}
+    schema = getattr(tool, "parameters_json_schema", None)
+    if schema is None:
+        # pydantic-ai stores schema on function_schema.json_schema for plain Tool objects
+        fs = getattr(tool, "function_schema", None)
+        schema = getattr(fs, "json_schema", None) or {}
+
     props = schema.get("properties", {})
     if "project_id" not in props:
         return tool
 
     original_func = tool.function
 
-    @functools.wraps(original_func)
+    # NOTE: functools.wraps would copy the original signature, hiding ctx.
+    # pydantic-ai detects RunContext by inspecting the first parameter annotation,
+    # so we must NOT use @functools.wraps here.
     def ctx_wrapper(ctx: RunContext[Any], **kwargs: Any) -> Any:
         project_id = getattr(ctx.deps, "potpie_project_id", None)
         if project_id:
             kwargs["project_id"] = project_id
         return original_func(**kwargs)
+
+    ctx_wrapper.__name__ = getattr(original_func, "__name__", tool.name)
+    ctx_wrapper.__doc__ = tool.description
 
     # Build a new schema without project_id so the LLM doesn't try to fill it
     new_schema = copy.deepcopy(schema)
@@ -78,6 +88,7 @@ def _inject_project_id(tool: Tool) -> Tool:
         name=tool.name,
         description=tool.description,
         json_schema=new_schema,
+        takes_ctx=True,
     )
 
 
