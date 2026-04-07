@@ -6,8 +6,11 @@ so they can be injected into create_deep_agent().
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import copy
+import functools
+from typing import TYPE_CHECKING, Any
 
+from pydantic_ai import RunContext, Tool
 from pydantic_ai.toolsets import FunctionToolset
 
 from app.modules.intelligence.agents.chat_agents.multi_agent.utils.tool_utils import (
@@ -41,6 +44,43 @@ KG_TOOL_NAMES: list[str] = [
 # ---------------------------------------------------------------------------
 
 
+def _inject_project_id(tool: Tool) -> Tool:
+    """Wrap a tool function to inject project_id from ctx.deps when the schema has it.
+
+    If the tool's JSON schema has a 'project_id' property, we wrap the function
+    to accept RunContext as the first argument and fill project_id from
+    ctx.deps.potpie_project_id, removing it from the schema so the LLM never
+    needs to supply it.
+    """
+    schema = getattr(tool, "parameters_json_schema", None) or {}
+    props = schema.get("properties", {})
+    if "project_id" not in props:
+        return tool
+
+    original_func = tool.function
+
+    @functools.wraps(original_func)
+    def ctx_wrapper(ctx: RunContext[Any], **kwargs: Any) -> Any:
+        project_id = getattr(ctx.deps, "potpie_project_id", None)
+        if project_id:
+            kwargs["project_id"] = project_id
+        return original_func(**kwargs)
+
+    # Build a new schema without project_id so the LLM doesn't try to fill it
+    new_schema = copy.deepcopy(schema)
+    new_schema.get("properties", {}).pop("project_id", None)
+    required = new_schema.get("required", [])
+    if "project_id" in required:
+        required.remove("project_id")
+
+    return Tool.from_schema(
+        function=ctx_wrapper,
+        name=tool.name,
+        description=tool.description,
+        json_schema=new_schema,
+    )
+
+
 def create_potpie_toolset(
     runtime: PotpieRuntime,
     project_id: str,
@@ -71,7 +111,7 @@ def create_potpie_toolset(
 
     tool_service = ToolService(db=db_session, user_id=user_id)
     langchain_tools = tool_service.get_tools(KG_TOOL_NAMES)
-    pydantic_tools = wrap_structured_tools(langchain_tools)
+    pydantic_tools = [_inject_project_id(t) for t in wrap_structured_tools(langchain_tools)]
 
     toolset: FunctionToolset = FunctionToolset(tools=pydantic_tools, id=toolset_id)
 

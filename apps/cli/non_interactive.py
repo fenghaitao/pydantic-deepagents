@@ -156,6 +156,7 @@ async def run_non_interactive(  # noqa: C901
         # Potpie KG toolset — injected when --project-id is provided
         potpie_runtime = None
         extra_toolsets: list[Any] = []
+        extra_instructions: str | None = None
         if project_id:
             try:
                 from potpie import PotpieRuntime
@@ -164,6 +165,14 @@ async def run_non_interactive(  # noqa: C901
                 await potpie_runtime.initialize()
                 kg_toolset = create_potpie_toolset(potpie_runtime, project_id, user_id)
                 extra_toolsets.append(kg_toolset)
+                extra_instructions = (
+                    f"## Potpie Knowledge Graph\n\n"
+                    f"You have access to potpie's knowledge graph tools for codebase analysis.\n"
+                    f"The project ID is: `{project_id}`\n"
+                    f"The user ID is: `{user_id}`\n\n"
+                    f"Always pass `project_id=\"{project_id}\"` when calling any KG tool "
+                    f"(ask_knowledge_graph_queries, get_code_from_multiple_node_ids, etc.)."
+                )
                 if not effective_quiet:
                     err_console.print(f"[dim]Potpie KG tools loaded for project {project_id}[/dim]")
             except Exception as e:
@@ -180,7 +189,12 @@ async def run_non_interactive(  # noqa: C901
             model_settings=model_settings,
             session_id=session_id,
             extra_toolsets=extra_toolsets or None,
+            extra_instructions=extra_instructions,
         )
+
+        if project_id:
+            deps.potpie_project_id = project_id
+            deps.potpie_user_id = user_id
 
         show_tools = not effective_quiet or verbose
         if stream:

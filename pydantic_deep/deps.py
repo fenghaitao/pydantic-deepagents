@@ -34,6 +34,8 @@ class DeepAgentDeps:
     ask_user: Any = field(default=None, repr=False)  # Callback for interactive questions
     context_middleware: Any = field(default=None, repr=False)  # ContextManagerCapability | None
     share_todos: bool = False  # When True, subagents share parent's todo list
+    potpie_project_id: str | None = field(default=None)  # Potpie project ID for KG tools
+    potpie_user_id: str = field(default="default")  # Potpie user ID for KG tools
 
     def __post_init__(self) -> None:
         """Initialize backend with files if using StateBackend."""
@@ -226,6 +228,8 @@ class DeepAgentDeps:
             uploads=self.uploads,  # Shared reference
             ask_user=self.ask_user,  # Propagate to subagents
             share_todos=self.share_todos,  # Propagate to subagents
+            potpie_project_id=self.potpie_project_id,  # Propagate to subagents
+            potpie_user_id=self.potpie_user_id,  # Propagate to subagents
         )
 
 
