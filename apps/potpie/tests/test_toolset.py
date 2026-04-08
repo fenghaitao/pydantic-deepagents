@@ -3,7 +3,6 @@
 Validates:
 - create_potpie_toolset returns a FunctionToolset with all 8 KG tool names
 - All tool names are sanitized (match ^[a-zA-Z0-9_-]+$)
-- _close_session closes the session and clears _db_session
 - Property 1: sanitize_tool_name_for_api is total and safe for any non-empty input
 """
 
@@ -12,15 +11,14 @@ from __future__ import annotations
 import re
 import sys
 from types import ModuleType
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from pydantic_ai import Tool
 from pydantic_ai.toolsets import FunctionToolset
 
 # ---------------------------------------------------------------------------
 # Stub out heavy backend imports before any app.* module is loaded.
-# This prevents the deep import chain (instructor → mistralai → …) from
-# running during test collection.
 # ---------------------------------------------------------------------------
 
 _STUB_MODULES = [
@@ -56,7 +54,6 @@ def _install_stubs() -> None:
         if mod_name not in sys.modules:
             sys.modules[mod_name] = ModuleType(mod_name)
 
-    # Provide the two symbols actually imported by toolset.py
     tool_utils_mod = sys.modules[
         "app.modules.intelligence.agents.chat_agents.multi_agent.utils.tool_utils"
     ]
@@ -70,7 +67,7 @@ def _install_stubs() -> None:
 _install_stubs()
 
 # Now safe to import toolset (stubs are in place)
-from apps.potpie.toolset import KG_TOOL_NAMES, _close_session, create_potpie_toolset  # noqa: E402
+from apps.potpie.toolset import KG_TOOL_NAMES, create_potpie_toolset  # noqa: E402
 
 TOOL_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
@@ -90,96 +87,95 @@ def _make_real_tool(name: str) -> Tool:
     return Tool(function=_fn, name=name, description=f"Tool {name}")
 
 
-def _make_runtime_mock() -> MagicMock:
-    """Return a mock PotpieRuntime with a db.get_session() stub."""
-    runtime = MagicMock()
-    runtime.db.get_session.return_value = MagicMock()
-    return runtime
+def _make_backend_mock(tool_names: list[str]) -> MagicMock:
+    """Return a mock PotpieBackend whose get_tools() returns real Tool objects."""
+    backend = MagicMock()
+    real_tools = [_make_real_tool(n) for n in tool_names]
+    backend.get_tools = AsyncMock(return_value=real_tools)
+    return backend
 
 
 # ---------------------------------------------------------------------------
-# Unit tests — Task 5.1
+# Unit tests
 # ---------------------------------------------------------------------------
 
 
 class TestCreatePotpieToolset:
     """Tests for create_potpie_toolset factory."""
 
-    def test_returns_function_toolset(self) -> None:
+    @pytest.mark.asyncio
+    async def test_returns_function_toolset(self) -> None:
         """create_potpie_toolset returns a FunctionToolset instance."""
-        runtime = _make_runtime_mock()
+        backend = _make_backend_mock(KG_TOOL_NAMES)
         real_tools = [_make_real_tool(n) for n in KG_TOOL_NAMES]
 
-        with (
-            patch("apps.potpie.toolset.ToolService") as MockToolService,
-            patch("apps.potpie.toolset.wrap_structured_tools", return_value=real_tools),
-        ):
-            MockToolService.return_value.get_tools.return_value = []
-            toolset = create_potpie_toolset(runtime, "proj-1", "user-1")
+        with patch("apps.potpie.toolset.wrap_structured_tools", return_value=real_tools):
+            toolset = await create_potpie_toolset(backend)
 
         assert isinstance(toolset, FunctionToolset)
 
-    def test_toolset_contains_all_8_kg_tools(self) -> None:
+    @pytest.mark.asyncio
+    async def test_toolset_contains_all_8_kg_tools(self) -> None:
         """Toolset has exactly the 8 KG tool names defined in KG_TOOL_NAMES."""
-        runtime = _make_runtime_mock()
+        backend = _make_backend_mock(KG_TOOL_NAMES)
         real_tools = [_make_real_tool(n) for n in KG_TOOL_NAMES]
 
-        with (
-            patch("apps.potpie.toolset.ToolService") as MockToolService,
-            patch("apps.potpie.toolset.wrap_structured_tools", return_value=real_tools),
-        ):
-            MockToolService.return_value.get_tools.return_value = []
-            toolset = create_potpie_toolset(runtime, "proj-1", "user-1")
+        with patch("apps.potpie.toolset.wrap_structured_tools", return_value=real_tools):
+            toolset = await create_potpie_toolset(backend)
 
         tool_names = list(toolset.tools.keys())
         for expected in KG_TOOL_NAMES:
             assert expected in tool_names, f"Missing tool: {expected}"
 
-    def test_all_tool_names_are_sanitized(self) -> None:
+    @pytest.mark.asyncio
+    async def test_all_tool_names_are_sanitized(self) -> None:
         """All tool names in the returned toolset match ^[a-zA-Z0-9_-]+$."""
-        runtime = _make_runtime_mock()
+        backend = _make_backend_mock(KG_TOOL_NAMES)
         real_tools = [_make_real_tool(n) for n in KG_TOOL_NAMES]
 
-        with (
-            patch("apps.potpie.toolset.ToolService") as MockToolService,
-            patch("apps.potpie.toolset.wrap_structured_tools", return_value=real_tools),
-        ):
-            MockToolService.return_value.get_tools.return_value = []
-            toolset = create_potpie_toolset(runtime, "proj-1", "user-1")
+        with patch("apps.potpie.toolset.wrap_structured_tools", return_value=real_tools):
+            toolset = await create_potpie_toolset(backend)
 
         for name in toolset.tools.keys():
             assert TOOL_NAME_RE.match(name), f"Tool name not sanitized: {name!r}"
 
-    def test_tool_service_receives_user_id(self) -> None:
-        """ToolService is instantiated with the provided user_id."""
-        runtime = _make_runtime_mock()
+    @pytest.mark.asyncio
+    async def test_get_tools_called_with_kg_tool_names(self) -> None:
+        """backend.get_tools is called with the full KG_TOOL_NAMES list by default."""
+        backend = _make_backend_mock(KG_TOOL_NAMES)
         real_tools = [_make_real_tool(n) for n in KG_TOOL_NAMES]
 
-        with (
-            patch("apps.potpie.toolset.ToolService") as MockToolService,
-            patch("apps.potpie.toolset.wrap_structured_tools", return_value=real_tools),
-        ):
-            MockToolService.return_value.get_tools.return_value = []
-            create_potpie_toolset(runtime, "proj-1", "user-42")
+        with patch("apps.potpie.toolset.wrap_structured_tools", return_value=real_tools):
+            await create_potpie_toolset(backend)
 
-        call_args = MockToolService.call_args
-        # ToolService(db=session, user_id=user_id) — check positional or keyword
-        assert "user-42" in (list(call_args.args) + list(call_args.kwargs.values()))
+        backend.get_tools.assert_called_once_with(
+            KG_TOOL_NAMES, exclude_embedding_tools=False
+        )
 
-    def test_get_tools_called_with_kg_tool_names(self) -> None:
-        """ToolService.get_tools is called with the full KG_TOOL_NAMES list."""
-        runtime = _make_runtime_mock()
+    @pytest.mark.asyncio
+    async def test_custom_tool_names_forwarded(self) -> None:
+        """Custom tool_names are forwarded to backend.get_tools."""
+        custom = ["fetch_file", "fetch_files_batch"]
+        backend = _make_backend_mock(custom)
+        real_tools = [_make_real_tool(n) for n in custom]
+
+        with patch("apps.potpie.toolset.wrap_structured_tools", return_value=real_tools):
+            await create_potpie_toolset(backend, tool_names=custom)
+
+        backend.get_tools.assert_called_once_with(custom, exclude_embedding_tools=False)
+
+    @pytest.mark.asyncio
+    async def test_exclude_embedding_tools_forwarded(self) -> None:
+        """exclude_embedding_tools=True is forwarded to backend.get_tools."""
+        backend = _make_backend_mock(KG_TOOL_NAMES)
         real_tools = [_make_real_tool(n) for n in KG_TOOL_NAMES]
 
-        with (
-            patch("apps.potpie.toolset.ToolService") as MockToolService,
-            patch("apps.potpie.toolset.wrap_structured_tools", return_value=real_tools),
-        ):
-            mock_svc = MockToolService.return_value
-            mock_svc.get_tools.return_value = []
-            create_potpie_toolset(runtime, "proj-1", "user-1")
+        with patch("apps.potpie.toolset.wrap_structured_tools", return_value=real_tools):
+            await create_potpie_toolset(backend, exclude_embedding_tools=True)
 
-        mock_svc.get_tools.assert_called_once_with(KG_TOOL_NAMES)
+        backend.get_tools.assert_called_once_with(
+            KG_TOOL_NAMES, exclude_embedding_tools=True
+        )
 
     def test_kg_tool_names_constant_has_8_entries(self) -> None:
         """KG_TOOL_NAMES contains exactly 8 tool names."""
@@ -191,38 +187,8 @@ class TestCreatePotpieToolset:
             assert TOOL_NAME_RE.match(name), f"KG_TOOL_NAMES entry not sanitized: {name!r}"
 
 
-class TestCloseSession:
-    """Tests for _close_session helper."""
-
-    def test_close_session_calls_close_and_clears(self) -> None:
-        """_close_session closes the DB session and sets _db_session to None."""
-        runtime = _make_runtime_mock()
-        real_tools = [_make_real_tool(n) for n in KG_TOOL_NAMES]
-        mock_session = MagicMock()
-        runtime.db.get_session.return_value = mock_session
-
-        with (
-            patch("apps.potpie.toolset.ToolService") as MockToolService,
-            patch("apps.potpie.toolset.wrap_structured_tools", return_value=real_tools),
-        ):
-            MockToolService.return_value.get_tools.return_value = []
-            toolset = create_potpie_toolset(runtime, "proj-1", "user-1")
-
-        assert toolset._db_session is mock_session  # type: ignore[attr-defined]
-        _close_session(toolset)
-
-        mock_session.close.assert_called_once()
-        assert toolset._db_session is None  # type: ignore[attr-defined]
-
-    def test_close_session_noop_when_no_session(self) -> None:
-        """_close_session is a no-op when _db_session is not set."""
-        toolset = FunctionToolset(id="empty")
-        # Should not raise
-        _close_session(toolset)
-
-
 # ---------------------------------------------------------------------------
-# Property-based test — Task 5.4
+# Property-based test
 # Validates: Requirements Correctness Property 1
 # ---------------------------------------------------------------------------
 

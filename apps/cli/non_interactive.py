@@ -154,15 +154,20 @@ async def run_non_interactive(  # noqa: C901
             sandbox_instance = backend
 
         # Potpie KG toolset — injected when --project-id is provided
-        potpie_runtime = None
         potpie_cap: Any = None
         if project_id:
             try:
-                from potpie import PotpieRuntime
+                from apps.cli.config import load_config as _load_config
+                from pydantic_deep.toolsets.code_graph import make_backend
                 from apps.potpie.capability import PotpieKGCapability
-                potpie_runtime = PotpieRuntime.from_env()
-                await potpie_runtime.initialize()
-                potpie_cap = await PotpieKGCapability.create(potpie_runtime, project_id, user_id)
+                _cfg = _load_config()
+                _cfg.potpie_mode = "local"  # --project-id implies local runtime
+                _backend = make_backend(_cfg)
+                potpie_cap = await PotpieKGCapability.create(
+                    backend=_backend,
+                    project_id=project_id,
+                    user_id=user_id,
+                )
                 if not effective_quiet:
                     err_console.print(f"[dim]Potpie KG tools loaded for project {project_id}[/dim]")
             except Exception as e:
@@ -234,12 +239,7 @@ async def run_non_interactive(  # noqa: C901
             _stop_sandbox(sandbox_instance, err_console)
         if potpie_cap is not None:
             try:
-                potpie_cap.close()
-            except Exception:
-                pass
-        if potpie_runtime is not None:
-            try:
-                await potpie_runtime.close()
+                await potpie_cap.aclose()
             except Exception:
                 pass
 

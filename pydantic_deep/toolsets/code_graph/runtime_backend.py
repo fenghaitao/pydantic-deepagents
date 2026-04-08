@@ -63,6 +63,39 @@ class RuntimeBackend:
     async def __aexit__(self, *_: Any) -> None:
         await self.close()
 
+    # ── Tool registry ─────────────────────────────────────────────────────
+
+    async def get_tools(
+        self,
+        tool_names: list[str],
+        exclude_embedding_tools: bool = False,
+    ) -> list:
+        """Fetch StructuredTool instances by name from ToolService.
+
+        Opens a short-lived DB session, retrieves the requested tools, and
+        closes the session immediately. The returned StructuredTool objects
+        are stateless after construction and manage their own DB access.
+
+        Args:
+            tool_names: Names of tools to retrieve.
+            exclude_embedding_tools: Skip embedding-dependent tools (use
+                when project is in INFERRING state).
+
+        Returns:
+            List of StructuredTool instances.
+        """
+        from app.modules.intelligence.tools.tool_service import ToolService
+
+        rt = await self._get_runtime()
+        session = rt.db.get_session()
+        try:
+            svc = ToolService(db=session, user_id=self._user_id)
+            return svc.get_tools(
+                tool_names, exclude_embedding_tools=exclude_embedding_tools
+            )
+        finally:
+            session.close()
+
     # ── Graph query ───────────────────────────────────────────────────────
 
     async def nl_query(self, project_id: str, query: str) -> dict:

@@ -2,12 +2,15 @@
 
 Wraps potpie's knowledge graph tools as a pydantic-ai FunctionToolset
 so they can be injected into create_deep_agent().
+
+Uses PotpieBackend.get_tools() so it works with any backend implementation
+that supports direct tool registry access (RuntimeBackend). RestBackend
+raises NotImplementedError for get_tools() — use CodeGraphToolset instead.
 """
 
 from __future__ import annotations
 
 import copy
-import functools
 from typing import TYPE_CHECKING, Any
 
 from pydantic_ai import RunContext, Tool
@@ -16,12 +19,7 @@ from pydantic_ai.toolsets import FunctionToolset
 from app.modules.intelligence.agents.chat_agents.multi_agent.utils.tool_utils import (
     wrap_structured_tools,
 )
-from app.modules.intelligence.tools.tool_service import ToolService
-
-if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
-
-    from potpie.runtime import PotpieRuntime
+from pydantic_deep.toolsets.code_graph.backend import PotpieBackend
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -40,21 +38,20 @@ KG_TOOL_NAMES: list[str] = [
 
 
 # ---------------------------------------------------------------------------
-# Public factory
+# Internal helpers
 # ---------------------------------------------------------------------------
 
 
 def _inject_project_id(tool: Tool) -> Tool:
-    """Wrap a tool function to inject project_id from ctx.deps when the schema has it.
+    """Wrap a tool to inject project_id from ctx.deps when the schema has it.
 
-    If the tool's JSON schema has a 'project_id' property, we wrap the function
-    to accept RunContext as the first argument and fill project_id from
+    If the tool's JSON schema has a 'project_id' property, wraps the function
+    to accept RunContext as the first argument and fills project_id from
     ctx.deps.potpie_project_id, removing it from the schema so the LLM never
     needs to supply it.
     """
     schema = getattr(tool, "parameters_json_schema", None)
     if schema is None:
-        # pydantic-ai stores schema on function_schema.json_schema for plain Tool objects
         fs = getattr(tool, "function_schema", None)
         schema = getattr(fs, "json_schema", None) or {}
 
@@ -76,7 +73,6 @@ def _inject_project_id(tool: Tool) -> Tool:
     ctx_wrapper.__name__ = getattr(original_func, "__name__", tool.name)
     ctx_wrapper.__doc__ = tool.description
 
-    # Build a new schema without project_id so the LLM doesn't try to fill it
     new_schema = copy.deepcopy(schema)
     new_schema.get("properties", {}).pop("project_id", None)
     required = new_schema.get("required", [])
@@ -92,61 +88,39 @@ def _inject_project_id(tool: Tool) -> Tool:
     )
 
 
-def create_potpie_toolset(
-    runtime: PotpieRuntime,
-    project_id: str,
-    user_id: str,
+# ---------------------------------------------------------------------------
+# Public factory
+# ---------------------------------------------------------------------------
+
+
+async def create_potpie_toolset(
+    backend: PotpieBackend,
+    tool_names: list[str] | None = None,
     toolset_id: str = "potpie-kg",
+    exclude_embedding_tools: bool = False,
 ) -> FunctionToolset:
-    """Create a FunctionToolset containing potpie's KG tools.
+    """Create a FunctionToolset containing potpie KG tools via a PotpieBackend.
 
-    Opens a sync DB session from *runtime*, instantiates ToolService with
-    *user_id* for per-user access control, retrieves the 8 KG tools, wraps
-    them as pydantic-ai Tool objects (with handle_exception), and returns a
-    FunctionToolset ready to be passed to create_deep_agent().
+    Fetches StructuredTool instances from the backend's tool registry,
+    wraps them as pydantic-ai Tool objects with project_id injection,
+    and returns a FunctionToolset ready to be passed to create_deep_agent().
 
-    The caller is responsible for closing the session when the agent run
-    finishes — use the returned ``_close_session`` attribute or call
-    ``_close_session(toolset)`` directly.
+    Requires a backend that supports get_tools() — i.e. RuntimeBackend.
+    RestBackend will raise NotImplementedError.
 
     Args:
-        runtime: Initialised PotpieRuntime instance.
-        project_id: Registered project ID (baked into tool closures).
-        user_id: User ID forwarded to ToolService for access control.
+        backend: An initialised PotpieBackend (RuntimeBackend recommended).
+        tool_names: Tool names to retrieve. Defaults to KG_TOOL_NAMES.
         toolset_id: Identifier for the FunctionToolset (default "potpie-kg").
+        exclude_embedding_tools: Skip embedding-dependent tools (use when
+            project is in INFERRING state).
 
     Returns:
-        FunctionToolset with all KG tools wrapped and ready for use.
+        FunctionToolset with all requested tools wrapped and ready for use.
     """
-    db_session: Session = runtime.db.get_session()
-
-    tool_service = ToolService(db=db_session, user_id=user_id)
-    langchain_tools = tool_service.get_tools(KG_TOOL_NAMES)
+    names = tool_names if tool_names is not None else KG_TOOL_NAMES
+    langchain_tools = await backend.get_tools(
+        names, exclude_embedding_tools=exclude_embedding_tools
+    )
     pydantic_tools = [_inject_project_id(t) for t in wrap_structured_tools(langchain_tools)]
-
-    toolset: FunctionToolset = FunctionToolset(tools=pydantic_tools, id=toolset_id)
-
-    # Attach the session so callers can close it after the agent run.
-    toolset._db_session = db_session  # type: ignore[attr-defined]
-
-    return toolset
-
-
-# ---------------------------------------------------------------------------
-# Cleanup helper
-# ---------------------------------------------------------------------------
-
-
-def _close_session(toolset: FunctionToolset) -> None:
-    """Close the DB session that was opened by create_potpie_toolset.
-
-    Call this after the agent run completes to release the database
-    connection back to the pool.
-
-    Args:
-        toolset: The FunctionToolset returned by create_potpie_toolset.
-    """
-    session: Session | None = getattr(toolset, "_db_session", None)
-    if session is not None:
-        session.close()
-        toolset._db_session = None  # type: ignore[attr-defined]
+    return FunctionToolset(tools=pydantic_tools, id=toolset_id)

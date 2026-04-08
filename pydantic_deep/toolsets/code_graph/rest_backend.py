@@ -29,6 +29,23 @@ class RestBackend:
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
 
+    # ── Tool registry ─────────────────────────────────────────────────────
+
+    async def get_tools(
+        self,
+        tool_names: list[str],
+        exclude_embedding_tools: bool = False,
+    ) -> list:
+        """Not supported over REST — raises NotImplementedError.
+
+        The REST backend exposes only the four high-level graph query
+        endpoints. Direct ToolService access requires RuntimeBackend.
+        """
+        raise NotImplementedError(
+            "get_tools() is not available in REST mode. "
+            "Switch to local mode (potpie_mode=local) to access the full tool registry."
+        )
+
     # ── Helpers ───────────────────────────────────────────────────────────
 
     def _headers(self) -> dict[str, str]:

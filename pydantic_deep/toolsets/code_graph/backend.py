@@ -7,12 +7,38 @@ HTTP (RestBackend) or in-process (RuntimeBackend).
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from langchain_core.tools import StructuredTool
 
 
 @runtime_checkable
 class PotpieBackend(Protocol):
     """Common interface for all potpie backend implementations."""
+
+    # ── Tool registry (RuntimeBackend only) ──────────────────────────────
+
+    async def get_tools(
+        self,
+        tool_names: list[str],
+        exclude_embedding_tools: bool = False,
+    ) -> list[StructuredTool]:
+        """Fetch raw StructuredTool instances by name from the tool registry.
+
+        Only meaningful for RuntimeBackend (direct ToolService access).
+        RestBackend raises NotImplementedError — use the high-level graph
+        query methods instead.
+
+        Args:
+            tool_names: Names of tools to retrieve from ToolService.
+            exclude_embedding_tools: When True, skip tools that require
+                embeddings (use during project INFERRING state).
+
+        Returns:
+            List of StructuredTool instances ready for wrapping.
+        """
+        ...
 
     # ── Graph query (used by CodeGraphToolset / agent) ────────────────────
 
