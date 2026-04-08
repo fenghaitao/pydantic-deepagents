@@ -165,12 +165,11 @@ async def run_non_interactive(  # noqa: C901
                 from apps.potpie.capability import PotpieKGCapability
                 from pydantic_deep.subagents_potpie import make_potpie_subagents
                 _cfg = _load_config()
-                _cfg.potpie_mode = "local"  # --project-id implies local runtime
+                _cfg.potpie_mode = "local"
                 _backend = make_backend(_cfg)
+                # Share one backend for both capability and subagents
                 potpie_cap = await PotpieKGCapability.create(
-                    backend=_backend,
-                    project_id=project_id,
-                    user_id=user_id,
+                    backend=_backend, project_id=project_id, user_id=user_id
                 )
                 potpie_ctx = PotpieContext(project_id=project_id, user_id=user_id)
                 potpie_subs = await make_potpie_subagents(

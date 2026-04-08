@@ -318,28 +318,41 @@ async def make_potpie_subagents(
     Returns:
         List of SubAgentConfig dicts for all seven agents.
     """
-    from apps.potpie.toolset import create_potpie_toolset
-
-    # Build all toolsets concurrently
-    import asyncio
-
-    (
-        qna_ts,
-        debug_ts,
-        codegen_ts,
-        lld_ts,
-        unit_ts,
-        integ_ts,
-        blast_ts,
-    ) = await asyncio.gather(
-        create_potpie_toolset(backend, _QNA_TOOL_NAMES, "potpie-qna", exclude_embedding_tools),
-        create_potpie_toolset(backend, _DEBUG_TOOL_NAMES, "potpie-debug", exclude_embedding_tools),
-        create_potpie_toolset(backend, _CODE_GEN_TOOL_NAMES, "potpie-codegen", exclude_embedding_tools),
-        create_potpie_toolset(backend, _LLD_TOOL_NAMES, "potpie-lld", exclude_embedding_tools),
-        create_potpie_toolset(backend, _UNIT_TEST_TOOL_NAMES, "potpie-unit-test", exclude_embedding_tools),
-        create_potpie_toolset(backend, _INTEGRATION_TEST_TOOL_NAMES, "potpie-integ-test", exclude_embedding_tools),
-        create_potpie_toolset(backend, _BLAST_RADIUS_TOOL_NAMES, "potpie-blast-radius", exclude_embedding_tools),
+    from apps.potpie.toolset import _inject_project_id
+    from app.modules.intelligence.agents.chat_agents.multi_agent.utils.tool_utils import (
+        wrap_structured_tools,
     )
+    from pydantic_ai.toolsets import FunctionToolset
+    from app.modules.intelligence.tools.tool_service import ToolService
+
+    # Open one DB session and one ToolService — reuse for all agents.
+    # This avoids the ~25s ToolService.__init__ cost per agent.
+    from potpie import PotpieRuntime as _RT  # type: ignore[import]
+    rt = _RT.from_env()
+    await rt.initialize()
+    session = rt.db.get_session()
+    try:
+        svc = ToolService(db=session, user_id=user_id)
+
+        def _make_toolset(names: list[str], toolset_id: str) -> FunctionToolset:
+            langchain_tools = svc.get_tools(
+                names, exclude_embedding_tools=exclude_embedding_tools
+            )
+            pydantic_tools = [
+                _inject_project_id(t) for t in wrap_structured_tools(langchain_tools)
+            ]
+            return FunctionToolset(tools=pydantic_tools, id=toolset_id)
+
+        qna_ts = _make_toolset(_QNA_TOOL_NAMES, "potpie-qna")
+        debug_ts = _make_toolset(_DEBUG_TOOL_NAMES, "potpie-debug")
+        codegen_ts = _make_toolset(_CODE_GEN_TOOL_NAMES, "potpie-codegen")
+        lld_ts = _make_toolset(_LLD_TOOL_NAMES, "potpie-lld")
+        unit_ts = _make_toolset(_UNIT_TEST_TOOL_NAMES, "potpie-unit-test")
+        integ_ts = _make_toolset(_INTEGRATION_TEST_TOOL_NAMES, "potpie-integ-test")
+        blast_ts = _make_toolset(_BLAST_RADIUS_TOOL_NAMES, "potpie-blast-radius")
+    finally:
+        session.close()
+        await rt.close()
 
     return [
         {
@@ -504,75 +517,6 @@ Be specific: name the affected files, functions, and APIs.
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
-
-
-async def make_potpie_subagents(
-    backend: PotpieBackend,
-    project_id: str,
-    user_id: str,
-    exclude_embedding_tools: bool = False,
-) -> list[Any]:
-    """Build SubAgentConfig entries for the QnA and Blast Radius agents.
-
-    Fetches the required StructuredTools from the backend, wraps them as
-    pydantic-ai FunctionToolsets, and returns SubAgentConfig dicts ready
-    to pass to create_deep_agent(subagents=...).
-
-    Args:
-        backend: Initialised PotpieBackend (RuntimeBackend required for
-            get_tools(); RestBackend raises NotImplementedError).
-        project_id: Active project UUID — injected into tool calls.
-        user_id: User ID for ToolService access control.
-        exclude_embedding_tools: Skip embedding-dependent tools (use when
-            project is in INFERRING state).
-
-    Returns:
-        List of two SubAgentConfig dicts: [codebase_qna, blast_radius].
-    """
-    from apps.potpie.toolset import create_potpie_toolset
-
-    qna_toolset = await create_potpie_toolset(
-        backend=backend,
-        tool_names=_QNA_TOOL_NAMES,
-        toolset_id="potpie-qna",
-        exclude_embedding_tools=exclude_embedding_tools,
-    )
-
-    blast_toolset = await create_potpie_toolset(
-        backend=backend,
-        tool_names=_BLAST_RADIUS_TOOL_NAMES,
-        toolset_id="potpie-blast-radius",
-        exclude_embedding_tools=exclude_embedding_tools,
-    )
-
-    codebase_qna: dict[str, Any] = {
-        "name": "codebase_qna",
-        "description": (
-            "Answer questions about the codebase using the knowledge graph. "
-            "Use for: 'What does X do?', 'How is Y implemented?', "
-            "'Where is Z defined?', 'Which files import A?'"
-        ),
-        "instructions": _QNA_INSTRUCTIONS,
-        "toolsets": [qna_toolset],
-        # Shared context — benefits from full conversation history
-        "include_filesystem": True,
-    }
-
-    blast_radius: dict[str, Any] = {
-        "name": "blast_radius",
-        "description": (
-            "Analyse the blast radius of code changes — which functions, APIs, "
-            "and consumers are affected by changes in the current branch. "
-            "Use for: 'What is the impact of my changes?', "
-            "'Which tests might break?', 'What depends on X?'"
-        ),
-        "instructions": _BLAST_RADIUS_INSTRUCTIONS,
-        "toolsets": [blast_toolset],
-        # Isolated — focused single-task analysis, no filesystem needed
-        "include_filesystem": False,
-    }
-
-    return [codebase_qna, blast_radius]
 
 
 __all__ = ["make_potpie_subagents"]

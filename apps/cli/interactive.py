@@ -85,25 +85,38 @@ async def _build_potpie_capability(project_id: str | None, user_id: str) -> Any:
         return None
 
 
-async def _build_potpie_subagents(project_id: str | None, user_id: str) -> list[Any]:
-    """Async-build potpie SubAgentConfigs (QnA + Blast Radius), or return []."""
+async def _build_potpie_resources(
+    project_id: str | None, user_id: str
+) -> tuple[Any, list[Any]]:
+    """Build PotpieKGCapability and SubAgentConfigs sharing one RuntimeBackend.
+
+    Returns (capability_or_None, subagents_list).
+    Using a single backend avoids two separate PotpieRuntime initializations
+    and prevents concurrent ToolService instantiation issues.
+    """
     if not project_id:
-        return []
+        return None, []
     try:
         from apps.cli.config import load_config
         from pydantic_deep.toolsets.code_graph import make_backend
+        from apps.potpie.capability import PotpieKGCapability
         from pydantic_deep.subagents_potpie import make_potpie_subagents
 
         cfg = load_config()
         cfg.potpie_mode = "local"
         backend = make_backend(cfg)
-        return await make_potpie_subagents(
+
+        cap = await PotpieKGCapability.create(
             backend=backend, project_id=project_id, user_id=user_id
         )
+        subs = await make_potpie_subagents(
+            backend=backend, project_id=project_id, user_id=user_id
+        )
+        return cap, subs
     except Exception as e:
         import sys
-        print(f"[potpie-subagents] Warning: could not build subagents: {e}", file=sys.stderr)
-        return []
+        print(f"[potpie] Warning: could not load KG tools/subagents: {e}", file=sys.stderr)
+        return None, []
 
 # Bold emerald prompt using RGB ANSI escapes (works on modern terminals)
 _USER_PROMPT = "\033[1m\033[38;2;16;185;129m> \033[0m"
@@ -2494,9 +2507,8 @@ async def run_interactive(  # noqa: C901
             if setup_model is None:
                 return
 
-        # Build PotpieKGCapability async before creating the (sync) agent
-        _potpie_cap = await _build_potpie_capability(project_id, user_id)
-        _potpie_subs = await _build_potpie_subagents(project_id, user_id)
+        # Build PotpieKGCapability and subagents sharing one RuntimeBackend
+        _potpie_cap, _potpie_subs = await _build_potpie_resources(project_id, user_id)
 
         result = _create_agent_with_retry(
             model=setup_model,
