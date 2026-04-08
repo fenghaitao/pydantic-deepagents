@@ -79,6 +79,7 @@ def create_cli_agent(  # noqa: C901
     extra_toolsets: list[Any] | None = None,
     extra_capabilities: list[Any] | None = None,
     potpie_context: Any | None = None,
+    potpie_subagents: list[Any] | None = None,
 ) -> tuple[Any, DeepAgentDeps]:
     """Create a CLI-configured agent with all pydantic-deep capabilities.
 
@@ -272,6 +273,7 @@ def create_cli_agent(  # noqa: C901
         skill_directories=skill_dirs if effective_skills else None,
         interrupt_on=interrupt_on,
         model_settings=effective_model_settings or None,
+        subagents=potpie_subagents or None,
         # Filesystem & execution
         include_execute=True,
         include_filesystem=True,

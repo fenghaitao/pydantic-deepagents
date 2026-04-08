@@ -84,6 +84,27 @@ async def _build_potpie_capability(project_id: str | None, user_id: str) -> Any:
         print(f"[potpie-kg] Warning: could not load KG tools: {e}", file=sys.stderr)
         return None
 
+
+async def _build_potpie_subagents(project_id: str | None, user_id: str) -> list[Any]:
+    """Async-build potpie SubAgentConfigs (QnA + Blast Radius), or return []."""
+    if not project_id:
+        return []
+    try:
+        from apps.cli.config import load_config
+        from pydantic_deep.toolsets.code_graph import make_backend
+        from pydantic_deep.subagents_potpie import make_potpie_subagents
+
+        cfg = load_config()
+        cfg.potpie_mode = "local"
+        backend = make_backend(cfg)
+        return await make_potpie_subagents(
+            backend=backend, project_id=project_id, user_id=user_id
+        )
+    except Exception as e:
+        import sys
+        print(f"[potpie-subagents] Warning: could not build subagents: {e}", file=sys.stderr)
+        return []
+
 # Bold emerald prompt using RGB ANSI escapes (works on modern terminals)
 _USER_PROMPT = "\033[1m\033[38;2;16;185;129m> \033[0m"
 
@@ -2475,6 +2496,7 @@ async def run_interactive(  # noqa: C901
 
         # Build PotpieKGCapability async before creating the (sync) agent
         _potpie_cap = await _build_potpie_capability(project_id, user_id)
+        _potpie_subs = await _build_potpie_subagents(project_id, user_id)
 
         result = _create_agent_with_retry(
             model=setup_model,
@@ -2488,6 +2510,7 @@ async def run_interactive(  # noqa: C901
             session_id=session_id,
             potpie_context=_build_potpie_context(project_id, user_id),
             extra_capabilities=[_potpie_cap] if _potpie_cap else None,
+            potpie_subagents=_potpie_subs or None,
             lean=lean,
         )
         if result[0] is None:
