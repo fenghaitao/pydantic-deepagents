@@ -291,6 +291,10 @@ def chat(
         str,
         typer.Option("--user-id", help="Potpie user ID"),
     ] = "defaultuser",
+    lean: Annotated[
+        bool,
+        typer.Option("--lean", help="Minimal system prompt — disables skills, subagents, memory (reduces token usage)"),
+    ] = False,
 ) -> None:
     """Start an interactive chat session."""
     from apps.cli.config import load_config
@@ -321,6 +325,7 @@ def chat(
             fork_session=fork,
             project_id=effective_project_id,
             user_id=user_id,
+            lean=lean,
         )
     )
 

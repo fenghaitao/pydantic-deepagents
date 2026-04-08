@@ -61,6 +61,29 @@ def _build_potpie_context(project_id: str | None, user_id: str) -> Any:
     except Exception:
         return None
 
+
+async def _build_potpie_capability(project_id: str | None, user_id: str) -> Any:
+    """Async-build PotpieKGCapability for the given project, or return None."""
+    if not project_id:
+        return None
+    try:
+        from apps.cli.config import load_config
+        from pydantic_deep.toolsets.code_graph import make_backend
+        from apps.potpie.capability import PotpieKGCapability
+
+        cfg = load_config()
+        cfg.potpie_mode = "local"
+        backend = make_backend(cfg)
+        return await PotpieKGCapability.create(
+            backend=backend,
+            project_id=project_id,
+            user_id=user_id,
+        )
+    except Exception as e:
+        import sys
+        print(f"[potpie-kg] Warning: could not load KG tools: {e}", file=sys.stderr)
+        return None
+
 # Bold emerald prompt using RGB ANSI escapes (works on modern terminals)
 _USER_PROMPT = "\033[1m\033[38;2;16;185;129m> \033[0m"
 
@@ -2360,6 +2383,7 @@ async def run_interactive(  # noqa: C901
     fork_session: bool = False,
     project_id: str | None = None,
     user_id: str = "defaultuser",
+    lean: bool = False,
 ) -> None:
     """Run the interactive chat loop.
 
@@ -2449,6 +2473,9 @@ async def run_interactive(  # noqa: C901
             if setup_model is None:
                 return
 
+        # Build PotpieKGCapability async before creating the (sync) agent
+        _potpie_cap = await _build_potpie_capability(project_id, user_id)
+
         result = _create_agent_with_retry(
             model=setup_model,
             working_dir=working_dir,
@@ -2460,6 +2487,8 @@ async def run_interactive(  # noqa: C901
             model_settings=model_settings,
             session_id=session_id,
             potpie_context=_build_potpie_context(project_id, user_id),
+            extra_capabilities=[_potpie_cap] if _potpie_cap else None,
+            lean=lean,
         )
         if result[0] is None:
             return
