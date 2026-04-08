@@ -34,6 +34,16 @@ class DeepAgentDeps:
     ask_user: Any = field(default=None, repr=False)  # Callback for interactive questions
     context_middleware: Any = field(default=None, repr=False)  # ContextManagerCapability | None
     share_todos: bool = False  # When True, subagents share parent's todo list
+    # ── Potpie code-graph context ─────────────────────────────────────────
+    potpie_project_id: str | None = None
+    """Active potpie project UUID. Injected into tool calls so the LLM never
+    needs to supply it explicitly."""
+    potpie_user_id: str | None = None
+    """User ID forwarded to ToolService for per-user access control."""
+    project_parsing_status: str | None = None
+    """Current parsing status of the active project (e.g. ``"READY"``,
+    ``"INFERRING"``, ``"PARSING"``). Used to exclude embedding-dependent
+    tools while the graph is still being built."""
 
     def __post_init__(self) -> None:
         """Initialize backend with files if using StateBackend."""
@@ -226,6 +236,9 @@ class DeepAgentDeps:
             uploads=self.uploads,  # Shared reference
             ask_user=self.ask_user,  # Propagate to subagents
             share_todos=self.share_todos,  # Propagate to subagents
+            potpie_project_id=self.potpie_project_id,
+            potpie_user_id=self.potpie_user_id,
+            project_parsing_status=self.project_parsing_status,
         )
 
 

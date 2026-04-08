@@ -184,11 +184,9 @@ async def run_non_interactive(  # noqa: C901
             model_settings=model_settings,
             session_id=session_id,
             extra_capabilities=[potpie_cap] if potpie_cap else None,
+            potpie_project_id=project_id,
+            potpie_user_id=user_id if project_id else None,
         )
-
-        if project_id:
-            deps.potpie_project_id = project_id
-            deps.potpie_user_id = user_id
 
         show_tools = not effective_quiet or verbose
         if stream:

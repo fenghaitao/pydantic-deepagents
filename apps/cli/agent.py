@@ -78,6 +78,8 @@ def create_cli_agent(  # noqa: C901
     extra_instructions: str | None = None,
     extra_toolsets: list[Any] | None = None,
     extra_capabilities: list[Any] | None = None,
+    potpie_project_id: str | None = None,
+    potpie_user_id: str | None = None,
 ) -> tuple[Any, DeepAgentDeps]:
     """Create a CLI-configured agent with all pydantic-deep capabilities.
 
@@ -328,6 +330,8 @@ def create_cli_agent(  # noqa: C901
     deps = DeepAgentDeps(
         backend=effective_backend,
         context_middleware=context_mw,
+        potpie_project_id=potpie_project_id,
+        potpie_user_id=potpie_user_id,
     )
     deps._task_manager = task_mgr  # type: ignore[attr-defined]
     return agent, deps
