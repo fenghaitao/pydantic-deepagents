@@ -65,7 +65,7 @@ def _inject_project_id(tool: Tool) -> Tool:
     # pydantic-ai detects RunContext by inspecting the first parameter annotation,
     # so we must NOT use @functools.wraps here.
     def ctx_wrapper(ctx: RunContext[Any], **kwargs: Any) -> Any:
-        project_id = ctx.deps.potpie_project_id if hasattr(ctx.deps, "potpie_project_id") else None
+        project_id = ctx.deps.potpie.project_id if ctx.deps.potpie is not None else None
         if project_id:
             kwargs["project_id"] = project_id
         return original_func(**kwargs)

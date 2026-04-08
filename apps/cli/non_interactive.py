@@ -155,9 +155,11 @@ async def run_non_interactive(  # noqa: C901
 
         # Potpie KG toolset — injected when --project-id is provided
         potpie_cap: Any = None
+        potpie_ctx: Any = None
         if project_id:
             try:
                 from apps.cli.config import load_config as _load_config
+                from apps.potpie.context import PotpieContext
                 from pydantic_deep.toolsets.code_graph import make_backend
                 from apps.potpie.capability import PotpieKGCapability
                 _cfg = _load_config()
@@ -168,6 +170,7 @@ async def run_non_interactive(  # noqa: C901
                     project_id=project_id,
                     user_id=user_id,
                 )
+                potpie_ctx = PotpieContext(project_id=project_id, user_id=user_id)
                 if not effective_quiet:
                     err_console.print(f"[dim]Potpie KG tools loaded for project {project_id}[/dim]")
             except Exception as e:
@@ -184,8 +187,7 @@ async def run_non_interactive(  # noqa: C901
             model_settings=model_settings,
             session_id=session_id,
             extra_capabilities=[potpie_cap] if potpie_cap else None,
-            potpie_project_id=project_id,
-            potpie_user_id=user_id if project_id else None,
+            potpie_context=potpie_ctx,
         )
 
         show_tools = not effective_quiet or verbose
