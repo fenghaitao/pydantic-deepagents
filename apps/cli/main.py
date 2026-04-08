@@ -283,8 +283,17 @@ def chat(
         bool,
         typer.Option("--fork", help="Fork from a resumed session (new session, same history)"),
     ] = False,
+    project_id: Annotated[
+        str | None,
+        typer.Option("--project-id", "-p", help="Potpie project ID (overrides config)"),
+    ] = None,
+    user_id: Annotated[
+        str,
+        typer.Option("--user-id", help="Potpie user ID"),
+    ] = "defaultuser",
 ) -> None:
     """Start an interactive chat session."""
+    from apps.cli.config import load_config
     from apps.cli.init import ensure_initialized
     from apps.cli.interactive import run_interactive
 
@@ -297,6 +306,9 @@ def chat(
     # --sessions flag triggers interactive picker (resume="")
     effective_resume = "" if sessions else resume
 
+    config = load_config()
+    effective_project_id = project_id or config.potpie_project_id
+
     asyncio.run(
         run_interactive(
             model=model,
@@ -307,6 +319,8 @@ def chat(
             auto_approve=auto_approve,
             model_settings=settings,
             fork_session=fork,
+            project_id=effective_project_id,
+            user_id=user_id,
         )
     )
 

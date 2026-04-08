@@ -50,6 +50,17 @@ from pydantic_deep.deps import DeepAgentDeps
 
 console = Console()
 
+
+def _build_potpie_context(project_id: str | None, user_id: str) -> Any:
+    """Build a PotpieContext if project_id is set, else return None."""
+    if not project_id:
+        return None
+    try:
+        from apps.potpie.context import PotpieContext
+        return PotpieContext(project_id=project_id, user_id=user_id)
+    except Exception:
+        return None
+
 # Bold emerald prompt using RGB ANSI escapes (works on modern terminals)
 _USER_PROMPT = "\033[1m\033[38;2;16;185;129m> \033[0m"
 
@@ -2347,6 +2358,8 @@ async def run_interactive(  # noqa: C901
     auto_approve: bool = False,
     model_settings: dict[str, Any] | None = None,
     fork_session: bool = False,
+    project_id: str | None = None,
+    user_id: str = "defaultuser",
 ) -> None:
     """Run the interactive chat loop.
 
@@ -2446,6 +2459,7 @@ async def run_interactive(  # noqa: C901
             backend=backend,
             model_settings=model_settings,
             session_id=session_id,
+            potpie_context=_build_potpie_context(project_id, user_id),
         )
         if result[0] is None:
             return
