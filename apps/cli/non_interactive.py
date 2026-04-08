@@ -155,15 +155,14 @@ async def run_non_interactive(  # noqa: C901
 
         # Potpie KG toolset — injected when --project-id is provided
         potpie_runtime = None
-        extra_toolsets: list[Any] = []
+        potpie_cap: Any = None
         if project_id:
             try:
                 from potpie import PotpieRuntime
-                from apps.potpie.toolset import create_potpie_toolset
+                from apps.potpie.capability import PotpieKGCapability
                 potpie_runtime = PotpieRuntime.from_env()
                 await potpie_runtime.initialize()
-                kg_toolset = create_potpie_toolset(potpie_runtime, project_id, user_id)
-                extra_toolsets.append(kg_toolset)
+                potpie_cap = await PotpieKGCapability.create(potpie_runtime, project_id, user_id)
                 if not effective_quiet:
                     err_console.print(f"[dim]Potpie KG tools loaded for project {project_id}[/dim]")
             except Exception as e:
@@ -179,7 +178,7 @@ async def run_non_interactive(  # noqa: C901
             lean=lean,
             model_settings=model_settings,
             session_id=session_id,
-            extra_toolsets=extra_toolsets or None,
+            extra_capabilities=[potpie_cap] if potpie_cap else None,
         )
 
         if project_id:
@@ -233,6 +232,11 @@ async def run_non_interactive(  # noqa: C901
     finally:
         if sandbox_instance is not None:
             _stop_sandbox(sandbox_instance, err_console)
+        if potpie_cap is not None:
+            try:
+                potpie_cap.close()
+            except Exception:
+                pass
         if potpie_runtime is not None:
             try:
                 await potpie_runtime.close()

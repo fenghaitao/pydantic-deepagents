@@ -77,6 +77,7 @@ def create_cli_agent(  # noqa: C901
     skills_dir: str | None = None,
     extra_instructions: str | None = None,
     extra_toolsets: list[Any] | None = None,
+    extra_capabilities: list[Any] | None = None,
 ) -> tuple[Any, DeepAgentDeps]:
     """Create a CLI-configured agent with all pydantic-deep capabilities.
 
@@ -168,6 +169,9 @@ def create_cli_agent(  # noqa: C901
     # Caller-supplied extra toolsets (e.g. potpie KG toolset from non_interactive.py)
     if extra_toolsets:
         toolsets_extra.extend(extra_toolsets)
+
+    # Caller-supplied extra capabilities (preferred over extra_toolsets)
+    extra_caps: list[Any] = list(extra_capabilities) if extra_capabilities else []
 
     # Potpie code-graph toolset — enabled when API key or local mode is configured
     if config.potpie_api_key or config.potpie_mode == "local":
@@ -313,7 +317,7 @@ def create_cli_agent(  # noqa: C901
         output_style="concise" if not lean else None,
         # Middleware & hooks
         hooks=hooks or None,
-        middleware=middleware or None,
+        middleware=(middleware + extra_caps) or None,
         toolsets=toolsets_extra or None,
     )
 
