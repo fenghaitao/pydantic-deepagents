@@ -70,26 +70,47 @@ def _inject_project_id(tool: Tool) -> Tool:
     # NOTE: functools.wraps would copy the original signature, hiding ctx.
     # pydantic-ai detects RunContext by inspecting the first parameter annotation,
     # so we must NOT use @functools.wraps here.
-    def ctx_wrapper(ctx: RunContext[Any], **kwargs: Any) -> Any:
-        project_id = ctx.deps.potpie.project_id if ctx.deps.potpie is not None else None
-        if project_id:
-            kwargs["project_id"] = project_id
+    import asyncio as _asyncio
+    _is_async = _asyncio.iscoroutinefunction(original_func)
 
-        # Guard: embedding-dependent tools fail silently during INFERRING state.
-        # Return a clear message instead so the agent can try a different tool.
-        if tool.name in _EMBEDDING_DEPENDENT_TOOLS:
-            status = (
-                ctx.deps.potpie.parsing_status
-                if ctx.deps.potpie is not None else None
-            )
-            if status == "INFERRING":
-                return (
-                    f"Tool '{tool.name}' is unavailable while the project is being indexed "
-                    f"(status: INFERRING). Embeddings are not ready yet. "
-                    f"Use 'nl_cypher_query' or 'get_code_file_structure' instead."
+    if _is_async:
+        async def ctx_wrapper(ctx: RunContext[Any], **kwargs: Any) -> Any:
+            project_id = ctx.deps.potpie.project_id if ctx.deps.potpie is not None else None
+            if project_id:
+                kwargs["project_id"] = project_id
+
+            if tool.name in _EMBEDDING_DEPENDENT_TOOLS:
+                status = (
+                    ctx.deps.potpie.parsing_status
+                    if ctx.deps.potpie is not None else None
                 )
+                if status == "INFERRING":
+                    return (
+                        f"Tool '{tool.name}' is unavailable while the project is being indexed "
+                        f"(status: INFERRING). Embeddings are not ready yet. "
+                        f"Use 'nl_cypher_query' or 'get_code_file_structure' instead."
+                    )
 
-        return original_func(**kwargs)
+            return await original_func(**kwargs)
+    else:
+        def ctx_wrapper(ctx: RunContext[Any], **kwargs: Any) -> Any:
+            project_id = ctx.deps.potpie.project_id if ctx.deps.potpie is not None else None
+            if project_id:
+                kwargs["project_id"] = project_id
+
+            if tool.name in _EMBEDDING_DEPENDENT_TOOLS:
+                status = (
+                    ctx.deps.potpie.parsing_status
+                    if ctx.deps.potpie is not None else None
+                )
+                if status == "INFERRING":
+                    return (
+                        f"Tool '{tool.name}' is unavailable while the project is being indexed "
+                        f"(status: INFERRING). Embeddings are not ready yet. "
+                        f"Use 'nl_cypher_query' or 'get_code_file_structure' instead."
+                    )
+
+            return original_func(**kwargs)
 
     ctx_wrapper.__name__ = getattr(original_func, "__name__", tool.name)
     ctx_wrapper.__doc__ = tool.description
