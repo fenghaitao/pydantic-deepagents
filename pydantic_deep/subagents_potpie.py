@@ -428,7 +428,7 @@ async def make_potpie_subagents(
             ),
             "instructions": _BLAST_RADIUS_INSTRUCTIONS,
             "toolsets": [blast_ts],
-            "include_filesystem": False,  # Isolated — focused single-task analysis
+            "include_filesystem": True,  # Isolated mode causes stream errors; use shared
         },
     ]
 
