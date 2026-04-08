@@ -189,12 +189,24 @@ def run(
         bool,
         typer.Option("--lean", help="Use minimal system prompt (less noise for benchmarks)"),
     ] = False,
+    project_id: Annotated[
+        str | None,
+        typer.Option("--project-id", "-p", help="Potpie project ID (overrides config)"),
+    ] = None,
+    user_id: Annotated[
+        str,
+        typer.Option("--user-id", help="Potpie user ID"),
+    ] = "defaultuser",
 ) -> None:
     """Run a task non-interactively (benchmark mode)."""
+    from apps.cli.config import load_config
     from apps.cli.init import ensure_initialized
     from apps.cli.non_interactive import run_non_interactive
 
     ensure_initialized()
+
+    config = load_config()
+    effective_project_id = project_id or config.potpie_project_id
 
     settings = _build_model_settings(
         model_settings_json, temperature, reasoning_effort, thinking, thinking_budget
@@ -214,6 +226,8 @@ def run(
             verbose=verbose,
             model_settings=settings,
             lean=lean,
+            project_id=effective_project_id,
+            user_id=user_id,
         )
     )
     raise typer.Exit(exit_code)
