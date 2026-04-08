@@ -231,7 +231,7 @@ class LiteLLMStreamedResponse(StreamedResponse):
 
             if delta.content:
                 for event in self._parts_manager.handle_text_delta(
-                    vendor_part_id=0, content=delta.content
+                    vendor_part_id="text", content=delta.content
                 ):
                     yield event
 
