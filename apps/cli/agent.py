@@ -233,7 +233,8 @@ def create_cli_agent(  # noqa: C901
     effective_memory = include_memory and not non_interactive
     effective_skills = include_skills if not lean else False  # Lean: no skills noise
     effective_plan = include_plan and not non_interactive
-    effective_subagents = include_subagents if not lean else False  # Lean: no subagents
+    # Keep subagents enabled when potpie subagents are provided — they're the whole point
+    effective_subagents = include_subagents if (not lean or potpie_subagents) else False
     effective_todo = include_todo if not lean else False  # Lean: no todo overhead
 
     # Model settings — non-interactive defaults, then config, then explicit overrides
