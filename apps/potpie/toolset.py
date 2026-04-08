@@ -27,6 +27,7 @@ from pydantic_deep.toolsets.code_graph.backend import PotpieBackend
 
 KG_TOOL_NAMES: list[str] = [
     "ask_knowledge_graph_queries",
+    "nl_cypher_query",
     "get_code_from_multiple_node_ids",
     "get_code_from_probable_node_name",
     "get_code_file_structure",
@@ -35,6 +36,11 @@ KG_TOOL_NAMES: list[str] = [
     "get_node_neighbours_from_node_id",
     "analyze_code_structure",
 ]
+
+# Tools that require embeddings — unavailable when project is in INFERRING state
+_EMBEDDING_DEPENDENT_TOOLS: frozenset[str] = frozenset({
+    "ask_knowledge_graph_queries",
+})
 
 
 # ---------------------------------------------------------------------------
@@ -68,6 +74,21 @@ def _inject_project_id(tool: Tool) -> Tool:
         project_id = ctx.deps.potpie.project_id if ctx.deps.potpie is not None else None
         if project_id:
             kwargs["project_id"] = project_id
+
+        # Guard: embedding-dependent tools fail silently during INFERRING state.
+        # Return a clear message instead so the agent can try a different tool.
+        if tool.name in _EMBEDDING_DEPENDENT_TOOLS:
+            status = (
+                ctx.deps.potpie.parsing_status
+                if ctx.deps.potpie is not None else None
+            )
+            if status == "INFERRING":
+                return (
+                    f"Tool '{tool.name}' is unavailable while the project is being indexed "
+                    f"(status: INFERRING). Embeddings are not ready yet. "
+                    f"Use 'nl_cypher_query' or 'get_code_file_structure' instead."
+                )
+
         return original_func(**kwargs)
 
     ctx_wrapper.__name__ = getattr(original_func, "__name__", tool.name)

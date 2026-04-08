@@ -178,8 +178,8 @@ class TestCreatePotpieToolset:
         )
 
     def test_kg_tool_names_constant_has_8_entries(self) -> None:
-        """KG_TOOL_NAMES contains exactly 8 tool names."""
-        assert len(KG_TOOL_NAMES) == 8
+        """KG_TOOL_NAMES contains exactly 9 tool names (added nl_cypher_query)."""
+        assert len(KG_TOOL_NAMES) == 9
 
     def test_kg_tool_names_are_all_sanitized(self) -> None:
         """Every name in KG_TOOL_NAMES already satisfies the API regex."""

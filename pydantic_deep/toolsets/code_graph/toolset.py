@@ -148,6 +148,14 @@ class CodeGraphToolset(FunctionToolset[Any]):
                 questions: List of natural language questions.
                 node_ids: Optional list of node IDs to restrict the search.
             """
+            # Guard: embeddings are not available during INFERRING state
+            potpie = getattr(ctx.deps, "potpie", None)
+            if potpie is not None and getattr(potpie, "parsing_status", None) == "INFERRING":
+                return (
+                    "Semantic search is unavailable while the project is being indexed "
+                    "(status: INFERRING). Embeddings are not ready yet. "
+                    "Use `query_code_graph` for structural questions instead."
+                )
             results = await self._backend.kg_search(
                 project_id, questions, node_ids or []
             )
@@ -159,7 +167,25 @@ class CodeGraphToolset(FunctionToolset[Any]):
         """Inject project context into the system prompt."""
         parts: list[str] = []
 
+        # Check parsing status from PotpieContext if available
+        potpie = getattr(ctx.deps, "potpie", None)
+        parsing_status = getattr(potpie, "parsing_status", None) if potpie else None
+        is_inferring = parsing_status == "INFERRING"
+        is_parsing = parsing_status in ("PARSING", "SUBMITTED")
+
         if self._project_id:
+            status_note = ""
+            if is_inferring:
+                status_note = (
+                    "\n\n> **Note:** Project is in INFERRING state — embeddings are being built. "
+                    "`ask_knowledge_graph` is unavailable. Use `query_code_graph` instead."
+                )
+            elif is_parsing:
+                status_note = (
+                    "\n\n> **Note:** Project is still being parsed (status: "
+                    f"{parsing_status}). Graph queries may return incomplete results."
+                )
+
             parts.append(
                 f"## Code Graph\n\n"
                 f"Default project ID: `{self._project_id}`\n\n"
@@ -169,6 +195,7 @@ class CodeGraphToolset(FunctionToolset[Any]):
                 "Use `query_code_graph` for structural/relational questions "
                 "(call graphs, imports, inheritance). "
                 "Use `ask_knowledge_graph` for semantic/behaviour questions."
+                + status_note
             )
         else:
             parts.append(
