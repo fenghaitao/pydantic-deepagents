@@ -422,17 +422,6 @@ async def make_potpie_subagents(
 
 __all__ = ["make_potpie_subagents"]
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from pydantic_deep.toolsets.code_graph.backend import PotpieBackend
-
-# ---------------------------------------------------------------------------
-# Tool name lists (sourced from agent_factory.py / system agent files)
-# ---------------------------------------------------------------------------
-
 _QNA_TOOL_NAMES: list[str] = [
     "get_code_from_multiple_node_ids",
     "get_node_neighbours_from_node_id",
