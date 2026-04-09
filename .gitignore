@@ -1,3 +1,5 @@
+AGENTS.md
+SOUL.md
 deepresearch/workspaces
 notes/
 # Byte-compiled / optimized / DLL files
@@ -105,3 +107,6 @@ playground/
 
 # pydantic-deep CLI data (per-project)
 .pydantic-deep/
+
+# API keys (pydantic-deep TUI)
+keys.toml

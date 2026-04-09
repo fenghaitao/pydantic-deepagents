@@ -115,6 +115,7 @@ def create_deep_agent(
     max_checkpoints: int = 20,
     checkpoint_store: Any | None = None,
     include_teams: bool = False,
+    include_improve: bool = False,
     web_search: bool = True,
     web_fetch: bool = True,
     thinking: bool | str = "high",
@@ -181,6 +182,7 @@ def create_deep_agent(
     max_checkpoints: int = 20,
     checkpoint_store: Any | None = None,
     include_teams: bool = False,
+    include_improve: bool = False,
     web_search: bool = True,
     web_fetch: bool = True,
     thinking: bool | str = "high",
@@ -245,6 +247,7 @@ def create_deep_agent(  # noqa: C901
     max_checkpoints: int = 20,
     checkpoint_store: Any | None = None,
     include_teams: bool = False,
+    include_improve: bool = False,
     web_search: bool = True,
     web_fetch: bool = True,
     thinking: bool | str = "high",
@@ -391,6 +394,8 @@ def create_deep_agent(  # noqa: C901
             uses InMemoryCheckpointStore. Can also be set per-session
             via ``deps.checkpoint_store``.
         include_teams: Whether to include the team management toolset.
+        include_improve: Whether to include the self-improvement toolset
+            (``improve`` and ``get_improvement_status`` tools).
             When True, adds tools for spawning agent teams, assigning
             tasks via shared todo lists, messaging teammates, and
             dissolving teams. Defaults to False.
@@ -745,6 +750,25 @@ def create_deep_agent(  # noqa: C901
     base_instructions = DEFAULT_INSTRUCTIONS
     if instructions:
         base_instructions = base_instructions + "\n\n" + instructions
+
+    # Improve toolset (self-improvement from session analysis)
+    if include_improve:
+        from pathlib import Path as _Path
+
+        from pydantic_deep.toolsets.improve import ImproveToolset
+
+        _improve_sessions = _Path(".pydantic-deep/sessions")
+        if backend is not None:
+            _wd = getattr(backend, "root_dir", None)
+            if _wd:
+                _improve_sessions = _Path(str(_wd)) / ".pydantic-deep" / "sessions"
+
+        improve_toolset = ImproveToolset(
+            sessions_dir=_improve_sessions,
+            working_dir=_Path("."),
+            model=model if isinstance(model, str) else "openrouter:anthropic/claude-sonnet-4",
+        )
+        all_toolsets.append(improve_toolset)
 
     # Inject output style into instructions
     if output_style is not None:

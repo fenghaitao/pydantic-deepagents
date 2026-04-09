@@ -70,34 +70,33 @@ pydantic-deep implements the **deep agent pattern** -- the same architecture pow
 
 ```bash
 pip install pydantic-deep[cli]
-pydantic-deep chat
+pydantic-deep
 ```
 
-That's it. You get an interactive AI agent in your terminal with:
+That's it. A Textual-based TUI launches with:
 
+- Streaming chat with tool call visualization
 - File read/write/edit, shell execution, glob, grep
 - Task planning and subagent delegation
 - Persistent memory across sessions
 - Context compression for unlimited conversations
 - Git-aware project context
-- Built-in commands: `/commit`, `/pr`, `/review`, `/test`, `/fix`, `/explain`
-- Customizable skills, hooks, and output styles
+- `/improve` -- learn from past sessions and update context files
+- `/skills`, `/diff`, `/model`, `/provider`, `/compact`, and more
+- Customizable themes, skills, and hooks
 
 ```bash
-# Interactive mode
-pydantic-deep chat
-
-# Run a single task
-pydantic-deep run "Fix the failing tests in src/"
-
-# Docker sandbox for isolated execution
-pydantic-deep run "Build a web scraper" --sandbox
+# Launch TUI (default)
+pydantic-deep
 
 # Pick a model
-pydantic-deep chat --model anthropic:claude-sonnet-4-20250514
+pydantic-deep tui --model anthropic:claude-sonnet-4-6
 
 # Manage config
 pydantic-deep config set model anthropic:claude-sonnet-4-6
+
+# List skills
+pydantic-deep skills list
 ```
 
 > See [CLI docs](docs/cli/index.md) for the full reference.
@@ -110,7 +109,7 @@ pydantic-deep config set model anthropic:claude-sonnet-4-6
 pip install pydantic-deep
 ```
 
-**Requires pydantic-ai >= 1.71.0.**
+**Requires pydantic-ai >= 1.77.0.**
 
 ```python
 from pydantic_ai_backends import StateBackend

@@ -124,10 +124,6 @@ def create_cli_agent(  # noqa: C901
 
     # Build middleware list
     middleware: list[Any] = []
-    if not lean:
-        from apps.cli.middleware.loop_detection import LoopDetectionMiddleware
-
-        middleware.append(LoopDetectionMiddleware())
     if extra_middleware:
         middleware.extend(extra_middleware)
 
@@ -254,6 +250,8 @@ def create_cli_agent(  # noqa: C901
         context_discovery=context_discovery if not lean else False,
         # Teams
         include_teams=config.include_teams,
+        # Self-improvement
+        include_improve=True,
         # Web tools
         web_search=config.web_search if not lean else False,
         web_fetch=config.web_fetch if not lean else False,

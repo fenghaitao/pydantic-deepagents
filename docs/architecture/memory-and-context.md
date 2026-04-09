@@ -285,9 +285,9 @@ uncompressed history — even messages that were summarized away from context.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> NewSession: pydantic-deep chat
-    [*] --> ResumeSession: --resume SESSION_ID
-    [*] --> ForkSession: --resume SESSION_ID --fork
+    [*] --> NewSession: pydantic-deep
+    [*] --> ResumeSession: /load SESSION_ID
+    [*] --> ForkSession: /load SESSION_ID
 
     NewSession --> Running: Fresh session_id
 

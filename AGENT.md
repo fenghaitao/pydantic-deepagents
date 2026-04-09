@@ -33,7 +33,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `create_deep_agent()`: Main factory function for creating configured agents
 - `create_default_deps()`: Helper for creating DeepAgentDeps with sensible defaults
 - Built on top of pydantic-ai's Agent class
-- Requires pydantic-ai>=1.71.0
+- Requires pydantic-ai>=1.77.0
 
 **Dependencies (`pydantic_deep/deps.py`)**
 - `DeepAgentDeps`: Dataclass holding agent dependencies (backend, working_dir, skills_dirs, subagents)
@@ -294,7 +294,7 @@ agent = create_deep_agent(history_processors=[processor])
 - **Async-First**: Most operations are async, use `await` appropriately
 - **Type Safety**: Full type annotations with Pyright strict mode
 - **Sandbox Support**: DockerSandbox requires `docker` optional dependency
-- **Minimum pydantic-ai version**: Requires pydantic-ai>=1.71.0 for native Capabilities API
+- **Minimum pydantic-ai version**: Requires pydantic-ai>=1.77.0 for native Capabilities API
 
 ## Documentation Development
 

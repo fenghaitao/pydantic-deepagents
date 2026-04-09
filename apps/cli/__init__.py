@@ -1,5 +1,10 @@
-"""pydantic-deep CLI — terminal agent for coding tasks."""
+"""Textual-based TUI for pydantic-deep CLI."""
 
-from __future__ import annotations
+__all__ = ["DeepApp"]
 
-__all__: list[str] = []
+
+def __getattr__(name: str) -> object:
+    if name == "DeepApp":
+        from apps.cli.app import DeepApp
+        return DeepApp
+    raise AttributeError(name)

@@ -931,8 +931,8 @@ class TestToolsetCoverageEdgeCases:
         )
         assert "Error:" in result
 
-    def test_duplicate_skill_from_directories(self, tmp_path: Path) -> None:
-        """Duplicate skills from directories emit warning."""
+    def test_duplicate_skill_from_directories_same_content(self, tmp_path: Path) -> None:
+        """Identical skills from different directories are silently deduplicated (no warning)."""
         dir1 = tmp_path / "dir1"
         dir2 = tmp_path / "dir2"
         for d in [dir1, dir2]:
@@ -941,6 +941,26 @@ class TestToolsetCoverageEdgeCases:
             (skill_dir / "SKILL.md").write_text(
                 "---\nname: dupe-skill\ndescription: desc\n---\n\nBody."
             )
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            toolset = SkillsToolset(directories=[str(dir1), str(dir2)], id="test")
+
+        assert not any("Duplicate skill" in str(warning.message) for warning in w)
+        assert "dupe-skill" in toolset.skills
+
+    def test_duplicate_skill_from_directories_different_content(self, tmp_path: Path) -> None:
+        """Skills with the same name but different content emit a warning."""
+        dir1 = tmp_path / "dir1"
+        dir2 = tmp_path / "dir2"
+        (dir1 / "dupe-skill").mkdir(parents=True)
+        (dir1 / "dupe-skill" / "SKILL.md").write_text(
+            "---\nname: dupe-skill\ndescription: v1\n---\n\nVersion 1."
+        )
+        (dir2 / "dupe-skill").mkdir(parents=True)
+        (dir2 / "dupe-skill" / "SKILL.md").write_text(
+            "---\nname: dupe-skill\ndescription: v2\n---\n\nVersion 2."
+        )
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")

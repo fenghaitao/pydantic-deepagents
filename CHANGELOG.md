@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.4] - 2026-04-09
+
+### Changed
+
+- **Merged TUI into `apps/cli/`** — removed old interactive/non-interactive CLI, TUI is now the default interface. Running `pydantic-deep` without a subcommand launches the TUI
+- **Redesigned `/improve` pipeline** — added `UserFactInsight` and `AgentLearningInsight` extraction categories; relaxed synthesis rules so user facts from a single session are accepted; MEMORY.md is now the primary target for personal facts and agent learnings
+- **Configurable context file paths in `/improve`** — `ImprovementAnalyzer` accepts `context_files` mapping for backend-agnostic path resolution (supports LocalBackend, Docker, etc.)
+- **Structured tool call logging** — sessions now save `tool_log.jsonl` alongside `messages.json` for richer execution traces (inspired by Meta-Harness)
+- **Raw tool traces in synthesis** — synthesis agent receives both extracted insights and raw tool call sequences, following Meta-Harness finding that raw traces >> summaries
+- **Debug logging** — per-session logs in `.pydantic-deep/logs/` with `latest.log` symlink
+- **Added `/config` command** to TUI for viewing and updating config.toml
+
+### Fixed
+
+- **`/improve` crash** — unescaped `{}` in prompt templates caused `str.format()` errors
+- **`/improve` silent failures** — extraction errors were swallowed; now reports `failed_sessions` count and `last_error`
+- **`/improve` API key missing** — improve pipeline now loads keys from keystore before creating agents
+- **`/improve` wrong model** — used hardcoded OpenRouter fallback; now uses current agent's model
+- **`/improve` MEMORY.md path mismatch** — wrote to project root instead of `.pydantic-deep/main/MEMORY.md`
+
+### Removed
+
+- Old interactive CLI (`apps/cli/interactive.py`, `non_interactive.py`, `display.py`, etc.)
+- `run` and `chat` CLI commands (replaced by TUI)
+- Dead `agent_worker.py` code
+
 ## [0.3.3] - 2026-04-02
 
 ### Changed
@@ -334,3 +360,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Directory structure diagram
 - Updated `docs/examples/full-app.md` with `workspace_root` in SessionManager example
 - Updated `examples/full_app/app.py` to use `workspace_root` for persistent user files
+

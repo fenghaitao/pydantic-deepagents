@@ -14,25 +14,23 @@ Or with [uv](https://docs.astral.sh/uv/):
 uv pip install pydantic-deep[cli]
 ```
 
-## Commands
-
-### `chat` — Interactive Chat
+## Quick Start
 
 ```bash
-pydantic-deep chat
-pydantic-deep chat --model anthropic:claude-sonnet-4-20250514
-pydantic-deep chat --working-dir /path/to/project
+pydantic-deep
 ```
 
-Full-featured interactive chat with streaming, tool approval, slash commands, and Rich terminal output.
+This launches the Textual-based TUI — a rich interactive interface with streaming chat, tool call visualization, session management, and slash commands.
 
-### `run` — Non-Interactive
+## Commands
+
+### Default — Launch TUI
 
 ```bash
-# stdout = response only (clean for piping), stderr = diagnostics
-pydantic-deep run "Fix the failing tests in src/"
-pydantic-deep run "Create a REST API" --model anthropic:claude-sonnet-4-6
-pydantic-deep run "Refactor the auth module" --quiet
+pydantic-deep                        # Launch TUI (default)
+pydantic-deep tui                    # Explicit TUI command
+pydantic-deep tui --model anthropic:claude-sonnet-4-6
+pydantic-deep tui --working-dir /path/to/project
 ```
 
 ### `init` — Initialize Project
@@ -41,7 +39,7 @@ pydantic-deep run "Refactor the auth module" --quiet
 pydantic-deep init
 ```
 
-Creates an `AGENT.md` context file and `.pydantic-deep/` directory in the current project.
+Creates `AGENTS.md`, `SOUL.md`, and `.pydantic-deep/` directory in the current project.
 
 ### `skills` — Manage Skills
 
@@ -56,31 +54,18 @@ pydantic-deep skills create my-skill          # Scaffold a new SKILL.md
 ```bash
 pydantic-deep threads list                    # List saved sessions
 pydantic-deep threads delete abc12345         # Delete by ID prefix
+pydantic-deep threads export abc12345         # Export as markdown
+pydantic-deep threads export abc12345 -f json # Export as JSON
 ```
 
 ### `config` — Configuration
 
 ```bash
 pydantic-deep config show                     # Show current config
-pydantic-deep config set model anthropic:claude-sonnet-4-20250514
+pydantic-deep config set model anthropic:claude-sonnet-4-6
 ```
 
-### Docker Sandbox
-
-```bash
-pydantic-deep run "Build a web scraper" --sandbox --runtime python-web
-pydantic-deep chat --sandbox --runtime python-datascience
-```
-
-| Runtime | Description |
-|---------|-------------|
-| `python-minimal` | Python 3.12 (default) |
-| `python-datascience` | Python + numpy, pandas, matplotlib |
-| `python-web` | Python + FastAPI, Django, Flask |
-| `node-minimal` | Node.js 20 |
-| `node-react` | Node.js + React, Next.js |
-
-## Interactive Chat Features
+## TUI Features
 
 ### Slash Commands
 
@@ -88,175 +73,166 @@ pydantic-deep chat --sandbox --runtime python-datascience
 |---------|-------------|
 | `/help` | Show all commands and shortcuts |
 | `/clear` | Clear conversation history |
-| `/compact` | Trim and compress history (with optional focus topic) |
-| `/context` | Show context usage breakdown (tokens, progress, compression stats) |
-| `/undo` | Remove last turn from history |
+| `/compact` | Compress context (LLM summarization or quick trim) |
+| `/context` | Show context usage with progress bar |
+| `/config` | View or change config (e.g., `/config set model ...`) |
 | `/copy` | Copy last response to clipboard |
-| `/todos` | Show current TODO list |
+| `/copy-all` | Copy entire conversation to clipboard |
 | `/cost` | Show accumulated cost |
-| `/tokens` | Show message and token stats |
-| `/model` | Switch model or show interactive picker |
-| `/save` | Session auto-save info |
+| `/diff` | Show git diff |
+| `/improve` | Analyze past sessions and self-improve context files |
 | `/load` | Browse and resume a previous session |
-| `/remember` | View or save to persistent memory |
+| `/model` | Switch model (interactive picker) |
+| `/provider` | Configure AI provider and API keys |
+| `/remember` | Save note to persistent memory |
+| `/save` | Session auto-save info |
+| `/settings` | Open settings screen |
 | `/skills` | List available skills |
-| `/diff` | Show git diff of uncommitted changes |
+| `/theme` | Switch color theme |
+| `/todos` | Toggle TODO side panel |
+| `/tokens` | Show message and token stats |
+| `/undo` | Remove last turn |
 | `/version` | Show version |
-| `/bug` | Report a bug (opens GitHub) |
-| `/quit` | Exit the chat |
+| `/quit` | Exit |
 
-### File Approval UI
+### File References
 
-When the agent wants to edit or create files, you see a rich preview before approving:
+Type `@filename` in your prompt to include file contents. The TUI expands `@` references automatically.
 
-**Edit files** — colored unified diff with gutter bars:
+### Shell Commands
 
-```
-File: src/main.py
-@@ -10,3 +10,4 @@
-│ import os
-▌ import sys
-▌ import json
-│
-  +2 -0
-```
-
-Green gutter bars (▌) for additions, red for deletions, dim vertical bars (│) for context lines.
-
-**Write files** — line-numbered preview with head/tail truncation for large files:
+Prefix with `!` to run shell commands directly:
 
 ```
-File: src/utils.py (45 lines) python
-   1 """Utility functions."""
-   2
-   3 import os
-   4 from pathlib import Path
-  ...
-  42     return result
-  43
-  44 if __name__ == "__main__":
-  45     main()
+!git status
+!make test
 ```
 
-You can respond with:
+### Tool Approval
 
-- **y** — approve this tool call
-- **n** — deny this tool call
-- **a** — auto-approve all remaining tool calls for this turn
+When the agent calls sensitive tools (like `execute`), an approval modal shows:
+- Tool name and arguments
+- **Y** — approve once
+- **A** — auto-approve all
+- **N** — deny
+- **Esc** — cancel
 
-### Status Bar
+### Keyboard Shortcuts
 
-The status bar at the bottom of each response shows:
+| Key | Action |
+|-----|--------|
+| `/` | Open command picker |
+| `@` | Open file picker |
+| `Ctrl+J` | Toggle multiline input |
+| `Ctrl+K` | Toggle TODO panel |
+| `Ctrl+L` | Clear screen |
+| `Ctrl+R` | Search messages |
+| `Ctrl+C` | Interrupt agent |
+| `Ctrl+D` | Quit |
+| `F1` | Help |
+| `F2` | Settings |
+| `F5` | Context info |
 
-- **Model name** — current model being used
-- **Cost** — accumulated USD cost for the session
-- **Context progress** — visual bar showing token usage percentage with threshold colors:
-    - Green: <60% of budget
-    - Amber: 60–85% of budget
-    - Red: >85% of budget
-- **Auto-approve** — `auto` (green) or `manual` (amber) indicator
+### Self-Improvement (`/improve`)
 
-### Tool Call Display
+The `/improve` command analyzes past conversation sessions and proposes updates to context files:
 
-Tool calls are rendered with smart formatting:
+- **MEMORY.md** — user facts (name, role, expertise), agent learnings (effective commands, file locations)
+- **SOUL.md** — communication preferences (language, style, tone)
+- **AGENTS.md** — project conventions and architecture facts
 
-```
-⏺ read_file(src/main.py)
-✓ read_file(src/main.py) (0.3s)
-⎿ 42 lines read
+Each proposed change shows confidence score and source sessions. You review and approve individually.
 
-⏺ execute(python -m pytest)
-✗ execute(python -m pytest)
-⎿ exit code 1
-```
+### Themes
 
-- Pending calls show ⏺ in amber
-- Successful calls show ✓ in green with elapsed time
-- Failed calls show ✗ in red
-- Result previews show first 3 lines of output
+Four built-in color themes:
 
-### Streaming
+| Theme | Description |
+|-------|-------------|
+| `default` | Emerald green primary |
+| `ocean` | Blue primary |
+| `rose` | Pink/red primary |
+| `minimal` | Monochrome |
 
-Text streams as Rich Markdown with a braille spinner while waiting:
-
-1. **Thinking phase** — animated braille spinner with elapsed time
-2. **Text phase** — seamless transition to Markdown rendering (code blocks, lists, bold, etc.)
-
-The transition is instant with no visual gap.
-
-### Input Features
-
-- **@file mentions** — type `@` to autocomplete file paths and include file content in your message
-- **Ctrl+V image paste** — paste images from clipboard (supported on macOS)
-- **Tab completion** — slash commands and @file paths auto-complete
+Switch with `/theme ocean` or save to config.
 
 ## Configuration
 
-Config file: `~/.pydantic-deep/config.toml`
+Config file: `.pydantic-deep/config.toml`
 
 ```toml
 model = "anthropic:claude-sonnet-4-6"
 include_skills = true
 include_plan = true
 include_memory = true
-include_checkpoints = true
-shell_allow_list = ["python", "pip", "npm", "make"]
+include_subagents = true
+web_search = true
+web_fetch = true
+approve_tools = ["execute"]
 ```
+
+API keys: `.pydantic-deep/keys.toml` (managed via `/provider` command)
 
 CLI arguments always override config file values.
 
-### Environment Variables
+## Debug Logging
 
-| Variable | Description |
-|----------|-------------|
-| `PYDANTIC_DEEP_THEME` | Color theme: `default`, `classic`, or `minimal` |
-| `PYDANTIC_DEEP_CHARSET` | Character set: `auto`, `unicode`, or `ascii` |
+Per-session debug logs are saved to `.pydantic-deep/logs/`:
 
-## Themes
-
-Three built-in color themes:
-
-| Theme | Description |
-|-------|-------------|
-| `default` | Emerald green primary with hex colors |
-| `classic` | Standard terminal colors (green, cyan, yellow) |
-| `minimal` | Blue primary with standard terminal colors |
-
-Set via environment variable:
-
-```bash
-PYDANTIC_DEEP_THEME=classic pydantic-deep chat
+```
+.pydantic-deep/logs/
+├── session-abc123.log     # Per-session log
+└── latest.log             # Symlink to current session
 ```
 
-For terminals without Unicode support, force ASCII glyphs:
-
-```bash
-PYDANTIC_DEEP_CHARSET=ascii pydantic-deep chat
-```
+Logs include agent lifecycle events, tool calls with timing, command dispatches, and errors with tracebacks. Last 20 session logs are kept automatically.
 
 ## Architecture
 
 ```
-cli/
-├── main.py              — Typer entry (run, chat, init, skills, threads, config)
+apps/cli/
+├── main.py              — Typer entry point (tui, init, skills, threads, config)
+├── tui.py               — TUI launcher (run_tui, run_preview)
+├── app.py               — DeepApp (Textual App root)
+├── commands.py          — Slash command dispatcher
 ├── agent.py             — create_cli_agent() factory
-├── prompts.py           — Modular system prompt (dynamic assembly)
-├── config.py            — Config system (~/.pydantic-deep/config.toml)
+├── config.py            — Config system (.pydantic-deep/config.toml)
+├── prompts.py           — System prompt builder
 ├── init.py              — Project initialization
-├── non_interactive.py   — Headless execution (benchmark + sandbox)
-├── interactive.py       — Chat loop (Rich streaming + tool approval)
-├── local_context.py     — Git/directory context injection
-├── theme.py             — Color palette + Unicode/ASCII glyph system
-├── tool_display.py      — Smart tool call formatting + result previews
-├── diff_display.py      — Colored diffs + file previews for approval
-├── picker.py            — Interactive model/session picker
-├── providers.py         — Model provider registry
-├── middleware/
-│   └── loop_detection.py
-└── skills/              — Built-in SKILL.md files
-    ├── skill-creator/
-    ├── code-review/
-    ├── test-writer/
-    ├── refactor/
-    └── git-workflow/
+├── local_context.py     — Git/directory context detection
+├── debug_log.py         — Per-session debug logging
+├── keystore.py          — API key storage (keys.toml)
+├── messages.py          — Textual message types
+├── screens/
+│   ├── chat.py          — Main chat screen (streaming, tool calls, approval)
+│   ├── settings.py      — Settings form
+│   └── onboarding.py    — First-run provider setup
+├── modals/
+│   ├── command_picker.py
+│   ├── model_picker.py
+│   ├── session_picker.py
+│   ├── improve_review.py
+│   ├── approval.py
+│   ├── context_view.py
+│   ├── compact.py
+│   ├── diff_view.py
+│   ├── skills_view.py
+│   ├── help_view.py
+│   ├── remember.py
+│   ├── search.py
+│   └── file_picker.py
+├── widgets/
+│   ├── header.py
+│   ├── message_list.py
+│   ├── assistant_message.py
+│   ├── user_message.py
+│   ├── tool_call.py
+│   ├── input_area.py
+│   ├── status_bar.py
+│   ├── side_panel.py
+│   └── ...
+├── styles/
+│   ├── app.tcss          — Textual CSS
+│   └── themes.py         — Theme system
+└── skills/               — Built-in SKILL.md files
 ```

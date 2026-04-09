@@ -51,17 +51,6 @@ class TestCreateCliAgent:
         )
         assert agent is not None
 
-    def test_accepts_extra_middleware(self, tmp_path: Path) -> None:
-        from apps.cli.middleware.loop_detection import LoopDetectionMiddleware
-
-        extra = [LoopDetectionMiddleware(max_repeats=5)]
-        agent, deps = create_cli_agent(
-            model=TEST_MODEL,
-            working_dir=str(tmp_path),
-            extra_middleware=extra,
-        )
-        assert agent is not None
-
     def test_instructions_include_working_dir(self, tmp_path: Path) -> None:
         agent, deps = create_cli_agent(
             model=TEST_MODEL,

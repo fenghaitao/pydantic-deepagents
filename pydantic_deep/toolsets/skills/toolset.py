@@ -274,6 +274,10 @@ class SkillsToolset(FunctionToolset):
             for skill in skill_dir.get_skills().values():
                 skill_name = skill.name
                 if skill_name in self._skills:
+                    existing = self._skills[skill_name]
+                    if existing.content == skill.content:
+                        # Identical skill loaded from a different directory — skip silently
+                        continue
                     warnings.warn(
                         f"Duplicate skill '{skill_name}' found. Overriding previous occurrence.",
                         UserWarning,
