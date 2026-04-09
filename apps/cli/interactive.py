@@ -10,6 +10,7 @@ Uses ``agent.iter()`` + ``node.stream()`` (the same approach as
 from __future__ import annotations
 
 import contextlib
+import logging
 import os
 import readline
 import sys
@@ -86,16 +87,17 @@ async def _build_potpie_capability(project_id: str | None, user_id: str) -> Any:
 
 
 async def _build_potpie_resources(
-    project_id: str | None, user_id: str
-) -> tuple[Any, list[Any]]:
+    project_id: str | None, user_id: str, root: Path | None = None
+) -> tuple[Any, list[Any], str | None]:
     """Build PotpieKGCapability and SubAgentConfigs sharing one RuntimeBackend.
 
-    Returns (capability_or_None, subagents_list).
-    Using a single backend avoids two separate PotpieRuntime initializations
-    and prevents concurrent ToolService instantiation issues.
+    When *project_id* is ``None`` and *root* is provided, auto-discovers the
+    project from the git repo using the already-created backend — avoiding a
+    second PotpieRuntime initialization.
+
+    Returns:
+        ``(capability_or_None, subagents_list, effective_project_id_or_None)``
     """
-    if not project_id:
-        return None, []
     try:
         from apps.cli.config import load_config
         from pydantic_deep.toolsets.code_graph import make_backend
@@ -106,17 +108,35 @@ async def _build_potpie_resources(
         cfg.potpie_mode = "local"
         backend = make_backend(cfg)
 
+        # Auto-discover project from git using the already-created backend,
+        # avoiding a separate PotpieRuntime initialization.
+        if not project_id and root is not None:
+            from apps.cli.potpie_discovery import parse_git_identity
+            identity = parse_git_identity(root)
+            if identity:
+                repo_name, branch = identity
+                for p in await backend.list_projects():
+                    if p["repo_name"] == repo_name and p["branch_name"] == branch:
+                        project_id = p["id"]
+                        break
+
+        if not project_id:
+            await backend.close()
+            return None, [], None
+
         cap = await PotpieKGCapability.create(
             backend=backend, project_id=project_id, user_id=user_id
         )
         subs = await make_potpie_subagents(
             backend=backend, project_id=project_id, user_id=user_id
         )
-        return cap, subs
+        return cap, subs, project_id
     except Exception as e:
         import sys
         print(f"[potpie] Warning: could not load KG tools/subagents: {e}", file=sys.stderr)
-        return None, []
+        return None, [], None
+
+logger = logging.getLogger(__name__)
 
 # Bold emerald prompt using RGB ANSI escapes (works on modern terminals)
 _USER_PROMPT = "\033[1m\033[38;2;16;185;129m> \033[0m"
@@ -2507,23 +2527,15 @@ async def run_interactive(  # noqa: C901
             if setup_model is None:
                 return
 
-        # Auto-discover potpie project from git if not explicitly provided
-        if not project_id:
-            try:
-                from apps.cli.config import load_config as _load_config
-                _cfg = _load_config()
-                if _cfg.potpie_mode == "local":
-                    from apps.cli.potpie_discovery import discover_project_id
-                    from pathlib import Path as _Path
-                    _root = _Path(working_dir) if working_dir else _Path.cwd()
-                    project_id = await discover_project_id(root=_root, user_id=user_id)
-                    if project_id:
-                        console.print(f"[dim]Auto-discovered Potpie project: {project_id}[/dim]")
-            except Exception:
-                pass
-
-        # Build PotpieKGCapability and subagents sharing one RuntimeBackend
-        _potpie_cap, _potpie_subs = await _build_potpie_resources(project_id, user_id)
+        # Auto-discover potpie project and build KG resources in one step,
+        # sharing a single RuntimeBackend to avoid double PotpieRuntime init.
+        _root = Path(working_dir) if working_dir else Path.cwd()
+        _potpie_cap, _potpie_subs, _effective_pid = await _build_potpie_resources(
+            project_id, user_id, root=_root
+        )
+        if _effective_pid and _effective_pid != project_id:
+            console.print(f"[dim]Auto-discovered Potpie project: {_effective_pid}[/dim]")
+        effective_project_id = project_id or _effective_pid
 
         result = _create_agent_with_retry(
             model=setup_model,
@@ -2535,7 +2547,7 @@ async def run_interactive(  # noqa: C901
             backend=backend,
             model_settings=model_settings,
             session_id=session_id,
-            potpie_context=_build_potpie_context(project_id, user_id),
+            potpie_context=_build_potpie_context(effective_project_id, user_id),
             extra_capabilities=[_potpie_cap] if _potpie_cap else None,
             potpie_subagents=_potpie_subs or None,
             lean=lean,

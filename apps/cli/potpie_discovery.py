@@ -134,6 +134,69 @@ def discover_potpie_url() -> Optional[str]:
         return None
 
 
+def parse_git_identity(root: Path | None = None) -> Optional[tuple[str, str]]:
+    """Return ``(repo_name, branch)`` for the git repo at *root*, or ``None``.
+
+    Pure git operations — no PotpieRuntime needed. Handles submodule
+    scenarios by resolving the superproject for remote URL lookups.
+
+    Args:
+        root: Directory to inspect. Defaults to CWD.
+
+    Returns:
+        ``(repo_name, branch)`` tuple, or ``None`` if not a git repo or
+        no remote origin is configured.
+    """
+    import shutil
+    import subprocess
+
+    root = root or Path.cwd()
+    git = shutil.which("git")
+    if not git:
+        logger.debug("parse_git_identity: git not found")
+        return None
+
+    def _run(args: list[str], cwd: Path = root) -> Optional[str]:
+        try:
+            r = subprocess.run(
+                args, capture_output=True, text=True, timeout=3, cwd=str(cwd), check=False
+            )
+            return r.stdout.strip() if r.returncode == 0 else None
+        except Exception:
+            return None
+
+    # Resolve git root; if inside a submodule use the superproject for remote URL
+    git_root_str = _run([git, "rev-parse", "--show-toplevel"])
+    git_root = Path(git_root_str) if git_root_str else root
+    superproject_str = _run([git, "rev-parse", "--show-superproject-working-tree"])
+    if superproject_str:
+        git_root = Path(superproject_str)
+
+    branch = _run([git, "rev-parse", "--abbrev-ref", "HEAD"])
+    if not branch:
+        logger.debug("parse_git_identity: could not determine branch")
+        return None
+
+    remote_url = _run([git, "remote", "get-url", "origin"], cwd=git_root)
+    if not remote_url:
+        logger.debug("parse_git_identity: no git remote 'origin'")
+        return None
+
+    # Strip trailing slash, then .git suffix with proper suffix removal (not rstrip
+    # which strips individual characters and would corrupt names like "pytest").
+    url = remote_url.rstrip("/")
+    if url.endswith(".git"):
+        url = url[:-4]
+    # Handles both https://host/org/repo and git@host:org/repo
+    repo_name = url.rsplit("/", 1)[-1].rsplit(":", 1)[-1]
+    if not repo_name:
+        logger.debug("parse_git_identity: could not parse repo name from %s", remote_url)
+        return None
+
+    logger.debug("parse_git_identity: repo=%s branch=%s", repo_name, branch)
+    return repo_name, branch
+
+
 async def discover_project_id(
     root: Path | None = None,
     user_id: str = "defaultuser",
@@ -143,6 +206,10 @@ async def discover_project_id(
     Uses git to determine the repo name and current branch, then queries
     the local PotpieRuntime to find a matching indexed project.
 
+    Prefer passing an existing backend to ``parse_git_identity`` +
+    ``backend.list_projects()`` when a RuntimeBackend is already available,
+    to avoid a second PotpieRuntime initialization.
+
     Args:
         root: Working directory to inspect. Defaults to CWD.
         user_id: Potpie user ID for project lookup.
@@ -150,61 +217,11 @@ async def discover_project_id(
     Returns:
         Project ID string if found, ``None`` otherwise.
     """
-    import shutil
-    import subprocess
-
     root = root or Path.cwd()
-    git = shutil.which("git")
-    if not git:
-        logger.debug("discover_project_id: git not found")
+    identity = parse_git_identity(root)
+    if not identity:
         return None
-
-    def _run(args: list[str]) -> Optional[str]:
-        try:
-            r = subprocess.run(
-                args, capture_output=True, text=True, timeout=3, cwd=str(root), check=False
-            )
-            return r.stdout.strip() if r.returncode == 0 else None
-        except Exception:
-            return None
-
-    # Use git toplevel to handle submodule scenarios — remote is on the parent repo
-    git_root_str = _run([git, "rev-parse", "--show-toplevel"])
-    git_root = Path(git_root_str) if git_root_str else root
-
-    # If we're in a submodule, use the superproject for remote URL lookup
-    superproject_str = _run([git, "rev-parse", "--show-superproject-working-tree"])
-    if superproject_str:
-        git_root = Path(superproject_str)
-
-    def _run_at(args: list[str], cwd: Path) -> Optional[str]:
-        try:
-            r = subprocess.run(
-                args, capture_output=True, text=True, timeout=3, cwd=str(cwd), check=False
-            )
-            return r.stdout.strip() if r.returncode == 0 else None
-        except Exception:
-            return None
-
-    # Get current branch
-    branch = _run([git, "rev-parse", "--abbrev-ref", "HEAD"])
-    if not branch:
-        logger.debug("discover_project_id: could not determine branch")
-        return None
-
-    # Get remote URL from git_root (handles submodule case)
-    remote_url = _run_at([git, "remote", "get-url", "origin"], git_root)
-    if not remote_url:
-        logger.debug("discover_project_id: no git remote 'origin'")
-        return None
-
-    # Parse repo name from URL: handles https://github.com/org/repo.git and git@github.com:org/repo.git
-    repo_name = remote_url.rstrip("/").rstrip(".git").rsplit("/", 1)[-1].rsplit(":", 1)[-1]
-    if not repo_name:
-        logger.debug("discover_project_id: could not parse repo name from %s", remote_url)
-        return None
-
-    logger.debug("discover_project_id: repo=%s branch=%s", repo_name, branch)
+    repo_name, branch = identity
 
     try:
         from potpie import PotpieRuntime  # type: ignore[import]
@@ -239,4 +256,4 @@ async def discover_project_id(
     return None
 
 
-__all__ = ["discover_potpie_url", "discover_project_id"]
+__all__ = ["discover_potpie_url", "discover_project_id", "parse_git_identity"]

@@ -160,41 +160,49 @@ async def run_non_interactive(  # noqa: C901
         potpie_cap: Any = None
         potpie_ctx: Any = None
         potpie_subs: list[Any] = []
-        if not project_id:
-            try:
-                from apps.cli.config import load_config as _load_config
-                _cfg = _load_config()
-                if _cfg.potpie_mode == "local":
-                    from apps.cli.potpie_discovery import discover_project_id
-                    from pathlib import Path
-                    _root = Path(working_dir) if working_dir else Path.cwd()
-                    project_id = await discover_project_id(root=_root, user_id=user_id)
-                    if project_id and not effective_quiet:
-                        err_console.print(f"[dim]Auto-discovered Potpie project: {project_id}[/dim]")
-            except Exception as e:
-                logger.debug("Auto-discovery failed: %s", e)
-        if project_id:
-            try:
-                from apps.cli.config import load_config as _load_config
-                from apps.potpie.context import PotpieContext
-                from pydantic_deep.toolsets.code_graph import make_backend
-                from apps.potpie.capability import PotpieKGCapability
-                from pydantic_deep.subagents_potpie import make_potpie_subagents
-                _cfg = _load_config()
-                _cfg.potpie_mode = "local"
+        try:
+            from apps.cli.config import load_config as _load_config
+            from apps.potpie.context import PotpieContext
+            from pydantic_deep.toolsets.code_graph import make_backend
+            from apps.potpie.capability import PotpieKGCapability
+            from pydantic_deep.subagents_potpie import make_potpie_subagents
+            from pathlib import Path as _Path
+
+            _cfg = _load_config()
+            if _cfg.potpie_mode == "local":
                 _backend = make_backend(_cfg)
-                # Share one backend for both capability and subagents
-                potpie_cap = await PotpieKGCapability.create(
-                    backend=_backend, project_id=project_id, user_id=user_id
-                )
-                potpie_ctx = PotpieContext(project_id=project_id, user_id=user_id)
-                potpie_subs = await make_potpie_subagents(
-                    backend=_backend, project_id=project_id, user_id=user_id
-                )
-                if not effective_quiet:
-                    err_console.print(f"[dim]Potpie KG tools loaded for project {project_id}[/dim]")
-            except Exception as e:
-                err_console.print(f"[yellow]Warning: could not load Potpie KG tools: {e}[/yellow]")
+
+                # Auto-discover project ID from git using the already-created backend,
+                # avoiding a separate PotpieRuntime initialization.
+                if not project_id:
+                    from apps.cli.potpie_discovery import parse_git_identity
+                    _root = _Path(working_dir) if working_dir else _Path.cwd()
+                    _identity = parse_git_identity(_root)
+                    if _identity:
+                        _repo, _branch = _identity
+                        for _p in await _backend.list_projects():
+                            if _p["repo_name"] == _repo and _p["branch_name"] == _branch:
+                                project_id = _p["id"]
+                                if not effective_quiet:
+                                    err_console.print(
+                                        f"[dim]Auto-discovered Potpie project: {project_id}[/dim]"
+                                    )
+                                break
+
+                if project_id:
+                    potpie_cap = await PotpieKGCapability.create(
+                        backend=_backend, project_id=project_id, user_id=user_id
+                    )
+                    potpie_ctx = PotpieContext(project_id=project_id, user_id=user_id)
+                    potpie_subs = await make_potpie_subagents(
+                        backend=_backend, project_id=project_id, user_id=user_id
+                    )
+                    if not effective_quiet:
+                        err_console.print(f"[dim]Potpie KG tools loaded for project {project_id}[/dim]")
+                else:
+                    await _backend.close()
+        except Exception as e:
+            err_console.print(f"[yellow]Warning: could not load Potpie KG tools: {e}[/yellow]")
 
         agent, deps = create_cli_agent(
             model=model,
