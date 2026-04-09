@@ -69,6 +69,7 @@ def _load_history(max_items: int = 500) -> list[str]:
     """Load input history from disk."""
     try:
         from apps.cli.config import get_history_path
+
         path = get_history_path()
         if path.exists():
             lines = path.read_text().strip().splitlines()
@@ -82,6 +83,7 @@ def _save_history_line(text: str) -> None:
     """Append a line to the history file."""
     try:
         from apps.cli.config import get_history_path
+
         path = get_history_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "a") as f:
@@ -220,9 +222,7 @@ class InputArea(Vertical):
                 pr.remove()
             self.mount(MultilineInput(), before=hints)
             hints.update(
-                "[dim]Ctrl+J[/dim] send   "
-                "[dim]Esc[/dim] cancel   "
-                "[dim]Enter[/dim] new line"
+                "[dim]Ctrl+J[/dim] send   [dim]Esc[/dim] cancel   [dim]Enter[/dim] new line"
             )
             multi_widget = self.query_one(MultilineInput)
             multi_widget.focus()

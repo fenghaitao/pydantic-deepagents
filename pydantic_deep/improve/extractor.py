@@ -253,9 +253,7 @@ class SessionExtractor:
 
                 # Compact one-line summary per tool call
                 status = "ERROR" if error else "ok"
-                args_brief = ", ".join(
-                    f"{k}={v[:80]}" for k, v in args.items()
-                ) if args else ""
+                args_brief = ", ".join(f"{k}={v[:80]}" for k, v in args.items()) if args else ""
                 lines.append(
                     f"  {tool}({args_brief}) -> [{status}, {elapsed:.1f}s, {result_len} chars]"
                 )

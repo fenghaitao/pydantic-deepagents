@@ -80,13 +80,19 @@ class ChatScreen(Screen):
                     detect_package_manager,
                     detect_test_command,
                 )
+
                 lang = detect_language(working_dir) or "Unknown"
                 pkg = detect_package_manager(working_dir) or ""
                 test_cmd = detect_test_command(working_dir) or ""
             except Exception:
                 lang, pkg, test_cmd = "Unknown", "", ""
 
-            sections = ["# AGENTS.md", "", "Project conventions and context for the AI assistant.", ""]
+            sections = [
+                "# AGENTS.md",
+                "",
+                "Project conventions and context for the AI assistant.",
+                "",
+            ]
             sections.append("## Project")
             sections.append("")
             if lang:
@@ -107,21 +113,23 @@ class ChatScreen(Screen):
         # SOUL.md — user preferences (main agent only)
         soul_path = working_dir / "SOUL.md"
         if not soul_path.exists():
-            soul_content = "\n".join([
-                "# SOUL.md",
-                "",
-                "Agent personality and user preferences.",
-                "",
-                "## Communication Style",
-                "",
-                "- Be concise and direct",
-                "- Use the same language as the user",
-                "",
-                "## Preferences",
-                "",
-                "<!-- The /improve command will populate this over time -->",
-                "",
-            ])
+            soul_content = "\n".join(
+                [
+                    "# SOUL.md",
+                    "",
+                    "Agent personality and user preferences.",
+                    "",
+                    "## Communication Style",
+                    "",
+                    "- Be concise and direct",
+                    "- Use the same language as the user",
+                    "",
+                    "## Preferences",
+                    "",
+                    "<!-- The /improve command will populate this over time -->",
+                    "",
+                ]
+            )
             soul_path.write_text(soul_content)
             created.append("SOUL.md")
 
@@ -130,12 +138,14 @@ class ChatScreen(Screen):
         memory_path = memory_dir / "MEMORY.md"
         if not memory_path.exists():
             memory_dir.mkdir(parents=True, exist_ok=True)
-            memory_content = "\n".join([
-                "# Memory",
-                "",
-                "Persistent observations from past sessions.",
-                "",
-            ])
+            memory_content = "\n".join(
+                [
+                    "# Memory",
+                    "",
+                    "Persistent observations from past sessions.",
+                    "",
+                ]
+            )
             memory_path.write_text(memory_content)
             created.append("MEMORY.md")
 
@@ -146,8 +156,10 @@ class ChatScreen(Screen):
         """Create a session directory for this conversation."""
         import uuid
         from pathlib import Path
+
         try:
             from apps.cli.config import get_sessions_dir
+
             self._session_id = uuid.uuid4().hex[:12]
             session_dir = get_sessions_dir() / self._session_id
             session_dir.mkdir(parents=True, exist_ok=True)
@@ -155,6 +167,7 @@ class ChatScreen(Screen):
 
             # Initialize per-session debug logger
             from apps.cli.debug_log import setup_logger
+
             setup_logger(self._session_id)
         except Exception:
             self._session_id = ""
@@ -166,6 +179,7 @@ class ChatScreen(Screen):
             return
         try:
             from pydantic_ai.messages import ModelMessagesTypeAdapter
+
             history = getattr(self.app, "message_history", [])
             if not history:
                 return
@@ -176,8 +190,12 @@ class ChatScreen(Screen):
             pass  # Don't crash on save failure
 
     def _append_tool_log(
-        self, tool_name: str, args: dict[str, Any], result: str,
-        elapsed: float, is_error: bool,
+        self,
+        tool_name: str,
+        args: dict[str, Any],
+        result: str,
+        elapsed: float,
+        is_error: bool,
     ) -> None:
         """Append a structured tool call record to tool_log.jsonl.
 
@@ -289,6 +307,7 @@ class ChatScreen(Screen):
                 detect_package_manager,
                 detect_test_command,
             )
+
             lang = detect_language(root)
             pkg = detect_package_manager(root)
             test_cmd = detect_test_command(root)
@@ -381,9 +400,7 @@ class ChatScreen(Screen):
         app.last_response = ""  # type: ignore
         assistant = msg_list.begin_assistant_message()
 
-        task = asyncio.create_task(
-            self._agent_stream_worker(text, assistant, msg_list, header)
-        )
+        task = asyncio.create_task(self._agent_stream_worker(text, assistant, msg_list, header))
 
         def _on_done(t: asyncio.Task[None]) -> None:
             exc = t.exception()
@@ -401,11 +418,17 @@ class ChatScreen(Screen):
         from pydantic_ai import Agent
         from pydantic_ai._agent_graph import End, UserPromptNode  # type: ignore[attr-defined]
         from pydantic_ai.messages import (
-            FinalResultEvent, FunctionToolCallEvent, FunctionToolResultEvent,
-            PartDeltaEvent, PartStartEvent, TextPartDelta, ThinkingPartDelta,
+            FinalResultEvent,
+            FunctionToolCallEvent,
+            FunctionToolResultEvent,
+            PartDeltaEvent,
+            PartStartEvent,
+            TextPartDelta,
+            ThinkingPartDelta,
         )
 
         from apps.cli.debug_log import get_logger
+
         log = get_logger()
 
         app = self.app
@@ -416,14 +439,24 @@ class ChatScreen(Screen):
         log.info("Agent run started", prompt_length=len(text), history_messages=len(history))
 
         pending: dict[str, tuple[dict[str, Any], float]] = {}
-        _TODO_TOOLS = frozenset({
-            "read_todos", "write_todos", "add_todo",
-            "update_todo_status", "remove_todo",
-        })
-        _TEAM_TOOLS = frozenset({
-            "spawn_team", "assign_task", "check_teammates",
-            "message_teammate", "dissolve_team",
-        })
+        _TODO_TOOLS = frozenset(
+            {
+                "read_todos",
+                "write_todos",
+                "add_todo",
+                "update_todo_status",
+                "remove_todo",
+            }
+        )
+        _TEAM_TOOLS = frozenset(
+            {
+                "spawn_team",
+                "assign_task",
+                "check_teammates",
+                "message_teammate",
+                "dissolve_team",
+            }
+        )
         _subagent_tasks: dict[str, dict[str, Any]] = {}  # task_id -> info
 
         def _parse_args(raw: Any) -> dict[str, Any]:
@@ -431,6 +464,7 @@ class ChatScreen(Screen):
                 return raw
             if isinstance(raw, str):
                 import json
+
                 try:
                     p = json.loads(raw)
                     return p if isinstance(p, dict) else {}
@@ -495,7 +529,9 @@ class ChatScreen(Screen):
 
                                     # Feature 8: Track subagent task launches
                                     if tool_name == "task":
-                                        sa_name = args.get("subagent_type") or args.get("name", "subagent")
+                                        sa_name = args.get("subagent_type") or args.get(
+                                            "name", "subagent"
+                                        )
                                         sa_desc = args.get("description", "")
                                         _subagent_tasks[call_id] = {
                                             "name": sa_name,
@@ -536,7 +572,9 @@ class ChatScreen(Screen):
                                     # Save structured tool trace for /improve
                                     self._append_tool_log(tool_name, args, raw, elapsed, is_error)
                                     if tool_name not in _TODO_TOOLS:
-                                        assistant.complete_tool_call(call_id, raw, elapsed, is_error)
+                                        assistant.complete_tool_call(
+                                            call_id, raw, elapsed, is_error
+                                        )
 
                                     # Feature 8: Update subagent status on completion
                                     if call_id in _subagent_tasks:
@@ -564,6 +602,7 @@ class ChatScreen(Screen):
 
                 # Check for DeferredToolRequests (approval flow)
                 from pydantic_ai.tools import DeferredToolRequests
+
                 if isinstance(result.output, DeferredToolRequests):
                     from pydantic_ai.tools import (
                         DeferredToolResults,
@@ -579,6 +618,7 @@ class ChatScreen(Screen):
 
                         # Show approval modal and wait for user decision
                         from apps.cli.modals.approval import ApprovalModal
+
                         self.app.push_screen(
                             ApprovalModal(call.tool_name, tool_args),
                             lambda decision, f=future: f.set_result(decision),  # type: ignore[misc]
@@ -606,9 +646,7 @@ class ChatScreen(Screen):
                         None,
                         deps=deps,
                         message_history=result.all_messages(),
-                        deferred_tool_results=DeferredToolResults(
-                            approvals=approvals
-                        ),
+                        deferred_tool_results=DeferredToolResults(approvals=approvals),
                     ) as cont_run:
                         async for node in cont_run:
                             if isinstance(node, UserPromptNode):
@@ -642,15 +680,25 @@ class ChatScreen(Screen):
                                                 if isinstance(event, FunctionToolCallEvent):
                                                     tool_name = event.part.tool_name
                                                     t_args = _parse_args(event.part.args)
-                                                    call_id = getattr(event.part, "tool_call_id", tool_name)
+                                                    call_id = getattr(
+                                                        event.part, "tool_call_id", tool_name
+                                                    )
                                                     if tool_name not in _TODO_TOOLS:
-                                                        assistant_cont.add_tool_call(tool_name, t_args, call_id)
+                                                        assistant_cont.add_tool_call(
+                                                            tool_name, t_args, call_id
+                                                        )
                                                         msg_list.scroll_end(animate=False)
                                                 elif isinstance(event, FunctionToolResultEvent):
-                                                    tool_name = getattr(event.result, "tool_name", "unknown")
-                                                    call_id = getattr(event.result, "tool_call_id", tool_name)
+                                                    tool_name = getattr(
+                                                        event.result, "tool_name", "unknown"
+                                                    )
+                                                    call_id = getattr(
+                                                        event.result, "tool_call_id", tool_name
+                                                    )
                                                     raw = str(event.result.content)
-                                                    assistant_cont.complete_tool_call(call_id, raw, 0.0, False)
+                                                    assistant_cont.complete_tool_call(
+                                                        call_id, raw, 0.0, False
+                                                    )
                             elif isinstance(node, End):
                                 pass
 
@@ -709,7 +757,7 @@ class ChatScreen(Screen):
                     # Truncate large files
                     if len(content) > 50_000:
                         content = content[:50_000] + "\n... (truncated)"
-                    return f"\n\n<file path=\"{filepath}\">\n{content}\n</file>\n"
+                    return f'\n\n<file path="{filepath}">\n{content}\n</file>\n'
             except Exception:
                 pass
             return match.group(0)  # Leave as-is if can't read
@@ -743,9 +791,7 @@ class ChatScreen(Screen):
     def on_tool_call_started(self, event: ToolCallStarted) -> None:
         msg_list = self.query_one(MessageList)
         if msg_list.current_assistant:
-            msg_list.current_assistant.add_tool_call(
-                event.tool_name, event.args, event.call_id
-            )
+            msg_list.current_assistant.add_tool_call(event.tool_name, event.args, event.call_id)
             msg_list.scroll_end(animate=False)
 
     def on_tool_call_completed(self, event: ToolCallCompleted) -> None:
@@ -768,6 +814,7 @@ class ChatScreen(Screen):
         msg_list = self.query_one(MessageList)
         msg_list.end_assistant_message()
         from apps.cli.widgets.notification import notify_error
+
         notify_error(self.app, f"Error: {event.error}")
         self.query_one(InputArea).focus_input()
 
@@ -803,9 +850,7 @@ class ChatScreen(Screen):
         status = self.query_one(StatusBar)
         todos = event.todos
         status.total_todos = len(todos)
-        status.active_todos = sum(
-            1 for t in todos if getattr(t, "status", "") == "completed"
-        )
+        status.active_todos = sum(1 for t in todos if getattr(t, "status", "") == "completed")
         # Update side panel
         side = self.query_one(SidePanel)
         todos_widget = side.query_one("TodosWidget")
@@ -845,19 +890,23 @@ class ChatScreen(Screen):
                     members = args.get("members", [])
                     for m in members[:5]:  # Limit display
                         name = m if isinstance(m, str) else m.get("name", "member")
-                        agents_list.append({
-                            "name": name,
-                            "status": "running",
-                            "description": "team member",
-                        })
+                        agents_list.append(
+                            {
+                                "name": name,
+                                "status": "running",
+                                "description": "team member",
+                            }
+                        )
                 elif tool_name == "assign_task":
                     assignee = args.get("assignee", "?")
                     desc = args.get("description", "")[:30]
-                    agents_list.append({
-                        "name": assignee,
-                        "status": "running",
-                        "description": desc,
-                    })
+                    agents_list.append(
+                        {
+                            "name": assignee,
+                            "status": "running",
+                            "description": desc,
+                        }
+                    )
 
             sa_widget.agents = agents_list
 

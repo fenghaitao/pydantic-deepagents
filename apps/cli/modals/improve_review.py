@@ -74,8 +74,7 @@ class ImproveReviewModal(ModalScreen[list[ProposedChange] | None]):
             yield Static("[bold]Improve Report[/bold]", id="improve-title")
 
             summary = (
-                f"Analyzed {self._report.analyzed_sessions} sessions "
-                f"({self._report.time_range})"
+                f"Analyzed {self._report.analyzed_sessions} sessions ({self._report.time_range})"
             )
             if not self._changes:
                 summary += "\n\nNo changes proposed."
@@ -93,7 +92,7 @@ class ImproveReviewModal(ModalScreen[list[ProposedChange] | None]):
 
                     label = (
                         f"{change.target_file} -- {change.change_type}\n"
-                        f"    \"{preview}\"\n"
+                        f'    "{preview}"\n'
                         f"    Confidence: {change.confidence:.2f}"
                     )
                     if change.source_sessions:

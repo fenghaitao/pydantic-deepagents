@@ -69,13 +69,19 @@ class SettingsScreen(Screen):
             yield Static("Features", classes="section-title")
             yield Checkbox("Skills", value=self._config.include_skills, id="cfg-include_skills")
             yield Checkbox("Memory", value=self._config.include_memory, id="cfg-include_memory")
-            yield Checkbox("Subagents", value=self._config.include_subagents, id="cfg-include_subagents")
+            yield Checkbox(
+                "Subagents", value=self._config.include_subagents, id="cfg-include_subagents"
+            )
             yield Checkbox("Todo list", value=self._config.include_todo, id="cfg-include_todo")
             yield Checkbox("Plan mode", value=self._config.include_plan, id="cfg-include_plan")
             yield Checkbox("Web search", value=self._config.web_search, id="cfg-web_search")
             yield Checkbox("Web fetch", value=self._config.web_fetch, id="cfg-web_fetch")
             yield Checkbox("Teams", value=self._config.include_teams, id="cfg-include_teams")
-            yield Checkbox("Context discovery", value=self._config.context_discovery, id="cfg-context_discovery")
+            yield Checkbox(
+                "Context discovery",
+                value=self._config.context_discovery,
+                id="cfg-context_discovery",
+            )
 
             # ── Display ──
             yield Static("Display", classes="section-title")
@@ -138,9 +144,17 @@ class SettingsScreen(Screen):
 
         # Checkboxes
         checkbox_fields = [
-            "include_skills", "include_memory", "include_subagents",
-            "include_todo", "include_plan", "web_search", "web_fetch",
-            "include_teams", "context_discovery", "show_cost", "show_tokens",
+            "include_skills",
+            "include_memory",
+            "include_subagents",
+            "include_todo",
+            "include_plan",
+            "web_search",
+            "web_fetch",
+            "include_teams",
+            "context_discovery",
+            "show_cost",
+            "show_tokens",
         ]
         for field_name in checkbox_fields:
             cb = self.query_one(f"#cfg-{field_name}", Checkbox)
@@ -173,9 +187,17 @@ class SettingsScreen(Screen):
             )
 
             checkbox_fields = [
-                "include_skills", "include_memory", "include_subagents",
-                "include_todo", "include_plan", "web_search", "web_fetch",
-                "include_teams", "context_discovery", "show_cost", "show_tokens",
+                "include_skills",
+                "include_memory",
+                "include_subagents",
+                "include_todo",
+                "include_plan",
+                "web_search",
+                "web_fetch",
+                "include_teams",
+                "context_discovery",
+                "show_cost",
+                "show_tokens",
             ]
             for field_name in checkbox_fields:
                 cb = self.query_one(f"#cfg-{field_name}", Checkbox)

@@ -13,9 +13,19 @@ from textual.widgets import Input, OptionList, Static
 from textual.widgets.option_list import Option
 
 _SKIP_DIRS = {
-    ".git", ".venv", "venv", "__pycache__", "node_modules",
-    ".mypy_cache", ".pytest_cache", ".ruff_cache", ".tox",
-    "dist", "build", ".eggs", "*.egg-info",
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "node_modules",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".tox",
+    "dist",
+    "build",
+    ".eggs",
+    "*.egg-info",
 }
 
 
@@ -79,6 +89,7 @@ class FilePickerModal(ModalScreen[str | None]):
         with Vertical(id="picker-container"):
             yield Static("[bold]Files[/bold]", id="file-title")
             from apps.cli.modals._filter_input import FilterInput
+
             yield FilterInput(
                 placeholder="Type to filter...",
                 id="file-filter",
@@ -95,6 +106,7 @@ class FilePickerModal(ModalScreen[str | None]):
         self._all_files = _scan_files(self._working_dir)
         self._update_list(self._all_files[:50])
         from apps.cli.modals._filter_input import FilterInput
+
         self.query_one("#file-filter", FilterInput).focus()
 
     def _update_list(self, files: list[str]) -> None:

@@ -104,10 +104,7 @@ class TestSearchModal:
             from apps.cli.modals.search import SearchModal
 
             # Check that search modal is showing
-            assert any(
-                isinstance(s, SearchModal)
-                for s in app.screen_stack
-            )
+            assert any(isinstance(s, SearchModal) for s in app.screen_stack)
 
 
 class TestToolCallWidget:
@@ -141,6 +138,7 @@ class TestToolCallWidget:
 class TestThemes:
     def test_available_themes(self):
         from apps.cli.styles.themes import available_themes
+
         themes = available_themes()
         assert "default" in themes
         assert "ocean" in themes
@@ -149,6 +147,7 @@ class TestThemes:
 
     def test_theme_colors(self):
         from apps.cli.styles.themes import THEMES
+
         assert THEMES["ocean"]["primary"] == "#3b82f6"
         assert THEMES["rose"]["primary"] == "#f43f5e"
         assert THEMES["minimal"]["primary"] == "#a0a0a0"
@@ -159,6 +158,7 @@ class TestThemes:
             # Themes should have been registered in __init__
             # Verify by trying to apply one
             from apps.cli.styles.themes import apply_theme
+
             result = apply_theme(app, "ocean")
             # May or may not succeed depending on Textual version
             # but should not raise
@@ -169,6 +169,7 @@ class TestThemes:
             await pilot.pause()
             await pilot.pause()
             from apps.cli.commands import dispatch_command
+
             await dispatch_command(app, "/theme")
             await pilot.pause()
             # Unknown theme
@@ -190,6 +191,7 @@ class TestFileRefs:
             result = chat._expand_file_refs("look at @pyproject.toml please")
             # If pyproject.toml exists in cwd, it should be expanded
             import os
+
             if os.path.isfile(os.path.join(app.working_dir, "pyproject.toml")):
                 assert '<file path="pyproject.toml">' in result
             else:

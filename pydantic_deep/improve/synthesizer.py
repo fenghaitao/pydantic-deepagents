@@ -88,8 +88,7 @@ class InsightSynthesizer:
                     "\n\n## Raw Tool Call Sequences\n\n"
                     "Below are the actual tool call sequences from sessions. "
                     "Use these to identify behavioral patterns, effective "
-                    "strategies, and recurring approaches:\n\n"
-                    + traces
+                    "strategies, and recurring approaches:\n\n" + traces
                 )
 
         agent: Agent[None, _SynthesisOutput] = Agent(

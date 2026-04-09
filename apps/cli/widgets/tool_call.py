@@ -50,7 +50,13 @@ def _format_args_preview(tool_name: str, args: dict[str, Any]) -> str:
     elif tool_name in ("web_search", "web_fetch"):
         query = args.get("query") or args.get("url", "?")
         return f'"{query[:50]}"'
-    elif tool_name in ("read_todos", "write_todos", "add_todo", "update_todo_status", "remove_todo"):
+    elif tool_name in (
+        "read_todos",
+        "write_todos",
+        "add_todo",
+        "update_todo_status",
+        "remove_todo",
+    ):
         return ""
     else:
         # Generic: show first 2 args
@@ -125,8 +131,11 @@ class ToolCallWidget(Widget):
     def is_hidden_tool(self) -> bool:
         """TODO tools are hidden from the UI."""
         return self.tool_name in (
-            "read_todos", "write_todos", "add_todo",
-            "update_todo_status", "remove_todo",
+            "read_todos",
+            "write_todos",
+            "add_todo",
+            "update_todo_status",
+            "remove_todo",
         )
 
     def compose(self) -> ComposeResult:
@@ -190,17 +199,13 @@ class ToolCallWidget(Widget):
             if old or new:
                 diff_lines: list[str] = []
                 for line in old.splitlines()[:3]:
-                    diff_lines.append(
-                        f"{prefix}    ⎿  [red]- {line}[/red]"
-                    )
+                    diff_lines.append(f"{prefix}    ⎿  [red]- {line}[/red]")
                 if old.count("\n") > 3:
                     diff_lines.append(
                         f"[dim]{prefix}    ⎿  ... ({old.count(chr(10)) - 2} more removed)[/dim]"
                     )
                 for line in new.splitlines()[:3]:
-                    diff_lines.append(
-                        f"{prefix}    ⎿  [green]+ {line}[/green]"
-                    )
+                    diff_lines.append(f"{prefix}    ⎿  [green]+ {line}[/green]")
                 if new.count("\n") > 3:
                     diff_lines.append(
                         f"[dim]{prefix}    ⎿  ... ({new.count(chr(10)) - 2} more added)[/dim]"
@@ -220,9 +225,7 @@ class ToolCallWidget(Widget):
             preview_lines = lines[:3]
             if len(lines) > 3:
                 preview_lines.append(f"... ({len(lines) - 3} more lines)")
-            return "\n".join(
-                f"[dim]{prefix}    ⎿  {line}[/dim]" for line in preview_lines
-            )
+            return "\n".join(f"[dim]{prefix}    ⎿  {line}[/dim]" for line in preview_lines)
         return ""
 
     def _refresh_header(self) -> None:
@@ -243,10 +246,14 @@ class ToolCallWidget(Widget):
             header.update(f"{prefix}◆ {call_str}  {right}")
         elif self.status == "success":
             call_str = f"{self.tool_name}({args_preview})" if args_preview else self.tool_name
-            header.update(f"{prefix}[green]◆[/green] {call_str}  [dim]{self.elapsed:.1f}s[/dim] [bold green]✓[/bold green]")
+            header.update(
+                f"{prefix}[green]◆[/green] {call_str}  [dim]{self.elapsed:.1f}s[/dim] [bold green]✓[/bold green]"
+            )
         elif self.status == "error":
             call_str = f"{self.tool_name}({args_preview})" if args_preview else self.tool_name
-            header.update(f"{prefix}[red]◆[/red] {call_str}  [dim]{self.elapsed:.1f}s[/dim] [bold red]✗[/bold red]")
+            header.update(
+                f"{prefix}[red]◆[/red] {call_str}  [dim]{self.elapsed:.1f}s[/dim] [bold red]✗[/bold red]"
+            )
 
     def _refresh_output(self) -> None:
         try:
@@ -266,9 +273,7 @@ class ToolCallWidget(Widget):
         if self.expanded and self.result_text:
             prefix = "│  " if self.is_subagent_tool else ""
             lines = self.result_text.strip().splitlines()
-            formatted = "\n".join(
-                f"[dim]{prefix}    ⎿  {line}[/dim]" for line in lines
-            )
+            formatted = "\n".join(f"[dim]{prefix}    ⎿  {line}[/dim]" for line in lines)
             expanded_output.update(formatted)
             expanded_output.add_class("visible")
         else:

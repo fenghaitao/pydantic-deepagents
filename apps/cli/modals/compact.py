@@ -43,7 +43,9 @@ class CompactModal(ModalScreen[tuple[str, str] | None]):
             yield Static("Focus (optional — what to prioritize in summary):")
             yield Input(placeholder="e.g. 'keep the test results'", id="focus-input")
             yield Button("Compact with LLM", variant="primary", id="btn-llm", classes="compact-btn")
-            yield Button("Quick trim (no LLM cost)", variant="default", id="btn-trim", classes="compact-btn")
+            yield Button(
+                "Quick trim (no LLM cost)", variant="default", id="btn-trim", classes="compact-btn"
+            )
             yield Static("\n[dim]Esc cancel[/dim]")
 
     def on_mount(self) -> None:

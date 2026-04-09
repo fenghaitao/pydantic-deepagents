@@ -16,6 +16,7 @@ from apps.cli.widgets.status_bar import StatusBar
 async def dispatch_command(app: DeepApp, command: str) -> None:
     """Dispatch a slash command to the appropriate handler."""
     from apps.cli.debug_log import get_logger
+
     log = get_logger()
 
     parts = command.strip().split(maxsplit=1)
@@ -28,6 +29,7 @@ async def dispatch_command(app: DeepApp, command: str) -> None:
 
     elif cmd == "/clear":
         from apps.cli.widgets.message_list import MessageList
+
         try:
             msg_list = app.screen.query_one(MessageList)
             msg_list.clear_messages()
@@ -71,7 +73,8 @@ async def dispatch_command(app: DeepApp, command: str) -> None:
             else:
                 subprocess.run(
                     ["xclip", "-selection", "clipboard"],
-                    input=text_to_copy.encode(), check=True,
+                    input=text_to_copy.encode(),
+                    check=True,
                 )
             app.notify("Copied to clipboard")
         except Exception:
@@ -191,7 +194,9 @@ async def dispatch_command(app: DeepApp, command: str) -> None:
             if sys.platform == "darwin":
                 subprocess.run(["pbcopy"], input=full_text.encode(), check=True)
             else:
-                subprocess.run(["xclip", "-selection", "clipboard"], input=full_text.encode(), check=True)
+                subprocess.run(
+                    ["xclip", "-selection", "clipboard"], input=full_text.encode(), check=True
+                )
             app.notify(f"Copied {len(lines)} lines to clipboard")
         except Exception as e:
             app.notify(f"Failed to copy: {e}", severity="error")
@@ -228,6 +233,7 @@ async def dispatch_command(app: DeepApp, command: str) -> None:
 
     elif cmd == "/todos":
         from apps.cli.widgets.side_panel import SidePanel
+
         try:
             side = app.screen.query_one(SidePanel)
             if side.has_class("visible"):
@@ -239,10 +245,12 @@ async def dispatch_command(app: DeepApp, command: str) -> None:
 
     elif cmd == "/skills":
         from apps.cli.modals.skills_view import SkillsViewModal
+
         app.push_screen(SkillsViewModal())
 
     elif cmd == "/diff":
         from apps.cli.modals.diff_view import DiffViewModal
+
         app.push_screen(DiffViewModal(working_dir=app.working_dir))
 
     elif cmd == "/version":
@@ -255,6 +263,7 @@ async def dispatch_command(app: DeepApp, command: str) -> None:
             if result:
                 # Append to MEMORY.md
                 import os
+
                 memory_path = os.path.join(app.working_dir, ".pydantic-deep", "main", "MEMORY.md")
                 os.makedirs(os.path.dirname(memory_path), exist_ok=True)
                 with open(memory_path, "a") as f:
@@ -265,6 +274,7 @@ async def dispatch_command(app: DeepApp, command: str) -> None:
 
     elif cmd == "/settings":
         from apps.cli.screens.settings import SettingsScreen
+
         app.push_screen(SettingsScreen())
 
     elif cmd == "/load":
@@ -290,6 +300,7 @@ async def dispatch_command(app: DeepApp, command: str) -> None:
 
                 # Clear messages and replay loaded history in the UI
                 from apps.cli.widgets.message_list import MessageList
+
                 msg_list = app.screen.query_one(MessageList)
                 msg_list.clear_messages()
 
@@ -329,9 +340,7 @@ async def dispatch_command(app: DeepApp, command: str) -> None:
                                     "error" in content.lower()[:100]
                                     or "traceback" in content.lower()[:200]
                                 )
-                                assistant_msg.complete_tool_call(
-                                    call_id, content, 0.0, is_error
-                                )
+                                assistant_msg.complete_tool_call(call_id, content, 0.0, is_error)
 
                 # Finalize any open assistant message
                 if msg_list.current_assistant is not None:
@@ -375,6 +384,7 @@ async def dispatch_command(app: DeepApp, command: str) -> None:
                 model = app.model_name
                 if not model or model in ("test", "preview"):
                     from apps.cli.config import load_config
+
                     model = load_config().model or "openrouter:anthropic/claude-sonnet-4"
 
                 def _on_progress(stage: str, current: int, total: int) -> None:
@@ -428,6 +438,7 @@ async def dispatch_command(app: DeepApp, command: str) -> None:
                 app.push_screen(ImproveReviewModal(report), _handle_review)
             except Exception as e:
                 import traceback
+
                 error_detail = traceback.format_exc()
                 log.error("Improve pipeline failed", exc_info=True)
                 try:
@@ -441,6 +452,7 @@ async def dispatch_command(app: DeepApp, command: str) -> None:
 
     elif cmd == "/help":
         from apps.cli.modals.help_view import HelpModal
+
         app.push_screen(HelpModal())
 
     elif cmd == "/provider":
@@ -484,12 +496,14 @@ async def dispatch_command(app: DeepApp, command: str) -> None:
 
     elif cmd == "/theme":
         from apps.cli.styles.themes import apply_theme, available_themes
+
         if arg:
             if apply_theme(app, arg):
                 app.notify(f"Theme: {arg}")
                 # Save to config
                 try:
                     from apps.cli.config import DEFAULT_CONFIG_PATH, set_config_value
+
                     set_config_value(DEFAULT_CONFIG_PATH, "theme", arg)
                 except Exception:
                     pass
@@ -516,6 +530,7 @@ async def dispatch_command(app: DeepApp, command: str) -> None:
             key, val = set_parts[0], set_parts[1]
             try:
                 from apps.cli.config import DEFAULT_CONFIG_PATH
+
                 set_config_value(DEFAULT_CONFIG_PATH, key, val)
                 app.notify(f"Set {key} = {val}")
                 log.info("Config updated", key=key, value=val)
@@ -534,6 +549,7 @@ async def dispatch_command(app: DeepApp, command: str) -> None:
 
     elif cmd == "/bug":
         import webbrowser
+
         webbrowser.open("https://github.com/vstorm-co/pydantic-deepagents/issues")
         app.notify("Opened GitHub issues in browser")
 
@@ -542,6 +558,7 @@ async def dispatch_command(app: DeepApp, command: str) -> None:
         # Skills are loaded via the command picker from _discover_skill_commands()
         skill_name = cmd.lstrip("/")
         from apps.cli.modals.command_picker import _discover_skill_commands
+
         known_skills = {name.lstrip("/"): desc for name, desc in _discover_skill_commands()}
 
         if skill_name in known_skills:
@@ -552,6 +569,7 @@ async def dispatch_command(app: DeepApp, command: str) -> None:
             # Post as user message
             from apps.cli.messages import UserSubmitted
             from apps.cli.widgets.message_list import MessageList
+
             try:
                 msg_list = app.screen.query_one(MessageList)
                 msg_list.append_user_message(prompt)

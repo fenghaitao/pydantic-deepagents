@@ -55,12 +55,14 @@ def _load_sessions() -> list[dict[str, str]]:
         except Exception:
             pass
 
-        sessions.append({
-            "id": session_id,
-            "date": modified,
-            "messages": str(msg_count),
-            "preview": first_user_msg,
-        })
+        sessions.append(
+            {
+                "id": session_id,
+                "date": modified,
+                "messages": str(msg_count),
+                "preview": first_user_msg,
+            }
+        )
 
     return sessions[:50]  # Limit to 50 most recent
 
@@ -106,6 +108,7 @@ class SessionPickerModal(ModalScreen[str | None]):
         with Vertical(id="session-container"):
             yield Static(f"[bold]Load Session[/bold]  ({len(self._sessions)} found)\n")
             from apps.cli.modals._filter_input import FilterInput
+
             yield FilterInput(
                 placeholder="Type to filter...",
                 id="session-filter",
@@ -127,13 +130,15 @@ class SessionPickerModal(ModalScreen[str | None]):
 
     def on_mount(self) -> None:
         from apps.cli.modals._filter_input import FilterInput
+
         self.query_one("#session-filter", FilterInput).focus()
 
     def on_input_changed(self, event: Input.Changed) -> None:
         query = event.value.strip().lower()
         if query:
             filtered = [
-                s for s in self._sessions
+                s
+                for s in self._sessions
                 if query in s["preview"].lower() or query in s["id"].lower() or query in s["date"]
             ]
         else:

@@ -56,6 +56,7 @@ class SearchModal(ModalScreen[str | None]):
         with Vertical(id="search-container"):
             yield Static("[bold]Search Messages[/bold]", id="search-title")
             from apps.cli.modals._filter_input import FilterInput
+
             yield FilterInput(
                 placeholder="Type to search...",
                 id="search-input",
@@ -70,6 +71,7 @@ class SearchModal(ModalScreen[str | None]):
 
     def on_mount(self) -> None:
         from apps.cli.modals._filter_input import FilterInput
+
         self.query_one("#search-input", FilterInput).focus()
 
     def _collect_messages(self) -> list[tuple[int, str, str]]:

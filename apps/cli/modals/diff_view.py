@@ -62,23 +62,29 @@ class DiffViewModal(ModalScreen[None]):
                 # Get branch
                 branch_result = subprocess.run(
                     ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                    capture_output=True, text=True,
-                    cwd=self._working_dir, timeout=5,
+                    capture_output=True,
+                    text=True,
+                    cwd=self._working_dir,
+                    timeout=5,
                 )
                 branch = branch_result.stdout.strip() if branch_result.returncode == 0 else "?"
 
                 # Get stat
                 stat = subprocess.run(
                     ["git", "diff", "--stat"],
-                    capture_output=True, text=True,
-                    cwd=self._working_dir, timeout=10,
+                    capture_output=True,
+                    text=True,
+                    cwd=self._working_dir,
+                    timeout=10,
                 )
 
                 # Get full diff
                 diff = subprocess.run(
                     ["git", "diff"],
-                    capture_output=True, text=True,
-                    cwd=self._working_dir, timeout=10,
+                    capture_output=True,
+                    text=True,
+                    cwd=self._working_dir,
+                    timeout=10,
                 )
 
                 yield Static(f"[bold]Git Changes[/bold]  [dim]{branch}[/dim]\n")
@@ -91,8 +97,10 @@ class DiffViewModal(ModalScreen[None]):
                 # Also show staged changes
                 staged = subprocess.run(
                     ["git", "diff", "--cached", "--stat"],
-                    capture_output=True, text=True,
-                    cwd=self._working_dir, timeout=10,
+                    capture_output=True,
+                    text=True,
+                    cwd=self._working_dir,
+                    timeout=10,
                 )
                 if staged.stdout.strip():
                     yield Static(f"\n[bold]Staged[/bold]\n{staged.stdout.strip()}\n")

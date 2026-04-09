@@ -88,7 +88,9 @@ class DeepHeader(Widget):
             # Hide model name when streaming to save space for spinner
             frame = _SPINNER_FRAMES[self._spinner_index]
             if self.is_thinking:
-                parts.append(f"[bold]{frame}[/bold] [italic]thinking...[/italic] {self.elapsed:.0f}s")
+                parts.append(
+                    f"[bold]{frame}[/bold] [italic]thinking...[/italic] {self.elapsed:.0f}s"
+                )
             else:
                 parts.append(f"[bold]{frame}[/bold] {self.elapsed:.0f}s")
             content.update("  ·  ".join(parts))

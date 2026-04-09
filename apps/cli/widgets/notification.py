@@ -10,6 +10,7 @@ from __future__ import annotations
 #   self.notify_warning("...")
 #   self.notify_error("...")
 
+
 def notify_info(app: object, message: str) -> None:
     """Show an info notification."""
     getattr(app, "notify")(message, severity="information", timeout=4)

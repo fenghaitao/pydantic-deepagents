@@ -208,7 +208,9 @@ def _discover_all_skills(user_dir: str | None = None) -> list[dict[str, str]]:
                 if name in seen_names:
                     skills[:] = [s for s in skills if s["name"] != name]
                 seen_names.add(name)
-                skills.append({"name": name, "description": desc, "path": str(skill_file), "source": source})
+                skills.append(
+                    {"name": name, "description": desc, "path": str(skill_file), "source": source}
+                )
 
     _scan_dir(_get_builtin_skills_dir(), "built-in")
     _scan_dir(Path.home() / ".pydantic-deep" / "skills", "user")
@@ -269,7 +271,9 @@ def skills_info(name: Annotated[str, typer.Argument(help="Skill name")]) -> None
                     body_text = fm_parts[2].strip()
             header = f"[dim]Description:[/dim] {s['description']}\n[dim]Source:[/dim]      {s['source']}\n[dim]Path:[/dim]        {s['path']}"
             console.print()
-            console.print(Panel(header, title=f"[bold cyan]{s['name']}[/bold cyan]", padding=(0, 1)))
+            console.print(
+                Panel(header, title=f"[bold cyan]{s['name']}[/bold cyan]", padding=(0, 1))
+            )
             if body_text:
                 console.print()
                 console.print(Markdown(body_text))
@@ -290,7 +294,9 @@ def skills_create(
         typer.echo(f"Skill already exists at {skill_file}", err=True)
         raise typer.Exit(1)
     skill_dir.mkdir(parents=True, exist_ok=True)
-    skill_file.write_text(f"---\nname: {name}\ndescription: \"\"\n---\n\n# {name}\n\nInstructions for this skill go here.\n")
+    skill_file.write_text(
+        f'---\nname: {name}\ndescription: ""\n---\n\n# {name}\n\nInstructions for this skill go here.\n'
+    )
     typer.echo(f"Created skill scaffold at {skill_dir}/")
 
 
@@ -319,7 +325,9 @@ def threads_list(directory: Annotated[str | None, typer.Option("--dir", "-d")] =
             try:
                 raw = mf.read_bytes()
                 if raw:
-                    sessions.append((session_dir.name, len(ModelMessagesTypeAdapter.validate_json(raw))))
+                    sessions.append(
+                        (session_dir.name, len(ModelMessagesTypeAdapter.validate_json(raw)))
+                    )
             except Exception:
                 pass
     if not sessions:
@@ -387,7 +395,17 @@ def threads_export(
         raise typer.Exit(1)
     messages = list(ModelMessagesTypeAdapter.validate_json(mf.read_bytes()))
     if output_format == "json":
-        typer.echo(json.dumps({"id": session_dir.name, "message_count": len(messages), "messages": [str(m) for m in messages]}, indent=2, default=str))
+        typer.echo(
+            json.dumps(
+                {
+                    "id": session_dir.name,
+                    "message_count": len(messages),
+                    "messages": [str(m) for m in messages],
+                },
+                indent=2,
+                default=str,
+            )
+        )
     else:
         typer.echo(f"# Thread: {session_dir.name}\n\nMessages: {len(messages)}\n")
         for msg in messages:

@@ -34,6 +34,7 @@ def run_tui(
 
     try:
         from importlib.metadata import version as pkg_version
+
         version = pkg_version("pydantic-deep")
     except Exception:
         version = "dev"
@@ -42,6 +43,7 @@ def run_tui(
 
     # Try to pick a model that has an available API key
     from apps.cli.app import DeepApp
+
     effective_model = DeepApp._pick_available_model(effective_model)
 
     agent = None
@@ -100,9 +102,8 @@ def run_tui(
         startup_error = str(exc)
         # Log startup error (logger may not be initialized yet, so use basic logging)
         import logging
-        logging.getLogger("pydantic_deep.tui").error(
-            "Agent creation failed at startup: %s", exc
-        )
+
+        logging.getLogger("pydantic_deep.tui").error("Agent creation failed at startup: %s", exc)
 
     app = DeepApp(
         agent=agent,
@@ -122,6 +123,7 @@ def run_preview() -> None:
 
     try:
         from importlib.metadata import version as pkg_version
+
         version = pkg_version("pydantic-deep")
     except Exception:
         version = "dev"

@@ -24,8 +24,10 @@ def _detect_git_branch(working_dir: str) -> str:
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True,
-            cwd=working_dir, timeout=5,
+            capture_output=True,
+            text=True,
+            cwd=working_dir,
+            timeout=5,
         )
         if result.returncode == 0:
             return result.stdout.strip()
@@ -84,6 +86,7 @@ class DeepApp(App):
 
         # Register custom themes
         from apps.cli.styles.themes import register_themes
+
         register_themes(self)
 
         # Apply theme from config
@@ -93,9 +96,11 @@ class DeepApp(App):
         """Read theme from config and apply it."""
         try:
             from apps.cli.config import load_config
+
             config = load_config()
             if config.theme and config.theme != "default":
                 from apps.cli.styles.themes import apply_theme
+
                 apply_theme(self, config.theme)
         except Exception:
             pass
@@ -110,6 +115,7 @@ class DeepApp(App):
         if self._startup_error:
             # Check if this is truly first run (no config.toml)
             from apps.cli.config import get_config_path
+
             if not get_config_path().exists():
                 self.call_later(self._show_onboarding)
             else:
@@ -211,6 +217,7 @@ class DeepApp(App):
             # Save the working model to config
             try:
                 from apps.cli.config import DEFAULT_CONFIG_PATH, set_config_value
+
                 set_config_value(DEFAULT_CONFIG_PATH, "model", effective)
             except Exception:
                 pass
@@ -284,6 +291,7 @@ class DeepApp(App):
     def handle_command(self, command: str) -> None:
         """Dispatch a slash command."""
         from apps.cli.commands import dispatch_command
+
         asyncio.create_task(dispatch_command(self, command))
 
     # ── Shell commands ────────────────────────────────────────────
@@ -302,8 +310,12 @@ class DeepApp(App):
 
         try:
             result = subprocess.run(
-                command, shell=True, capture_output=True, text=True,
-                cwd=self.working_dir, timeout=60,
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                cwd=self.working_dir,
+                timeout=60,
             )
             stdout = result.stdout.rstrip() if result.stdout else ""
             stderr = result.stderr.rstrip() if result.stderr else ""

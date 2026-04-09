@@ -13,26 +13,42 @@ from textual.widgets.option_list import Option
 
 # Models grouped by provider with key detection
 _PROVIDERS_MODELS: list[tuple[str, str, list[str]]] = [
-    ("OPENROUTER_API_KEY", "OpenRouter", [
-        "openrouter:anthropic/claude-sonnet-4",
-        "openrouter:anthropic/claude-opus-4",
-        "openrouter:openai/gpt-4.1",
-        "openrouter:google/gemini-2.5-pro",
-    ]),
-    ("ANTHROPIC_API_KEY", "Anthropic", [
-        "anthropic:claude-sonnet-4-6",
-        "anthropic:claude-opus-4-6",
-        "anthropic:claude-haiku-4-5",
-    ]),
-    ("OPENAI_API_KEY", "OpenAI", [
-        "openai:gpt-4.1",
-        "openai:gpt-4.1-mini",
-        "openai:o3",
-    ]),
-    ("GOOGLE_API_KEY", "Google", [
-        "google-gla:gemini-2.5-pro",
-        "google-gla:gemini-2.5-flash",
-    ]),
+    (
+        "OPENROUTER_API_KEY",
+        "OpenRouter",
+        [
+            "openrouter:anthropic/claude-sonnet-4",
+            "openrouter:anthropic/claude-opus-4",
+            "openrouter:openai/gpt-4.1",
+            "openrouter:google/gemini-2.5-pro",
+        ],
+    ),
+    (
+        "ANTHROPIC_API_KEY",
+        "Anthropic",
+        [
+            "anthropic:claude-sonnet-4-6",
+            "anthropic:claude-opus-4-6",
+            "anthropic:claude-haiku-4-5",
+        ],
+    ),
+    (
+        "OPENAI_API_KEY",
+        "OpenAI",
+        [
+            "openai:gpt-4.1",
+            "openai:gpt-4.1-mini",
+            "openai:o3",
+        ],
+    ),
+    (
+        "GOOGLE_API_KEY",
+        "Google",
+        [
+            "google-gla:gemini-2.5-pro",
+            "google-gla:gemini-2.5-flash",
+        ],
+    ),
 ]
 
 
@@ -82,9 +98,7 @@ class ModelPickerModal(ModalScreen[str | None]):
             for env_var, provider_name, models in _PROVIDERS_MODELS:
                 has_key = bool(os.environ.get(env_var))
                 status = "[green]✓[/green]" if has_key else "[red]✗[/red]"
-                options.append(
-                    Option(f"[dim]── {status} {provider_name} ──[/dim]", disabled=True)
-                )
+                options.append(Option(f"[dim]── {status} {provider_name} ──[/dim]", disabled=True))
                 for model in models:
                     label = model
                     if model == self._current_model:
@@ -95,6 +109,7 @@ class ModelPickerModal(ModalScreen[str | None]):
 
             yield OptionList(*options, id="model-list")
             from apps.cli.modals._filter_input import FilterInput
+
             yield FilterInput(
                 placeholder="Or type custom model string...",
                 id="custom-input",

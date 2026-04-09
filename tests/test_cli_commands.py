@@ -213,5 +213,3 @@ class TestThreadsDelete:
 
         # Session directory should be removed
         assert not session_dir.exists()
-
-

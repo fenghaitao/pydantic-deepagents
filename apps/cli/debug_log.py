@@ -87,6 +87,7 @@ def _get_logs_dir() -> Path:
     """Return .pydantic-deep/logs/ directory, creating if needed."""
     try:
         from apps.cli.config import get_project_dir
+
         logs_dir = get_project_dir() / "logs"
     except Exception:
         logs_dir = Path.home() / ".pydantic-deep" / "logs"

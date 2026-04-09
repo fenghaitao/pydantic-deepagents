@@ -29,6 +29,7 @@ except ModuleNotFoundError:
 def _keys_path() -> Path:
     """Path to keys.toml file."""
     from apps.cli.config import get_project_dir
+
     return get_project_dir() / "keys.toml"
 
 

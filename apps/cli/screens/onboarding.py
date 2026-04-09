@@ -25,6 +25,7 @@ def _check_provider_status() -> list[tuple[str, str, str, bool]]:
     # Ensure keys.toml is loaded
     try:
         from apps.cli.keystore import load_keys
+
         load_keys()
     except Exception:
         pass
@@ -148,6 +149,7 @@ class ApiKeyModal(ModalScreen[str | None]):
             return
 
         from apps.cli.keystore import save_key
+
         save_key(self._env_var, key)
         self.dismiss(key)
 

@@ -156,10 +156,7 @@ class CommandPickerModal(ModalScreen[str | None]):
             )
 
     def _make_options(self, commands: list[tuple[str, str]]) -> list[Option]:
-        return [
-            Option(f"{cmd}  [dim]{desc}[/dim]", id=cmd)
-            for cmd, desc in commands
-        ]
+        return [Option(f"{cmd}  [dim]{desc}[/dim]", id=cmd) for cmd, desc in commands]
 
     def on_mount(self) -> None:
         self.query_one("#picker-filter", _FilterInput).focus()
