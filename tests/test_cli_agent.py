@@ -116,7 +116,7 @@ class TestCreateCliAgent:
                 },
                 clear=False,
             ),
-            patch("cli.agent.create_deep_agent") as mock_create,
+            patch("apps.cli.agent.create_deep_agent") as mock_create,
         ):
             mock_create.return_value = TestModel()
             create_cli_agent(
