@@ -20,6 +20,8 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
+logger = logging.getLogger(__name__)
+
 
 def _http_get(url: str, timeout: int = 5) -> Optional[dict]:
     """Fetch JSON from *url*. Returns None on any error."""
@@ -166,14 +168,32 @@ async def discover_project_id(
         except Exception:
             return None
 
+    # Use git toplevel to handle submodule scenarios — remote is on the parent repo
+    git_root_str = _run([git, "rev-parse", "--show-toplevel"])
+    git_root = Path(git_root_str) if git_root_str else root
+
+    # If we're in a submodule, use the superproject for remote URL lookup
+    superproject_str = _run([git, "rev-parse", "--show-superproject-working-tree"])
+    if superproject_str:
+        git_root = Path(superproject_str)
+
+    def _run_at(args: list[str], cwd: Path) -> Optional[str]:
+        try:
+            r = subprocess.run(
+                args, capture_output=True, text=True, timeout=3, cwd=str(cwd), check=False
+            )
+            return r.stdout.strip() if r.returncode == 0 else None
+        except Exception:
+            return None
+
     # Get current branch
     branch = _run([git, "rev-parse", "--abbrev-ref", "HEAD"])
     if not branch:
         logger.debug("discover_project_id: could not determine branch")
         return None
 
-    # Get remote URL and parse repo name
-    remote_url = _run([git, "remote", "get-url", "origin"])
+    # Get remote URL from git_root (handles submodule case)
+    remote_url = _run_at([git, "remote", "get-url", "origin"], git_root)
     if not remote_url:
         logger.debug("discover_project_id: no git remote 'origin'")
         return None
@@ -188,6 +208,17 @@ async def discover_project_id(
 
     try:
         from potpie import PotpieRuntime  # type: ignore[import]
+
+        # Ensure potpie's .env is loaded — walk up from root to find it
+        try:
+            from dotenv import load_dotenv as _load_dotenv
+            for ancestor in [root, *root.parents]:
+                env_file = ancestor / ".env"
+                if env_file.exists():
+                    _load_dotenv(env_file, override=False)
+                    break
+        except ImportError:
+            pass
 
         rt = PotpieRuntime.from_env()
         await rt.initialize()
