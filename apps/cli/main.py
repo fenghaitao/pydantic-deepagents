@@ -15,7 +15,7 @@ import json
 import os
 from dataclasses import fields
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
 import typer
 from rich.console import Console
@@ -269,7 +269,11 @@ def skills_info(name: Annotated[str, typer.Argument(help="Skill name")]) -> None
                 fm_parts = content.split("---", 2)
                 if len(fm_parts) >= 3:
                     body_text = fm_parts[2].strip()
-            header = f"[dim]Description:[/dim] {s['description']}\n[dim]Source:[/dim]      {s['source']}\n[dim]Path:[/dim]        {s['path']}"
+            header = (
+                f"[dim]Description:[/dim] {s['description']}\n"
+                f"[dim]Source:[/dim]      {s['source']}\n"
+                f"[dim]Path:[/dim]        {s['path']}"
+            )
             console.print()
             console.print(
                 Panel(header, title=f"[bold cyan]{s['name']}[/bold cyan]", padding=(0, 1))
@@ -295,7 +299,10 @@ def skills_create(
         raise typer.Exit(1)
     skill_dir.mkdir(parents=True, exist_ok=True)
     skill_file.write_text(
-        f'---\nname: {name}\ndescription: ""\n---\n\n# {name}\n\nInstructions for this skill go here.\n'
+        f"---\nname: {name}\n"
+        f'description: ""\n'
+        f"---\n\n# {name}\n\n"
+        f"Instructions for this skill go here.\n"
     )
     typer.echo(f"Created skill scaffold at {skill_dir}/")
 
@@ -310,6 +317,7 @@ app.add_typer(threads_app)
 def threads_list(directory: Annotated[str | None, typer.Option("--dir", "-d")] = None) -> None:
     """List saved conversation threads."""
     from pydantic_ai.messages import ModelMessagesTypeAdapter
+
     from apps.cli.config import get_sessions_dir
 
     store_path = Path(directory) if directory else get_sessions_dir()
@@ -349,6 +357,7 @@ def threads_delete(
 ) -> None:
     """Delete a conversation thread."""
     import shutil
+
     from apps.cli.config import get_sessions_dir
 
     store_path = Path(directory) if directory else get_sessions_dir()
@@ -375,6 +384,7 @@ def threads_export(
 ) -> None:
     """Export a conversation thread."""
     from pydantic_ai.messages import ModelMessagesTypeAdapter
+
     from apps.cli.config import get_sessions_dir
 
     store_path = Path(directory) if directory else get_sessions_dir()

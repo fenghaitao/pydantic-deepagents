@@ -117,10 +117,7 @@ class FilePickerModal(ModalScreen[str | None]):
 
     def on_input_changed(self, event: Input.Changed) -> None:
         query = event.value.strip().lower()
-        if query:
-            filtered = [f for f in self._all_files if query in f.lower()]
-        else:
-            filtered = self._all_files
+        filtered = [f for f in self._all_files if query in f.lower()] if query else self._all_files
         self._update_list(filtered[:50])
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:

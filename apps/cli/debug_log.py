@@ -19,8 +19,8 @@ Usage::
 
 from __future__ import annotations
 
+import contextlib
 import logging
-import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -103,10 +103,8 @@ def _cleanup_old_logs(logs_dir: Path, keep: int = _MAX_LOG_FILES) -> None:
         reverse=True,
     )
     for old_file in log_files[keep:]:
-        try:
+        with contextlib.suppress(OSError):
             old_file.unlink()
-        except OSError:
-            pass
 
 
 def _update_latest_symlink(logs_dir: Path, log_file: Path) -> None:
@@ -133,7 +131,7 @@ def setup_logger(session_id: str, level: int = logging.DEBUG) -> _StructuredLogg
     Returns:
         Structured logger instance.
     """
-    global _logger, _session_id  # noqa: PLW0603
+    global _logger, _session_id
     _session_id = session_id
 
     logs_dir = _get_logs_dir()
@@ -181,7 +179,7 @@ def get_logger() -> _StructuredLogger:
 
     Returns a no-op logger if ``setup_logger()`` hasn't been called yet.
     """
-    global _logger  # noqa: PLW0603
+    global _logger
     if _logger is None:
         # Return a logger that writes nowhere (NullHandler)
         logger = logging.getLogger(_LOGGER_NAME)

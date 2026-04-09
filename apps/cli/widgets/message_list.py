@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any
-
 from textual.containers import VerticalScroll
-from textual.widget import Widget
 
 from apps.cli.widgets.assistant_message import AssistantMessage
 from apps.cli.widgets.user_message import UserMessage

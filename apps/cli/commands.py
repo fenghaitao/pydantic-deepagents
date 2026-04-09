@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 from apps.cli.widgets.status_bar import StatusBar
 
 
-async def dispatch_command(app: DeepApp, command: str) -> None:
+async def dispatch_command(app: DeepApp, command: str) -> None:  # noqa: C901
     """Dispatch a slash command to the appropriate handler."""
     from apps.cli.debug_log import get_logger
 
@@ -280,21 +280,23 @@ async def dispatch_command(app: DeepApp, command: str) -> None:
     elif cmd == "/load":
         from apps.cli.modals.session_picker import SessionPickerModal
 
-        async def _handle_load(session_id: str | None) -> None:
+        async def _handle_load(session_id: str | None) -> None:  # noqa: C901
             if not session_id:
                 return
             # Load session messages
             try:
                 import json
-                from apps.cli.config import get_sessions_dir
+
                 from pydantic_ai.messages import ModelMessagesTypeAdapter
+
+                from apps.cli.config import get_sessions_dir
 
                 messages_path = get_sessions_dir() / session_id / "messages.json"
                 if not messages_path.exists():
                     app.notify(f"Session {session_id} not found", severity="error")
                     return
 
-                data = json.loads(messages_path.read_text())
+                json.loads(messages_path.read_text())
                 history = ModelMessagesTypeAdapter.validate_json(messages_path.read_bytes())
                 app.message_history = list(history)
 
@@ -456,7 +458,7 @@ async def dispatch_command(app: DeepApp, command: str) -> None:
         app.push_screen(HelpModal())
 
     elif cmd == "/provider":
-        from apps.cli.screens.onboarding import ApiKeyModal, ProviderPickerModal, _PROVIDERS
+        from apps.cli.screens.onboarding import _PROVIDERS, ApiKeyModal, ProviderPickerModal
 
         # Map provider_id to default model
         _PROVIDER_DEFAULT_MODELS = {
@@ -567,7 +569,6 @@ async def dispatch_command(app: DeepApp, command: str) -> None:
             if arg:
                 prompt += f" {arg}"
             # Post as user message
-            from apps.cli.messages import UserSubmitted
             from apps.cli.widgets.message_list import MessageList
 
             try:

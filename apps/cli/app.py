@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -247,7 +248,7 @@ class DeepApp(App):
                 return current  # Current model's key is set, keep it
 
         # Current model's key not set — find first available
-        for prefix, env_var, default_model in provider_keys:
+        for _prefix, env_var, default_model in provider_keys:
             if os.environ.get(env_var):
                 return default_model
 
@@ -263,28 +264,20 @@ class DeepApp(App):
             pass
 
     def watch_is_streaming(self, streaming: bool) -> None:
-        try:
+        with contextlib.suppress(NoMatches, Exception):
             self.screen.query_one(DeepHeader).is_streaming = streaming
-        except (NoMatches, Exception):
-            pass
 
     def watch_context_pct(self, pct: float) -> None:
-        try:
+        with contextlib.suppress(NoMatches, Exception):
             self.screen.query_one(StatusBar).context_pct = pct
-        except (NoMatches, Exception):
-            pass
 
     def watch_total_cost(self, cost: float) -> None:
-        try:
+        with contextlib.suppress(NoMatches, Exception):
             self.screen.query_one(StatusBar).total_cost = cost
-        except (NoMatches, Exception):
-            pass
 
     def watch_current_cost(self, cost: float) -> None:
-        try:
+        with contextlib.suppress(NoMatches, Exception):
             self.screen.query_one(StatusBar).current_cost = cost
-        except (NoMatches, Exception):
-            pass
 
     # ── Command handling ──────────────────────────────────────────
 

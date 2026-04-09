@@ -23,12 +23,12 @@ def run_tui(
     If agent creation fails (e.g. missing API key), the TUI launches
     anyway without an agent so the user can configure via /provider or /settings.
     """
-    from apps.cli.config import load_config
     from apps.cli.app import DeepApp
+    from apps.cli.config import load_config
     from apps.cli.keystore import load_keys
 
     # Load saved API keys from keys.toml → os.environ
-    loaded_keys = load_keys()
+    load_keys()
 
     config = load_config()
 
@@ -42,7 +42,6 @@ def run_tui(
     effective_model = model or config.model
 
     # Try to pick a model that has an available API key
-    from apps.cli.app import DeepApp
 
     effective_model = DeepApp._pick_available_model(effective_model)
 

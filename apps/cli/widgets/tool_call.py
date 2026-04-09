@@ -4,13 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from rich.text import Text
-
+from textual.app import ComposeResult
 from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
-from textual.app import ComposeResult
-
 
 _SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
@@ -247,12 +244,14 @@ class ToolCallWidget(Widget):
         elif self.status == "success":
             call_str = f"{self.tool_name}({args_preview})" if args_preview else self.tool_name
             header.update(
-                f"{prefix}[green]◆[/green] {call_str}  [dim]{self.elapsed:.1f}s[/dim] [bold green]✓[/bold green]"
+                f"{prefix}[green]◆[/green] {call_str}"
+                f"  [dim]{self.elapsed:.1f}s[/dim] [bold green]✓[/bold green]"
             )
         elif self.status == "error":
             call_str = f"{self.tool_name}({args_preview})" if args_preview else self.tool_name
             header.update(
-                f"{prefix}[red]◆[/red] {call_str}  [dim]{self.elapsed:.1f}s[/dim] [bold red]✗[/bold red]"
+                f"{prefix}[red]◆[/red] {call_str}"
+                f"  [dim]{self.elapsed:.1f}s[/dim] [bold red]✗[/bold red]"
             )
 
     def _refresh_output(self) -> None:

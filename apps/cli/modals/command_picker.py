@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -12,7 +11,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Input, OptionList, Static
 from textual.widgets.option_list import Option
 
-from apps.cli.messages import CommandSelected
+from apps.cli.modals._filter_input import FilterInput as _FilterInput
 
 # Built-in commands with descriptions
 COMMANDS: list[tuple[str, str]] = [
@@ -85,9 +84,6 @@ def _discover_skill_commands() -> list[tuple[str, str]]:
             skills.append((f"/{name}", f"Skill: {desc}" if desc else "Skill"))
 
     return skills
-
-
-from apps.cli.modals._filter_input import FilterInput as _FilterInput
 
 
 class CommandPickerModal(ModalScreen[str | None]):

@@ -7,11 +7,9 @@ goes through these typed messages.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
 from typing import Any
 
 from textual.message import Message
-
 
 # ── Streaming messages ────────────────────────────────────────────────
 

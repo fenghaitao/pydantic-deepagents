@@ -9,7 +9,6 @@ from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
 
-
 _STATUS_GLYPHS = {
     "pending": "○",
     "in_progress": "◐",

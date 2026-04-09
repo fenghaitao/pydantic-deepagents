@@ -31,7 +31,7 @@ def _check_provider_status() -> list[tuple[str, str, str, bool]]:
         pass
 
     result: list[tuple[str, str, str, bool]] = []
-    for provider_id, name, env_var, url in _PROVIDERS:
+    for provider_id, name, env_var, _url in _PROVIDERS:
         has_key = bool(os.environ.get(env_var)) if env_var else provider_id == "ollama"
         result.append((provider_id, name, env_var, has_key))
     return result

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.reactive import reactive
-from textual.widget import Widget
 from textual.widgets import Input, Static, TextArea
 
 from apps.cli.messages import CommandSelected, FileSelected, UserSubmitted

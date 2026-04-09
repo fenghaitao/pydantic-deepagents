@@ -320,7 +320,7 @@ class TestSessionExtractor:
 
     def test_estimate_message_tokens_minimum_1(self) -> None:
         ext = SessionExtractor(model="test")
-        msg = {"parts": []}
+        msg: dict[str, list[str]] = {"parts": []}
         assert ext._estimate_message_tokens(msg) == 1
 
     def test_truncate_within_limit(self) -> None:
@@ -1205,7 +1205,7 @@ class TestImproveToolset:
 
             # Call the internal tool function directly
             # Get the improve function from the toolset
-            from pydantic_deep.toolsets.improve import ImprovementAnalyzer as RealAnalyzer
+            from pydantic_deep.improve.analyzer import ImprovementAnalyzer as RealAnalyzer
 
             analyzer = RealAnalyzer(model="test", sessions_dir=sessions_dir, working_dir=tmp_path)
             with patch.object(analyzer, "_discover_sessions", return_value=[]):

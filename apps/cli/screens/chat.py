@@ -13,8 +13,8 @@ from apps.cli.messages import (
     AgentComplete,
     AgentError,
     AgentRunStarted,
-    AgentToken,
     AgentTextComplete,
+    AgentToken,
     ApprovalRequested,
     CommandSelected,
     CompressionComplete,
@@ -155,7 +155,6 @@ class ChatScreen(Screen):
     def _init_session(self) -> None:
         """Create a session directory for this conversation."""
         import uuid
-        from pathlib import Path
 
         try:
             from apps.cli.config import get_sessions_dir
@@ -409,12 +408,13 @@ class ChatScreen(Screen):
 
         task.add_done_callback(_on_done)
 
-    async def _agent_stream_worker(
+    async def _agent_stream_worker(  # noqa: C901
         self, text: str, assistant: Any, msg_list: Any, header: Any
     ) -> None:
         """Async worker that streams agent output directly to widgets."""
         import asyncio
         import time as _time
+
         from pydantic_ai import Agent
         from pydantic_ai._agent_graph import End, UserPromptNode  # type: ignore[attr-defined]
         from pydantic_ai.messages import (
@@ -422,7 +422,6 @@ class ChatScreen(Screen):
             FunctionToolCallEvent,
             FunctionToolResultEvent,
             PartDeltaEvent,
-            PartStartEvent,
             TextPartDelta,
             ThinkingPartDelta,
         )
@@ -722,24 +721,20 @@ class ChatScreen(Screen):
             log.info("Agent run cancelled")
         except Exception as exc:
             log.error("Agent run failed", exc_info=True)
+            import contextlib
+
             assistant.append_text(f"\n\n**Error:** {exc}")
             assistant.finalize_text()
-            try:
+            with contextlib.suppress(Exception):
                 app.notify(f"Agent error: {exc}", severity="error", timeout=10)  # type: ignore
-            except Exception:
-                pass
         finally:
             header.is_streaming = False
             header.is_thinking = False
             msg_list.end_assistant_message()
-            try:
+            with contextlib.suppress(Exception):
                 self.query_one(InputArea).focus_input()
-            except Exception:
-                pass
-            try:
+            with contextlib.suppress(Exception):
                 msg_list.scroll_end(animate=False)
-            except Exception:
-                pass
 
     def _expand_file_refs(self, text: str) -> str:
         """Expand @file references in the prompt with file contents."""

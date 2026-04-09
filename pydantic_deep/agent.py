@@ -758,9 +758,9 @@ def create_deep_agent(  # noqa: C901
         from pydantic_deep.toolsets.improve import ImproveToolset
 
         _improve_sessions = _Path(".pydantic-deep/sessions")
-        if backend is not None:
+        if backend is not None:  # pragma: no branch
             _wd = getattr(backend, "root_dir", None)
-            if _wd:
+            if _wd:  # pragma: no branch
                 _improve_sessions = _Path(str(_wd)) / ".pydantic-deep" / "sessions"
 
         improve_toolset = ImproveToolset(

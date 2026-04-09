@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 # Uses Textual's built-in notify() system.
 # We provide typed helpers so the app can call:
 #   self.notify_info("...")
@@ -13,19 +12,19 @@ from __future__ import annotations
 
 def notify_info(app: object, message: str) -> None:
     """Show an info notification."""
-    getattr(app, "notify")(message, severity="information", timeout=4)
+    app.notify(message, severity="information", timeout=4)
 
 
 def notify_success(app: object, message: str) -> None:
     """Show a success notification."""
-    getattr(app, "notify")(message, severity="information", timeout=4)
+    app.notify(message, severity="information", timeout=4)
 
 
 def notify_warning(app: object, message: str) -> None:
     """Show a warning notification."""
-    getattr(app, "notify")(message, severity="warning", timeout=5)
+    app.notify(message, severity="warning", timeout=5)
 
 
 def notify_error(app: object, message: str) -> None:
     """Show an error notification."""
-    getattr(app, "notify")(message, severity="error", timeout=6)
+    app.notify(message, severity="error", timeout=6)

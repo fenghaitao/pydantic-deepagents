@@ -159,7 +159,7 @@ class TestThemes:
             # Verify by trying to apply one
             from apps.cli.styles.themes import apply_theme
 
-            result = apply_theme(app, "ocean")
+            apply_theme(app, "ocean")
             # May or may not succeed depending on Textual version
             # but should not raise
             await pilot.pause()
