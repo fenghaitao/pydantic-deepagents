@@ -108,8 +108,8 @@ class CliConfig:
     """API key sent as ``X-API-Key`` header (REST mode only)."""
     potpie_project_id: str | None = None
     """Default project UUID injected into agent system prompt."""
-    potpie_mode: str = "rest"
-    """Backend mode: ``"rest"`` (default) or ``"local"`` (direct PotpieRuntime)."""
+    potpie_mode: str = "local"
+    """Backend mode: ``"local"`` (default, direct PotpieRuntime) or ``"rest"`` (HTTP to potpie API)."""
 
 
 def load_config(path: Path | None = None) -> CliConfig:
