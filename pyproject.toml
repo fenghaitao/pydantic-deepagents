@@ -146,12 +146,6 @@ asyncio_default_fixture_loop_scope = "function"
 branch = true
 source = ["pydantic_deep"]
 data_file = ".coverage/.coverage"
-omit = [
-    # Potpie integration — requires live PotpieRuntime, tested separately
-    "pydantic_deep/toolsets/code_graph/runtime_backend.py",
-    "pydantic_deep/toolsets/code_graph/rest_backend.py",
-    "pydantic_deep/toolsets/code_graph/toolset.py",
-]
 
 [tool.coverage.report]
 fail_under = 99
