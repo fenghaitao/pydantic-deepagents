@@ -201,14 +201,14 @@ async def discover_project_id(
     root: Path | None = None,
     user_id: str = "defaultuser",
 ) -> Optional[str]:
-    """Discover the potpie project ID for the git repo at *root*.
+    """Standalone utility: discover the potpie project ID for the git repo at *root*.
 
-    Uses git to determine the repo name and current branch, then queries
-    the local PotpieRuntime to find a matching indexed project.
+    Creates its own ``PotpieRuntime`` — useful for scripts and one-off lookups
+    (e.g. ``evaluation/get_project_id.py``) where no backend is already running.
 
-    Prefer passing an existing backend to ``parse_git_identity`` +
-    ``backend.list_projects()`` when a RuntimeBackend is already available,
-    to avoid a second PotpieRuntime initialization.
+    When a ``RuntimeBackend`` is already available (e.g. inside the CLI agent
+    setup), prefer ``parse_git_identity(root)`` + ``backend.list_projects()``
+    directly to avoid a second ``PotpieRuntime`` initialization (~25s overhead).
 
     Args:
         root: Working directory to inspect. Defaults to CWD.
