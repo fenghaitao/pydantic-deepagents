@@ -148,7 +148,7 @@ source = ["pydantic_deep"]
 data_file = ".coverage/.coverage"
 
 [tool.coverage.report]
-fail_under = 99
+fail_under = 100
 skip_covered = true
 show_missing = true
 precision = 2

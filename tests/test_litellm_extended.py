@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic_ai.messages import (
+    BuiltinToolCallPart,
     ModelRequest,
     ModelResponse,
     RetryPromptPart,
@@ -101,6 +102,26 @@ class TestMapMessages:
         result = _map_messages(msgs)
         assert result[0]["role"] == "user"
         assert isinstance(result[0]["content"], str)
+
+    def test_model_request_unmapped_part_skipped(self) -> None:
+        """Request parts that are not mapped are skipped (next part iteration)."""
+        req = ModelRequest(parts=[object()])  # type: ignore[list-item]
+        assert _map_messages([req]) == []
+
+    def test_message_neither_request_nor_response_skipped(self) -> None:
+        """Messages that are not ModelRequest or ModelResponse are skipped."""
+
+        class UnknownMessage:
+            kind = "other"
+
+        assert _map_messages([UnknownMessage()]) == []  # type: ignore[list-item]
+
+    def test_model_response_unmapped_part_skipped(self) -> None:
+        """Model response parts other than text/thinking/tool-call are skipped."""
+        part = BuiltinToolCallPart(tool_name="builtin_tool", args="{}")
+        msgs = [ModelResponse(parts=[part])]
+        result = _map_messages(msgs)
+        assert result == [{"role": "assistant"}]
 
 
 # ---------------------------------------------------------------------------
@@ -392,6 +413,27 @@ class TestLiteLLMStreamedResponse:
             events.append(event)
         # Tool call delta should produce at least one event
         assert len(events) >= 0  # may be 0 if partial, just ensure no crash
+
+    async def test_tool_call_delta_none_does_not_yield(self) -> None:
+        """When handle_tool_call_delta returns None, no event is yielded (loop continues)."""
+        chunk = MagicMock()
+        chunk.choices = [MagicMock()]
+        chunk.choices[0].delta.content = None
+        tc = MagicMock()
+        tc.index = 0
+        tc.id = "tc1"
+        tc.function = MagicMock()
+        tc.function.name = "search"
+        tc.function.arguments = None
+        chunk.choices[0].delta.tool_calls = [tc]
+        chunk.usage = None
+
+        s = self._make_streamed([chunk])
+        with patch.object(s._parts_manager, "handle_tool_call_delta", return_value=None):
+            events: list = []
+            async for event in s:
+                events.append(event)
+        assert events == []
 
     async def test_usage_extracted_from_chunk(self) -> None:
         chunk = MagicMock()
