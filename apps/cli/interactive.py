@@ -2507,6 +2507,21 @@ async def run_interactive(  # noqa: C901
             if setup_model is None:
                 return
 
+        # Auto-discover potpie project from git if not explicitly provided
+        if not project_id:
+            try:
+                from apps.cli.config import load_config as _load_config
+                _cfg = _load_config()
+                if _cfg.potpie_mode == "local":
+                    from apps.cli.potpie_discovery import discover_project_id
+                    from pathlib import Path as _Path
+                    _root = _Path(working_dir) if working_dir else _Path.cwd()
+                    project_id = await discover_project_id(root=_root, user_id=user_id)
+                    if project_id:
+                        console.print(f"[dim]Auto-discovered Potpie project: {project_id}[/dim]")
+            except Exception:
+                pass
+
         # Build PotpieKGCapability and subagents sharing one RuntimeBackend
         _potpie_cap, _potpie_subs = await _build_potpie_resources(project_id, user_id)
 

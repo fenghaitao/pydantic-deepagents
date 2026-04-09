@@ -20,8 +20,6 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
-logger = logging.getLogger(__name__)
-
 
 def _http_get(url: str, timeout: int = 5) -> Optional[dict]:
     """Fetch JSON from *url*. Returns None on any error."""
@@ -134,4 +132,80 @@ def discover_potpie_url() -> Optional[str]:
         return None
 
 
-__all__ = ["discover_potpie_url"]
+async def discover_project_id(
+    root: Path | None = None,
+    user_id: str = "defaultuser",
+) -> Optional[str]:
+    """Discover the potpie project ID for the git repo at *root*.
+
+    Uses git to determine the repo name and current branch, then queries
+    the local PotpieRuntime to find a matching indexed project.
+
+    Args:
+        root: Working directory to inspect. Defaults to CWD.
+        user_id: Potpie user ID for project lookup.
+
+    Returns:
+        Project ID string if found, ``None`` otherwise.
+    """
+    import shutil
+    import subprocess
+
+    root = root or Path.cwd()
+    git = shutil.which("git")
+    if not git:
+        logger.debug("discover_project_id: git not found")
+        return None
+
+    def _run(args: list[str]) -> Optional[str]:
+        try:
+            r = subprocess.run(
+                args, capture_output=True, text=True, timeout=3, cwd=str(root), check=False
+            )
+            return r.stdout.strip() if r.returncode == 0 else None
+        except Exception:
+            return None
+
+    # Get current branch
+    branch = _run([git, "rev-parse", "--abbrev-ref", "HEAD"])
+    if not branch:
+        logger.debug("discover_project_id: could not determine branch")
+        return None
+
+    # Get remote URL and parse repo name
+    remote_url = _run([git, "remote", "get-url", "origin"])
+    if not remote_url:
+        logger.debug("discover_project_id: no git remote 'origin'")
+        return None
+
+    # Parse repo name from URL: handles https://github.com/org/repo.git and git@github.com:org/repo.git
+    repo_name = remote_url.rstrip("/").rstrip(".git").rsplit("/", 1)[-1].rsplit(":", 1)[-1]
+    if not repo_name:
+        logger.debug("discover_project_id: could not parse repo name from %s", remote_url)
+        return None
+
+    logger.debug("discover_project_id: repo=%s branch=%s", repo_name, branch)
+
+    try:
+        from potpie import PotpieRuntime  # type: ignore[import]
+
+        rt = PotpieRuntime.from_env()
+        await rt.initialize()
+        try:
+            projects = await rt.projects.list(user_id=user_id)
+            for p in projects:
+                if p.repo_name == repo_name and p.branch_name == branch:
+                    logger.debug("discover_project_id: found project %s", p.id)
+                    return p.id
+            logger.debug(
+                "discover_project_id: no project matched repo=%s branch=%s", repo_name, branch
+            )
+        finally:
+            await rt.close()
+    except Exception as exc:
+        logger.debug("discover_project_id: runtime error: %s", exc)
+
+    return None
+
+
+__all__ = ["discover_potpie_url", "discover_project_id"]

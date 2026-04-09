@@ -7,7 +7,10 @@ Diagnostic output (tool calls, cost) goes to stderr when not in quiet mode.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from pydantic_ai import (
     AgentRunResultEvent,
@@ -153,10 +156,23 @@ async def run_non_interactive(  # noqa: C901
 
             sandbox_instance = backend
 
-        # Potpie KG toolset — injected when --project-id is provided
+        # Potpie KG toolset — injected when --project-id is provided or auto-discovered
         potpie_cap: Any = None
         potpie_ctx: Any = None
         potpie_subs: list[Any] = []
+        if not project_id:
+            try:
+                from apps.cli.config import load_config as _load_config
+                _cfg = _load_config()
+                if _cfg.potpie_mode == "local":
+                    from apps.cli.potpie_discovery import discover_project_id
+                    from pathlib import Path
+                    _root = Path(working_dir) if working_dir else Path.cwd()
+                    project_id = await discover_project_id(root=_root, user_id=user_id)
+                    if project_id and not effective_quiet:
+                        err_console.print(f"[dim]Auto-discovered Potpie project: {project_id}[/dim]")
+            except Exception as e:
+                logger.debug("Auto-discovery failed: %s", e)
         if project_id:
             try:
                 from apps.cli.config import load_config as _load_config
