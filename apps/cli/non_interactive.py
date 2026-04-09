@@ -323,7 +323,17 @@ async def _stream_execution(
 
         elif isinstance(event, FunctionToolCallEvent):
             if not quiet:
-                args = event.part.args if isinstance(event.part.args, dict) else {}
+                raw_args = event.part.args
+                if isinstance(raw_args, dict):
+                    args = raw_args
+                elif isinstance(raw_args, str):
+                    import json
+                    try:
+                        args = json.loads(raw_args)
+                    except Exception:
+                        args = {"_raw": raw_args}
+                else:
+                    args = {}
                 console.print(render_tool_call(event.part.tool_name, args))
                 if verbose:
                     console.print(f"    [dim]args: {args}[/dim]")

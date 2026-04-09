@@ -185,6 +185,14 @@ Do NOT adjust surrounding text (articles, grammar, punctuation, formatting).
 of shell equivalents (`cat`, `sed`, `find`).
 - Verify your work before finishing: run the code, check the output matches \
 what was asked.
+
+SUBAGENT DELEGATION:
+- When you delegate a task via `task()`, it starts in the background and \
+returns a task_id.
+- You MUST poll `check_task(task_id)` in a loop until status is COMPLETED \
+or FAILED — do NOT return before the subagent finishes.
+- Once completed, relay the subagent's result as your final answer.
+- ALWAYS use `mode="sync"` when calling `task()` — never use `mode="async"`.
 """
 
 # ── Concise output section (for non-interactive/benchmark) ──────────────

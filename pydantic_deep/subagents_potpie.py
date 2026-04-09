@@ -365,6 +365,7 @@ async def make_potpie_subagents(
             "instructions": _QNA_INSTRUCTIONS,
             "toolsets": [qna_ts],
             "include_filesystem": True,
+            "preferred_mode": "sync",
         },
         {
             "name": "debugging",
@@ -376,6 +377,7 @@ async def make_potpie_subagents(
             "instructions": _DEBUG_INSTRUCTIONS,
             "toolsets": [debug_ts],
             "include_filesystem": True,
+            "preferred_mode": "sync",
         },
         {
             "name": "code_generation",
@@ -386,6 +388,7 @@ async def make_potpie_subagents(
             "instructions": _CODE_GEN_INSTRUCTIONS,
             "toolsets": [codegen_ts],
             "include_filesystem": True,
+            "preferred_mode": "sync",
         },
         {
             "name": "lld",
@@ -396,6 +399,7 @@ async def make_potpie_subagents(
             "instructions": _LLD_INSTRUCTIONS,
             "toolsets": [lld_ts],
             "include_filesystem": True,
+            "preferred_mode": "sync",
         },
         {
             "name": "unit_test",
@@ -406,6 +410,7 @@ async def make_potpie_subagents(
             "instructions": _UNIT_TEST_INSTRUCTIONS,
             "toolsets": [unit_ts],
             "include_filesystem": True,
+            "preferred_mode": "sync",
         },
         {
             "name": "integration_test",
@@ -417,6 +422,7 @@ async def make_potpie_subagents(
             "instructions": _INTEGRATION_TEST_INSTRUCTIONS,
             "toolsets": [integ_ts],
             "include_filesystem": True,
+            "preferred_mode": "sync",
         },
         {
             "name": "blast_radius",
@@ -429,94 +435,9 @@ async def make_potpie_subagents(
             "instructions": _BLAST_RADIUS_INSTRUCTIONS,
             "toolsets": [blast_ts],
             "include_filesystem": True,  # Isolated mode causes stream errors; use shared
+            "preferred_mode": "sync",
         },
     ]
-
-
-__all__ = ["make_potpie_subagents"]
-
-_QNA_TOOL_NAMES: list[str] = [
-    "get_code_from_multiple_node_ids",
-    "get_node_neighbours_from_node_id",
-    "get_code_from_probable_node_name",
-    "ask_knowledge_graph_queries",
-    "get_nodes_from_tags",
-    "get_code_file_structure",
-    "fetch_file",
-    "fetch_files_batch",
-    "analyze_code_structure",
-    "nl_cypher_query",
-]
-
-_BLAST_RADIUS_TOOL_NAMES: list[str] = [
-    "get_nodes_from_tags",
-    "ask_knowledge_graph_queries",
-    "get_code_from_multiple_node_ids",
-    "change_detection",
-    "fetch_file",
-    "fetch_files_batch",
-    "analyze_code_structure",
-    "nl_cypher_query",
-]
-
-# ---------------------------------------------------------------------------
-# Instructions (condensed from the original task prompts)
-# ---------------------------------------------------------------------------
-
-_QNA_INSTRUCTIONS = """\
-You are a Codebase Q&A Specialist. Your goal is to provide comprehensive,
-well-structured answers to questions about the codebase by systematically
-exploring code, understanding context, and delivering thorough explanations
-grounded in actual code.
-
-## How to explore the codebase
-
-1. Use `Ask_Knowledge_Graph_Queries` or `Query_Code_Graph_with_Natural_Language`
-   to locate where functionality resides.
-2. Use `Get_Code_and_docstring_From_Probable_Node_Name` for specific classes/functions.
-3. Use `Get_Code_and_docstring_From_Multiple_Node_IDs` to fetch code from multiple nodes.
-4. Use `Get_Node_Neighbours_From_Node_ID` to trace callers and callees.
-5. Use `get_code_file_structure` to understand directory layout.
-6. Use `fetch_file` / `fetch_files_batch` to read complete files.
-7. Use `analyze_code_structure` to list all classes/functions in a file.
-
-## Response format
-
-- Use markdown with clear headings.
-- Always cite file paths and line numbers.
-- Include code snippets with language tags.
-- Strip project-specific path prefixes — show only the relative path.
-- Be thorough: explore before answering, verify completeness.
-"""
-
-_BLAST_RADIUS_INSTRUCTIONS = """\
-You are a Blast Radius Analyzer. Your goal is to analyse the impact of code
-changes on the rest of the codebase and answer questions about those changes.
-
-## How to analyse changes
-
-1. Use `change_detection` to fetch the current code changes (diff).
-2. Use `Ask_Knowledge_Graph_Queries` or `Query_Code_Graph_with_Natural_Language`
-   to understand where changed code is used.
-3. Use `Get_Code_and_docstring_From_Multiple_Node_IDs` to fetch changed code.
-4. Use `Get_Node_Neighbours_From_Node_ID` to find all callers/consumers.
-5. Use `fetch_file` / `fetch_files_batch` for full file context.
-6. Use `analyze_code_structure` to list all nodes in affected files.
-
-## Response format
-
-Provide a structured impact analysis:
-1. **Direct changes** — which functions/classes were modified.
-2. **Indirect effects** — downstream callers, consumers, APIs affected.
-3. **Critical areas** — components requiring careful testing.
-4. **Recommendations** — refactoring or additional changes to mitigate risk.
-
-Be specific: name the affected files, functions, and APIs.
-"""
-
-# ---------------------------------------------------------------------------
-# Factory
-# ---------------------------------------------------------------------------
 
 
 __all__ = ["make_potpie_subagents"]
