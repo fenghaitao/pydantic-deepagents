@@ -316,6 +316,24 @@ def _stop_sandbox(sandbox: Any, console: Console) -> None:
         print_warning(console, f"Sandbox cleanup failed: {e}")
 
 
+def _parse_tool_args(raw_args: Any) -> dict:
+    """Parse tool call args to a dict regardless of input type."""
+    if isinstance(raw_args, dict):
+        return raw_args
+    if isinstance(raw_args, str):
+        try:
+            return json.loads(raw_args)
+        except Exception:
+            return {"_raw": raw_args}
+    return {}
+
+
+def _truncate_result(content: Any, max_len: int = 500) -> str:
+    """Truncate tool result content for display."""
+    raw = str(content)
+    return raw if len(raw) <= max_len else raw[:max_len] + "..."
+
+
 async def _stream_execution(
     agent: Any,
     message: str,
@@ -354,18 +372,7 @@ async def _stream_execution(
 
         elif isinstance(event, FunctionToolCallEvent):
             if not quiet:
-                raw_args = event.part.args
-                if isinstance(raw_args, dict):
-                    args = raw_args
-                elif isinstance(raw_args, str):
-                    import json
-
-                    try:
-                        args = json.loads(raw_args)
-                    except Exception:
-                        args = {"_raw": raw_args}
-                else:
-                    args = {}
+                args = _parse_tool_args(event.part.args)
                 console.print(render_tool_call(event.part.tool_name, args))
                 if verbose:
                     console.print(f"    [dim]args: {args}[/dim]")
@@ -375,10 +382,9 @@ async def _stream_execution(
                 tool_name = getattr(event.result, "tool_name", "unknown")
                 console.print(render_tool_result(tool_name, event.result.content))
                 if verbose:
-                    raw = str(event.result.content)
-                    if len(raw) > 500:
-                        raw = raw[:500] + "..."
-                    console.print(f"    [dim]result: {raw}[/dim]")
+                    console.print(
+                        f"    [dim]result: {_truncate_result(event.result.content)}[/dim]"
+                    )
 
         elif isinstance(event, AgentRunResultEvent):
             return str(event.result.output)
