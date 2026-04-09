@@ -23,6 +23,25 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
+
+def _configure_litellm_transport_early() -> None:
+    """Prefer httpx over aiohttp for LiteLLM (avoids aiohttp unclosed-session warnings
+    when the CLI shares one process with in-process Potpie tools).
+
+    Set ``LITELLM_USE_AIOHTTP=1`` to force aiohttp (LiteLLM default transport).
+    """
+    if os.getenv("LITELLM_USE_AIOHTTP", "").lower() in ("1", "true", "yes"):
+        return
+    try:
+        import litellm
+
+        litellm.disable_aiohttp_transport = True
+    except Exception:
+        pass
+
+
+_configure_litellm_transport_early()
+
 app = typer.Typer(
     name="pydantic-deep",
     help="Deep Agent CLI — AI coding assistant powered by pydantic-ai.",
@@ -212,24 +231,36 @@ def run(
         model_settings_json, temperature, reasoning_effort, thinking, thinking_budget
     )
 
-    exit_code = asyncio.run(
-        run_non_interactive(
-            message=prompt,
-            model=model,
-            working_dir=working_dir,
-            shell_allow_list=shell_allow_list,
-            quiet=quiet,
-            stream=not no_stream,
-            sandbox=sandbox,
-            runtime=runtime,
-            output_format=output_format,
-            verbose=verbose,
-            model_settings=settings,
-            lean=lean,
-            project_id=effective_project_id,
-            user_id=user_id,
-        )
-    )
+    async def _run_and_cleanup() -> int:
+        try:
+            return await run_non_interactive(
+                message=prompt,
+                model=model,
+                working_dir=working_dir,
+                shell_allow_list=shell_allow_list,
+                quiet=quiet,
+                stream=not no_stream,
+                sandbox=sandbox,
+                runtime=runtime,
+                output_format=output_format,
+                verbose=verbose,
+                model_settings=settings,
+                lean=lean,
+                project_id=effective_project_id,
+                user_id=user_id,
+            )
+        finally:
+            # Close LiteLLM's cached aiohttp/httpx clients before the event loop stops
+            # (avoids "Unclosed client session / connector" from asyncio).
+            try:
+                from litellm import close_litellm_async_clients
+
+                await close_litellm_async_clients()
+            except Exception:
+                pass
+            await asyncio.sleep(0)
+
+    exit_code = asyncio.run(_run_and_cleanup())
     raise typer.Exit(exit_code)
 
 
