@@ -293,7 +293,10 @@ def chat(
     ] = "defaultuser",
     lean: Annotated[
         bool,
-        typer.Option("--lean", help="Minimal system prompt — disables skills, subagents, memory (reduces token usage)"),
+        typer.Option(
+            "--lean",
+            help="Minimal system prompt — disables skills, subagents, memory (reduces token usage)",
+        ),
     ] = False,
 ) -> None:
     """Start an interactive chat session."""
@@ -750,7 +753,9 @@ def _make_potpie_backend(local: bool):
 
 # ── parse sub-app ─────────────────────────────────────────────────────────────
 
-parse_app = typer.Typer(name="parse", help="Parse repositories into the code graph.", no_args_is_help=True)
+parse_app = typer.Typer(
+    name="parse", help="Parse repositories into the code graph.", no_args_is_help=True
+)
 app.add_typer(parse_app)
 
 
@@ -780,7 +785,6 @@ def parse_repo(
     After parsing, the returned project_id can be set as the default:\n
         pydantic-deep config set potpie_project_id <project_id>
     """
-    import time
 
     console = Console()
 
@@ -816,12 +820,13 @@ def parse_repo(
             status = current
 
         if status == "READY":
-            console.print(f"\n[green]Parsing complete.[/green]")
+            console.print("\n[green]Parsing complete.[/green]")
             console.print(
-                f"[dim]Set as default: pydantic-deep config set potpie_project_id {project_id}[/dim]"
+                "[dim]Set as default: pydantic-deep config set"
+                f" potpie_project_id {project_id}[/dim]"
             )
         elif status == "ERROR":
-            console.print(f"\n[red]Parsing failed.[/red]")
+            console.print("\n[red]Parsing failed.[/red]")
             raise typer.Exit(1)
 
     asyncio.run(_run())
@@ -1012,11 +1017,19 @@ def cache_clean(
     Must specify at least one of: --all, --project-id, --expired, --trim.
     """
     if not any([all_entries, project_id, expired, trim]):
-        typer.echo("Error: specify at least one of --all, --project-id, --expired, --trim", err=True)
+        typer.echo(
+            "Error: specify at least one of --all, --project-id, --expired, --trim", err=True
+        )
         raise typer.Exit(1)
 
     if not force:
-        scope = "ALL entries" if all_entries else f"project {project_id}" if project_id else "selected entries"
+        scope = (
+            "ALL entries"
+            if all_entries
+            else f"project {project_id}"
+            if project_id
+            else "selected entries"
+        )
         typer.confirm(f"Clean cache ({scope})?", abort=True)
 
     console = Console()
@@ -1039,6 +1052,7 @@ def cache_clean(
 
 
 # ── agents command ────────────────────────────────────────────────────────────
+
 
 @app.command("agents")
 def agents_list(

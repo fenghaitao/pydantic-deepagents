@@ -11,14 +11,14 @@ raises NotImplementedError for get_tools() — use CodeGraphToolset instead.
 from __future__ import annotations
 
 import copy
-from typing import TYPE_CHECKING, Any
-
-from pydantic_ai import RunContext, Tool
-from pydantic_ai.toolsets import FunctionToolset
+from typing import Any
 
 from app.modules.intelligence.agents.chat_agents.multi_agent.utils.tool_utils import (
     wrap_structured_tools,
 )
+from pydantic_ai import RunContext, Tool
+from pydantic_ai.toolsets import FunctionToolset
+
 from pydantic_deep.toolsets.code_graph.backend import PotpieBackend
 
 # ---------------------------------------------------------------------------
@@ -38,9 +38,11 @@ KG_TOOL_NAMES: list[str] = [
 ]
 
 # Tools that require embeddings — unavailable when project is in INFERRING state
-_EMBEDDING_DEPENDENT_TOOLS: frozenset[str] = frozenset({
-    "ask_knowledge_graph_queries",
-})
+_EMBEDDING_DEPENDENT_TOOLS: frozenset[str] = frozenset(
+    {
+        "ask_knowledge_graph_queries",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -71,19 +73,18 @@ def _inject_project_id(tool: Tool) -> Tool:
     # pydantic-ai detects RunContext by inspecting the first parameter annotation,
     # so we must NOT use @functools.wraps here.
     import asyncio as _asyncio
+
     _is_async = _asyncio.iscoroutinefunction(original_func)
 
     if _is_async:
+
         async def ctx_wrapper(ctx: RunContext[Any], **kwargs: Any) -> Any:
             project_id = ctx.deps.potpie.project_id if ctx.deps.potpie is not None else None
             if project_id:
                 kwargs["project_id"] = project_id
 
             if tool.name in _EMBEDDING_DEPENDENT_TOOLS:
-                status = (
-                    ctx.deps.potpie.parsing_status
-                    if ctx.deps.potpie is not None else None
-                )
+                status = ctx.deps.potpie.parsing_status if ctx.deps.potpie is not None else None
                 if status == "INFERRING":
                     return (
                         f"Tool '{tool.name}' is unavailable while the project is being indexed "
@@ -93,16 +94,14 @@ def _inject_project_id(tool: Tool) -> Tool:
 
             return await original_func(**kwargs)
     else:
+
         def ctx_wrapper(ctx: RunContext[Any], **kwargs: Any) -> Any:
             project_id = ctx.deps.potpie.project_id if ctx.deps.potpie is not None else None
             if project_id:
                 kwargs["project_id"] = project_id
 
             if tool.name in _EMBEDDING_DEPENDENT_TOOLS:
-                status = (
-                    ctx.deps.potpie.parsing_status
-                    if ctx.deps.potpie is not None else None
-                )
+                status = ctx.deps.potpie.parsing_status if ctx.deps.potpie is not None else None
                 if status == "INFERRING":
                     return (
                         f"Tool '{tool.name}' is unavailable while the project is being indexed "

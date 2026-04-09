@@ -99,7 +99,9 @@ class CodeGraphToolset(FunctionToolset[Any]):
         async def list_code_projects(ctx: RunContext[Any]) -> str:
             projects = await self._backend.list_projects()
             if not projects:
-                return "No projects indexed yet. Use 'pydantic-deep parse repo' to index a repository."
+                return (
+                    "No projects indexed yet. Use 'pydantic-deep parse repo' to index a repository."
+                )
             return json.dumps(projects, default=str)
 
         @self.tool(description=_SEARCH_DESC)
@@ -156,9 +158,7 @@ class CodeGraphToolset(FunctionToolset[Any]):
                     "(status: INFERRING). Embeddings are not ready yet. "
                     "Use `query_code_graph` for structural questions instead."
                 )
-            results = await self._backend.kg_search(
-                project_id, questions, node_ids or []
-            )
+            results = await self._backend.kg_search(project_id, questions, node_ids or [])
             if not results:
                 return "No results found for the given questions."
             return json.dumps(results, default=str)
@@ -194,8 +194,7 @@ class CodeGraphToolset(FunctionToolset[Any]):
                 "to answer questions about the indexed codebase.\n"
                 "Use `query_code_graph` for structural/relational questions "
                 "(call graphs, imports, inheritance). "
-                "Use `ask_knowledge_graph` for semantic/behaviour questions."
-                + status_note
+                "Use `ask_knowledge_graph` for semantic/behaviour questions." + status_note
             )
         else:
             parts.append(

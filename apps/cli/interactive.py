@@ -58,6 +58,7 @@ def _build_potpie_context(project_id: str | None, user_id: str) -> Any:
         return None
     try:
         from apps.potpie.context import PotpieContext
+
         return PotpieContext(project_id=project_id, user_id=user_id)
     except Exception:
         return None
@@ -69,8 +70,8 @@ async def _build_potpie_capability(project_id: str | None, user_id: str) -> Any:
         return None
     try:
         from apps.cli.config import load_config
-        from pydantic_deep.toolsets.code_graph import make_backend
         from apps.potpie.capability import PotpieKGCapability
+        from pydantic_deep.toolsets.code_graph import make_backend
 
         cfg = load_config()
         cfg.potpie_mode = "local"
@@ -82,6 +83,7 @@ async def _build_potpie_capability(project_id: str | None, user_id: str) -> Any:
         )
     except Exception as e:
         import sys
+
         print(f"[potpie-kg] Warning: could not load KG tools: {e}", file=sys.stderr)
         return None
 
@@ -100,9 +102,9 @@ async def _build_potpie_resources(
     """
     try:
         from apps.cli.config import load_config
-        from pydantic_deep.toolsets.code_graph import make_backend
         from apps.potpie.capability import PotpieKGCapability
         from pydantic_deep.subagents_potpie import make_potpie_subagents
+        from pydantic_deep.toolsets.code_graph import make_backend
 
         cfg = load_config()
         cfg.potpie_mode = "local"
@@ -112,6 +114,7 @@ async def _build_potpie_resources(
         # avoiding a separate PotpieRuntime initialization.
         if not project_id and root is not None:
             from apps.cli.potpie_discovery import parse_git_identity
+
             identity = parse_git_identity(root)
             if identity:
                 repo_name, branch = identity
@@ -127,14 +130,14 @@ async def _build_potpie_resources(
         cap = await PotpieKGCapability.create(
             backend=backend, project_id=project_id, user_id=user_id
         )
-        subs = await make_potpie_subagents(
-            backend=backend, project_id=project_id, user_id=user_id
-        )
+        subs = await make_potpie_subagents(backend=backend, project_id=project_id, user_id=user_id)
         return cap, subs, project_id
     except Exception as e:
         import sys
+
         print(f"[potpie] Warning: could not load KG tools/subagents: {e}", file=sys.stderr)
         return None, [], None
+
 
 logger = logging.getLogger(__name__)
 
@@ -1744,7 +1747,7 @@ def _raw_line_edit() -> str:  # noqa: C901
 
             # --- Ctrl+V → clipboard image paste ---
             if key == "paste":
-                from apps.cli.clipboard import get_clipboard_image
+                pass
 
             # --- Enter → submit ---
             if key == "enter":

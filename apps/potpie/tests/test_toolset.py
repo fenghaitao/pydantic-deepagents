@@ -136,7 +136,7 @@ class TestCreatePotpieToolset:
         with patch("apps.potpie.toolset.wrap_structured_tools", return_value=real_tools):
             toolset = await create_potpie_toolset(backend)
 
-        for name in toolset.tools.keys():
+        for name in toolset.tools:
             assert TOOL_NAME_RE.match(name), f"Tool name not sanitized: {name!r}"
 
     @pytest.mark.asyncio
@@ -148,9 +148,7 @@ class TestCreatePotpieToolset:
         with patch("apps.potpie.toolset.wrap_structured_tools", return_value=real_tools):
             await create_potpie_toolset(backend)
 
-        backend.get_tools.assert_called_once_with(
-            KG_TOOL_NAMES, exclude_embedding_tools=False
-        )
+        backend.get_tools.assert_called_once_with(KG_TOOL_NAMES, exclude_embedding_tools=False)
 
     @pytest.mark.asyncio
     async def test_custom_tool_names_forwarded(self) -> None:
@@ -173,9 +171,7 @@ class TestCreatePotpieToolset:
         with patch("apps.potpie.toolset.wrap_structured_tools", return_value=real_tools):
             await create_potpie_toolset(backend, exclude_embedding_tools=True)
 
-        backend.get_tools.assert_called_once_with(
-            KG_TOOL_NAMES, exclude_embedding_tools=True
-        )
+        backend.get_tools.assert_called_once_with(KG_TOOL_NAMES, exclude_embedding_tools=True)
 
     def test_kg_tool_names_constant_has_8_entries(self) -> None:
         """KG_TOOL_NAMES contains exactly 9 tool names (added nl_cypher_query)."""

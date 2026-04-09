@@ -64,8 +64,19 @@ _BOOL_FIELDS = frozenset(
     }
 )
 
-_STR_FIELDS = frozenset({"model", "theme", "charset", "reasoning_effort", "thinking_effort",
-                          "potpie_url", "potpie_api_key", "potpie_project_id", "potpie_mode"})
+_STR_FIELDS = frozenset(
+    {
+        "model",
+        "theme",
+        "charset",
+        "reasoning_effort",
+        "thinking_effort",
+        "potpie_url",
+        "potpie_api_key",
+        "potpie_project_id",
+        "potpie_mode",
+    }
+)
 
 _INT_FIELDS = frozenset({"max_history", "thinking_budget"})
 
@@ -109,7 +120,8 @@ class CliConfig:
     potpie_project_id: str | None = None
     """Default project UUID injected into agent system prompt."""
     potpie_mode: str = "local"
-    """Backend mode: ``"local"`` (default, direct PotpieRuntime) or ``"rest"`` (HTTP to potpie API)."""
+    """Backend mode: ``"local"`` (default, direct PotpieRuntime) or
+    ``"rest"`` (HTTP to potpie API)."""
 
 
 def load_config(path: Path | None = None) -> CliConfig:

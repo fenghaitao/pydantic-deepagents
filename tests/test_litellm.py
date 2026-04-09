@@ -31,10 +31,14 @@ from pydantic_deep.litellm import (
 
 
 def _litellm_live_enabled() -> bool:
-    return bool(os.environ.get("LITELLM_API_BASE")) or os.environ.get(
-        "PYDANTIC_DEEP_LITELLM_LIVE",
-        "",
-    ) == "1"
+    return (
+        bool(os.environ.get("LITELLM_API_BASE"))
+        or os.environ.get(
+            "PYDANTIC_DEEP_LITELLM_LIVE",
+            "",
+        )
+        == "1"
+    )
 
 
 def test_infer_litellm_model_from_prefixed_name() -> None:

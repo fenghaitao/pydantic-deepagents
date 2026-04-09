@@ -69,9 +69,7 @@ class RestBackend:
             resp.raise_for_status()
             return resp.json()
 
-    async def _delete(
-        self, path: str, params: dict[str, Any] | None = None
-    ) -> Any:
+    async def _delete(self, path: str, params: dict[str, Any] | None = None) -> Any:
         import httpx
 
         url = f"{self._base_url}{path}"

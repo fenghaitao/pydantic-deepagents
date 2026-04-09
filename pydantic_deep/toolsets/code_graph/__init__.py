@@ -59,12 +59,14 @@ def make_backend(config: CliConfig) -> PotpieBackend:
     """
     if config.potpie_mode == "local":
         from pydantic_deep.toolsets.code_graph.runtime_backend import RuntimeBackend
+
         return RuntimeBackend()
 
     # REST mode — resolve URL
     url = config.potpie_url
     if not url:
         from apps.cli.potpie_discovery import discover_potpie_url
+
         url = discover_potpie_url()
     if not url:
         raise ValueError(
@@ -76,6 +78,7 @@ def make_backend(config: CliConfig) -> PotpieBackend:
         )
 
     from pydantic_deep.toolsets.code_graph.rest_backend import RestBackend
+
     return RestBackend(base_url=url, api_key=config.potpie_api_key or "")
 
 

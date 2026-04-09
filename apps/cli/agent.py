@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
@@ -186,6 +185,7 @@ def create_cli_agent(  # noqa: C901
             )
         except Exception as _cg_err:
             import sys
+
             print(
                 f"[code-graph] Warning: could not initialize CodeGraphToolset: {_cg_err}",
                 file=sys.stderr,
@@ -265,7 +265,9 @@ def create_cli_agent(  # noqa: C901
         session_dir.mkdir(parents=True, exist_ok=True)
 
     # WebSearchTool/WebFetchTool only work with OpenAIResponsesModel, not LiteLLM
-    _is_litellm = hasattr(effective_model, "system") and getattr(effective_model, "system", None) == "litellm"
+    _is_litellm = (
+        hasattr(effective_model, "system") and getattr(effective_model, "system", None) == "litellm"
+    )
 
     agent = create_deep_agent(
         model=effective_model,
@@ -333,12 +335,15 @@ def create_cli_agent(  # noqa: C901
     # This prevents the LLM from choosing async and exiting before results arrive.
     if non_interactive and task_mgr is not None:
         from pydantic_ai.toolsets import FunctionToolset
-        for toolset in (agent._user_toolsets if hasattr(agent, "_user_toolsets") else []):  # type: ignore[attr-defined]
+
+        for toolset in agent._user_toolsets if hasattr(agent, "_user_toolsets") else []:  # type: ignore[attr-defined]
             if isinstance(toolset, FunctionToolset) and "task" in toolset.tools:
                 _task_tool_obj = toolset.tools["task"]
                 _orig_task = _task_tool_obj.function_schema.function
 
-                async def _force_sync_task(ctx: Any, *args: Any, _orig: Any = _orig_task, **kwargs: Any) -> Any:
+                async def _force_sync_task(
+                    ctx: Any, *args: Any, _orig: Any = _orig_task, **kwargs: Any
+                ) -> Any:
                     kwargs["mode"] = "sync"
                     return await _orig(ctx, *args, **kwargs)
 

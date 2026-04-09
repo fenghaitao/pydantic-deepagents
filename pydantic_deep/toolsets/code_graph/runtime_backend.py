@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from potpie import PotpieRuntime
@@ -35,11 +35,8 @@ class RuntimeBackend:
     """
 
     def __init__(self, user_id: str | None = None) -> None:
-        self._user_id: str = (
-            user_id
-            or os.environ.get("POTPIE_USER_ID", _DEFAULT_USER_ID)
-        )
-        self._runtime: Optional[PotpieRuntime] = None
+        self._user_id: str = user_id or os.environ.get("POTPIE_USER_ID", _DEFAULT_USER_ID)
+        self._runtime: PotpieRuntime | None = None
 
     # ── Lifecycle ─────────────────────────────────────────────────────────
 
@@ -90,9 +87,7 @@ class RuntimeBackend:
         session = rt.db.get_session()
         try:
             svc = ToolService(db=session, user_id=self._user_id)
-            return svc.get_tools(
-                tool_names, exclude_embedding_tools=exclude_embedding_tools
-            )
+            return svc.get_tools(tool_names, exclude_embedding_tools=exclude_embedding_tools)
         finally:
             session.close()
 
@@ -246,10 +241,7 @@ class RuntimeBackend:
     async def list_agents(self) -> list:
         rt = await self._get_runtime()
         agents = rt.agents.list_agents()
-        return [
-            {"id": a.id, "name": a.name, "description": a.description}
-            for a in agents
-        ]
+        return [{"id": a.id, "name": a.name, "description": a.description} for a in agents]
 
     # ── Cache ─────────────────────────────────────────────────────────────
 
@@ -264,9 +256,7 @@ class RuntimeBackend:
         rt = await self._get_runtime()
         session = rt.db.get_session()
         try:
-            stats = InferenceCacheService(session).get_cache_stats(
-                project_id=project_id
-            )
+            stats = InferenceCacheService(session).get_cache_stats(project_id=project_id)
             cstats = CacheCleanupService(session).get_cleanup_stats()
             return {**stats, **cstats}
         finally:

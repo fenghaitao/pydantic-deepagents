@@ -24,7 +24,6 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.toolsets import AbstractToolset
 
 if TYPE_CHECKING:
-    from pydantic_ai.toolsets import FunctionToolset
     from pydantic_deep.toolsets.code_graph.backend import PotpieBackend
 
 

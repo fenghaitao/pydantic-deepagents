@@ -6,11 +6,10 @@ Diagnostic output (tool calls, cost) goes to stderr when not in quiet mode.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 from typing import Any
-
-logger = logging.getLogger(__name__)
 
 from pydantic_ai import (
     AgentRunResultEvent,
@@ -29,6 +28,8 @@ from apps.cli.display import (
 )
 from apps.cli.theme import get_glyphs, get_theme
 from apps.cli.tool_display import render_tool_call, render_tool_result
+
+logger = logging.getLogger(__name__)
 
 _PROVIDER_ENV_VARS: dict[str, str] = {
     "openai": "OPENAI_API_KEY",
@@ -161,12 +162,13 @@ async def run_non_interactive(  # noqa: C901
         potpie_ctx: Any = None
         potpie_subs: list[Any] = []
         try:
-            from apps.cli.config import load_config as _load_config
-            from apps.potpie.context import PotpieContext
-            from pydantic_deep.toolsets.code_graph import make_backend
-            from apps.potpie.capability import PotpieKGCapability
-            from pydantic_deep.subagents_potpie import make_potpie_subagents
             from pathlib import Path as _Path
+
+            from apps.cli.config import load_config as _load_config
+            from apps.potpie.capability import PotpieKGCapability
+            from apps.potpie.context import PotpieContext
+            from pydantic_deep.subagents_potpie import make_potpie_subagents
+            from pydantic_deep.toolsets.code_graph import make_backend
 
             _cfg = _load_config()
             if _cfg.potpie_mode == "local":
@@ -176,6 +178,7 @@ async def run_non_interactive(  # noqa: C901
                     # avoiding a separate PotpieRuntime initialization.
                     if not project_id:
                         from apps.cli.potpie_discovery import parse_git_identity
+
                         _root = _Path(working_dir) if working_dir else _Path.cwd()
                         _identity = parse_git_identity(_root)
                         if _identity:
@@ -185,7 +188,8 @@ async def run_non_interactive(  # noqa: C901
                                     project_id = _p["id"]
                                     if not effective_quiet:
                                         err_console.print(
-                                            f"[dim]Auto-discovered Potpie project: {project_id}[/dim]"
+                                            "[dim]Auto-discovered Potpie"
+                                            f" project: {project_id}[/dim]"
                                         )
                                     break
 
@@ -198,7 +202,9 @@ async def run_non_interactive(  # noqa: C901
                             backend=_backend, project_id=project_id, user_id=user_id
                         )
                         if not effective_quiet:
-                            err_console.print(f"[dim]Potpie KG tools loaded for project {project_id}[/dim]")
+                            err_console.print(
+                                f"[dim]Potpie KG tools loaded for project {project_id}[/dim]"
+                            )
                     else:
                         await _backend.close()
                 except Exception:
@@ -270,10 +276,8 @@ async def run_non_interactive(  # noqa: C901
         if sandbox_instance is not None:
             _stop_sandbox(sandbox_instance, err_console)
         if potpie_cap is not None:
-            try:
+            with contextlib.suppress(Exception):
                 await potpie_cap.aclose()
-            except Exception:
-                pass
 
 
 def _write_output(console: Console, text: str, fmt: str) -> None:
@@ -355,6 +359,7 @@ async def _stream_execution(
                     args = raw_args
                 elif isinstance(raw_args, str):
                     import json
+
                     try:
                         args = json.loads(raw_args)
                     except Exception:

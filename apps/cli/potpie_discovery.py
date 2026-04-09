@@ -18,12 +18,11 @@ import os
 import socket
 import urllib.request
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 
-def _http_get(url: str, timeout: int = 5) -> Optional[dict]:
+def _http_get(url: str, timeout: int = 5) -> dict | None:
     """Fetch JSON from *url*. Returns None on any error."""
     try:
         with urllib.request.urlopen(url, timeout=timeout) as resp:
@@ -41,7 +40,7 @@ def _pid_alive(pid: int) -> bool:
         return False
 
 
-def _find_sessions_dir() -> Optional[Path]:
+def _find_sessions_dir() -> Path | None:
     """Locate the .potpie-sessions directory by searching candidate locations."""
     # 1. Explicit env var override
     explicit = os.environ.get("POTPIE_SESSIONS_DIR")
@@ -72,7 +71,7 @@ def _find_sessions_dir() -> Optional[Path]:
     return None
 
 
-def discover_potpie_url() -> Optional[str]:
+def discover_potpie_url() -> str | None:
     """Read the singularity discovery file and return the running API URL.
 
     Returns:
@@ -134,7 +133,7 @@ def discover_potpie_url() -> Optional[str]:
         return None
 
 
-def parse_git_identity(root: Path | None = None) -> Optional[tuple[str, str]]:
+def parse_git_identity(root: Path | None = None) -> tuple[str, str] | None:
     """Return ``(repo_name, branch)`` for the git repo at *root*, or ``None``.
 
     Pure git operations — no PotpieRuntime needed. Handles submodule
@@ -156,7 +155,7 @@ def parse_git_identity(root: Path | None = None) -> Optional[tuple[str, str]]:
         logger.debug("parse_git_identity: git not found")
         return None
 
-    def _run(args: list[str], cwd: Path = root) -> Optional[str]:
+    def _run(args: list[str], cwd: Path = root) -> str | None:
         try:
             r = subprocess.run(
                 args, capture_output=True, text=True, timeout=3, cwd=str(cwd), check=False

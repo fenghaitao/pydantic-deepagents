@@ -318,16 +318,18 @@ async def make_potpie_subagents(
     Returns:
         List of SubAgentConfig dicts for all seven agents.
     """
-    from apps.potpie.toolset import _inject_project_id
     from app.modules.intelligence.agents.chat_agents.multi_agent.utils.tool_utils import (
         wrap_structured_tools,
     )
-    from pydantic_ai.toolsets import FunctionToolset
     from app.modules.intelligence.tools.tool_service import ToolService
 
     # Open one DB session and one ToolService — reuse for all agents.
     # This avoids the ~25s ToolService.__init__ cost per agent.
     from potpie import PotpieRuntime as _RT  # type: ignore[import]
+    from pydantic_ai.toolsets import FunctionToolset
+
+    from apps.potpie.toolset import _inject_project_id
+
     rt = _RT.from_env()
     await rt.initialize()
     session = rt.db.get_session()
@@ -335,12 +337,8 @@ async def make_potpie_subagents(
         svc = ToolService(db=session, user_id=user_id)
 
         def _make_toolset(names: list[str], toolset_id: str) -> FunctionToolset:
-            langchain_tools = svc.get_tools(
-                names, exclude_embedding_tools=exclude_embedding_tools
-            )
-            pydantic_tools = [
-                _inject_project_id(t) for t in wrap_structured_tools(langchain_tools)
-            ]
+            langchain_tools = svc.get_tools(names, exclude_embedding_tools=exclude_embedding_tools)
+            pydantic_tools = [_inject_project_id(t) for t in wrap_structured_tools(langchain_tools)]
             return FunctionToolset(tools=pydantic_tools, id=toolset_id)
 
         qna_ts = _make_toolset(_QNA_TOOL_NAMES, "potpie-qna")
