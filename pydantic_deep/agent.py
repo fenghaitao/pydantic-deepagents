@@ -1014,9 +1014,7 @@ def create_deep_agent(  # noqa: C901
                     "- **web search** — search the internet for current information, news, docs"
                 )
             if web_fetch:
-                web_lines.append(
-                    "- **web fetch** — fetch and read any URL as Markdown"
-                )
+                web_lines.append("- **web fetch** — fetch and read any URL as Markdown")
             web_lines.append(
                 "\nWhen the user asks you to look something up online, visit a website, "
                 "or check current information — use these tools. Do NOT refuse."

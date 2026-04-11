@@ -699,7 +699,7 @@ class TestBm25Rank:
         docs = [
             "unrelated text",
             "python python python",  # high tf
-            "python is great",       # lower tf
+            "python is great",  # lower tf
         ]
         results = _bm25_rank("python", docs)
         assert len(results) == 2

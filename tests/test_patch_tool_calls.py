@@ -415,7 +415,11 @@ class TestPatchToolCallsCapability:
 
 class TestPatchExports:
     def test_importable_from_pydantic_deep(self):
-        from pydantic_deep import CANCELLED_MESSAGE, PatchToolCallsCapability, patch_tool_calls_processor
+        from pydantic_deep import (
+            CANCELLED_MESSAGE,
+            PatchToolCallsCapability,
+            patch_tool_calls_processor,
+        )
 
         assert patch_tool_calls_processor is not None
         assert PatchToolCallsCapability is not None

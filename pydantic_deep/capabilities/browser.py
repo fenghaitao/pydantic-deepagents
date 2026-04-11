@@ -146,10 +146,19 @@ class BrowserCapability(AbstractCapability[Any]):
     timeout_ms: int = DEFAULT_TIMEOUT_MS
     auto_install: bool = True
 
-    _BROWSER_TOOL_NAMES: frozenset[str] = frozenset({
-        "navigate", "click", "type_text", "screenshot",
-        "get_text", "scroll", "go_back", "go_forward", "execute_js",
-    })
+    _BROWSER_TOOL_NAMES: frozenset[str] = frozenset(
+        {
+            "navigate",
+            "click",
+            "type_text",
+            "screenshot",
+            "get_text",
+            "scroll",
+            "go_back",
+            "go_forward",
+            "execute_js",
+        }
+    )
 
     _state: _BrowserState = field(default_factory=_BrowserState, init=False, repr=False)
     _toolset: BrowserToolset | None = field(default=None, init=False, repr=False)
@@ -175,6 +184,7 @@ class BrowserCapability(AbstractCapability[Any]):
                 max_content_tokens=self.max_content_tokens,
                 allowed_domains=", ".join(self.allowed_domains) if self.allowed_domains else "all",
             )
+
         return _instructions
 
     async def prepare_tools(

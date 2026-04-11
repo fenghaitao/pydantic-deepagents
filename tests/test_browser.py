@@ -624,9 +624,7 @@ class TestBrowserCapability:
         pw, browser, page = _make_playwright_mock()
 
         # First call raises, second call (after install) succeeds.
-        pw.chromium.launch = AsyncMock(
-            side_effect=[Exception("binary missing"), browser]
-        )
+        pw.chromium.launch = AsyncMock(side_effect=[Exception("binary missing"), browser])
 
         page_during_run: Any = None
 
@@ -680,7 +678,9 @@ class TestBrowserCapability:
         """_get_page raises RuntimeError with launch_error when browser failed to start."""
         from pydantic_deep.toolsets.browser import BrowserToolset, _BrowserState
 
-        state = _BrowserState(launch_error="Chromium is not installed. Run `playwright install chromium`")
+        state = _BrowserState(
+            launch_error="Chromium is not installed. Run `playwright install chromium`"
+        )
         toolset = BrowserToolset(state=state)
 
         with pytest.raises(RuntimeError, match="playwright install chromium"):
@@ -756,7 +756,6 @@ class TestBrowserCapability:
             ),
         ):
             await cap.wrap_run(_ctx(), handler=handler)
-
 
     async def test_prepare_tools_clears_unapproved_on_browser_tools(self) -> None:
         """Browser tools with kind='unapproved' are reset to 'function'."""

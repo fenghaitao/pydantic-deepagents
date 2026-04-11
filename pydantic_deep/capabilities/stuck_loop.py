@@ -95,14 +95,10 @@ class StuckLoopDetection(AbstractCapability[Any]):
     detect_alternating: bool = True
     detect_noop: bool = True
 
-    _call_history: list[tuple[str, str]] = field(
-        default_factory=list, init=False, repr=False
-    )
+    _call_history: list[tuple[str, str]] = field(default_factory=list, init=False, repr=False)
     """Per-run history of (tool_name, args_hash) tuples."""
 
-    _result_history: list[tuple[str, str]] = field(
-        default_factory=list, init=False, repr=False
-    )
+    _result_history: list[tuple[str, str]] = field(default_factory=list, init=False, repr=False)
     """Per-run history of (tool_name, result_hash) tuples."""
 
     def __post_init__(self) -> None:
