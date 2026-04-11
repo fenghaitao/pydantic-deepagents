@@ -110,7 +110,7 @@ class TestCreateCliAgent:
             with patch.dict("sys.modules", {"playwright": None, "playwright.async_api": None}):
                 import warnings
 
-                with warnings.catch_warnings(record=True) as caught:
+                with warnings.catch_warnings(record=True):
                     warnings.simplefilter("always")
                     create_cli_agent(
                         model=TEST_MODEL,

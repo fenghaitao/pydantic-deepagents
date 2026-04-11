@@ -248,14 +248,14 @@ def run(
         bool | None,
         typer.Option(
             "--browser/--no-browser",
-            help="Enable Playwright browser automation (default: from config, requires pydantic-deep[browser])",
+            help="Enable Playwright browser automation (requires pydantic-deep[browser])",
         ),
     ] = None,
     browser_headless: Annotated[
         bool | None,
         typer.Option(
             "--browser-headless/--browser-headed",
-            help="Browser window mode: headless (hidden) or headed (visible). Default: from config (headed)",
+            help="Browser window mode: headless (hidden) or headed (visible, default)",
         ),
     ] = None,
 ) -> None:

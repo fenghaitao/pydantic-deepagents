@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass as _dataclass
 from typing import TypedDict, TypeVar
 
 from pydantic_ai.output import OutputSpec
@@ -39,8 +40,6 @@ ResponseFormat = OutputSpec[object]
 # Type variable for output types
 OutputT = TypeVar("OutputT")
 
-
-from dataclasses import dataclass as _dataclass
 
 
 @_dataclass
