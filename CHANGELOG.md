@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.8] - 2026-04-12
+
+### Added
+
+- **Automatic context limit warnings (`LimitWarnerCapability`)** — the agent now receives URGENT/CRITICAL
+  warnings injected as user messages when approaching the context window limit. Warnings start at 70% usage
+  (well before auto-compression at 90%), giving the model time to wrap up or use `/compact`. Previously only
+  the TUI status bar showed context usage — the model itself had no awareness of approaching limits.
+  Enabled automatically when `context_manager=True` (the default)
+- **Stuck loop detection (`StuckLoopDetection`)** — new capability that detects repetitive agent behavior
+  and intervenes before the agent wastes tokens. Detects three patterns: repeated identical tool calls,
+  A-B-A-B alternating calls, and no-op calls (same result). Configurable threshold (`max_repeated`, default 3)
+  and action (`warn` via `ModelRetry` or `error` via `StuckLoopError`). Per-run state isolation via `for_run()`.
+  Enabled by default via `stuck_loop_detection=True` in `create_deep_agent()`
+- **BM25-ranked history search** — `search_conversation_history` now uses BM25 ranking instead of naive
+  substring matching. Multi-word queries are tokenized — each word is scored independently, rare terms
+  (high IDF) rank higher than common ones, and results are sorted by relevance score. Zero dependencies
+  (pure Python implementation using the standard Elasticsearch/Lucene BM25 formula)
+- **Expanded context file discovery** — `DEFAULT_CONTEXT_FILENAMES` now discovers 7 convention file types
+  instead of 2: added `CLAUDE.md`, `.cursorrules`, `.github/copilot-instructions.md`, `CONVENTIONS.md`,
+  and `CODING_GUIDELINES.md` alongside the existing `AGENTS.md` and `SOUL.md`. Subagent allowlist updated
+  to include `CLAUDE.md` (project instructions relevant to subagents)
+
+### Changed
+
+- **Eviction uses `after_tool_execute` hook instead of history processor** — large tool outputs are now
+  intercepted **before** they enter message history via the new `EvictionCapability`, rather than after
+  the fact via `EvictionProcessor` (history processor). This means the full output never bloats the message
+  list in memory. The old `EvictionProcessor` is preserved for backward compatibility but
+  `create_deep_agent()` now uses `EvictionCapability` by default
+- **Orphan repair uses `before_model_request` hook instead of history processor** — `PatchToolCallsCapability`
+  replaces `patch_tool_calls_processor` as the default in `create_deep_agent()`. Integrates with the
+  pydantic-ai capabilities system instead of raw history processors. The old processor function is preserved
+  for backward compatibility and standalone use
+
+### Fixed
+
+- **Browser tools never require approval** — `BrowserCapability` now uses `prepare_tools` to force
+  `kind='function'` on all browser tools (navigate, click, execute_js, etc.), ensuring they never
+  trigger approval dialogs even if a user adds browser tool names to `approve_tools`
+- **Checkpoint per-run state isolation** — `CheckpointMiddleware` now implements `for_run()` to return a
+  fresh instance per agent run with isolated `_turn_counter` and `_latest_messages`. Previously, concurrent
+  `agent.run()` calls on the same agent would share and corrupt checkpoint state
+
 ## [0.3.7] - 2026-04-11
 
 ### Fixed

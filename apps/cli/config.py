@@ -107,7 +107,7 @@ class CliConfig:
     sandbox_image: str = "python:3.12-slim"
     """Docker image used when ``sandbox = "docker"``."""
     logfire: bool = False
-    include_browser: bool = False
+    include_browser: bool = True
     """Enable browser automation via Playwright (requires ``pydantic-deep[browser]``)."""
     browser_headless: bool = False
     """Run browser without a visible window. Default ``False`` — browser window is shown."""

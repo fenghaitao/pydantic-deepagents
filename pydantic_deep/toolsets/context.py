@@ -19,26 +19,39 @@ from pydantic_ai_backends import BackendProtocol
 
 DEFAULT_CONTEXT_FILENAMES: list[str] = [
     "AGENTS.md",
+    "CLAUDE.md",
     "SOUL.md",
+    ".cursorrules",
+    ".github/copilot-instructions.md",
+    "CONVENTIONS.md",
+    "CODING_GUIDELINES.md",
 ]
 """Default filenames to scan for during auto-discovery.
 
 - ``AGENTS.md`` — Project instructions, conventions, architecture.
   Compatible with the `agents.md spec <https://agents.md/>`_.
   Visible to main agent and subagents.
+- ``CLAUDE.md`` — Claude Code project instructions.
+  Visible to main agent and subagents.
 - ``SOUL.md`` — Agent personality, style, user preferences.
   Visible to main agent only (filtered for subagents).
+- ``.cursorrules`` — Cursor editor conventions.
+- ``.github/copilot-instructions.md`` — GitHub Copilot instructions.
+- ``CONVENTIONS.md`` — Project coding conventions.
+- ``CODING_GUIDELINES.md`` — Coding guidelines.
 """
 
 SUBAGENT_CONTEXT_ALLOWLIST: frozenset[str] = frozenset(
     {
         "AGENTS.md",
+        "CLAUDE.md",
     }
 )
 """Context files that subagents are allowed to see.
 
-Subagents don't see SOUL.md — it contains personality and user
-preferences intended for the main agent only.
+Subagents see AGENTS.md and CLAUDE.md (project instructions) but not
+SOUL.md (personality/preferences intended for the main agent only),
+.cursorrules, or other editor-specific conventions.
 """
 
 DEFAULT_MAX_CONTEXT_CHARS: int = 20_000

@@ -116,6 +116,7 @@ def create_deep_agent(
     checkpoint_store: Any | None = None,
     include_teams: bool = False,
     include_improve: bool = False,
+    stuck_loop_detection: bool = True,
     web_search: bool = True,
     web_fetch: bool = True,
     thinking: bool | str = "high",
@@ -183,6 +184,7 @@ def create_deep_agent(
     checkpoint_store: Any | None = None,
     include_teams: bool = False,
     include_improve: bool = False,
+    stuck_loop_detection: bool = True,
     web_search: bool = True,
     web_fetch: bool = True,
     thinking: bool | str = "high",
@@ -248,6 +250,7 @@ def create_deep_agent(  # noqa: C901
     checkpoint_store: Any | None = None,
     include_teams: bool = False,
     include_improve: bool = False,
+    stuck_loop_detection: bool = True,
     web_search: bool = True,
     web_fetch: bool = True,
     thinking: bool | str = "high",
@@ -801,19 +804,14 @@ def create_deep_agent(  # noqa: C901
     # Build combined history processors list
     all_processors: list[Any] = list(history_processors or [])
 
-    if patch_tool_calls:
-        from pydantic_deep.processors.patch import patch_tool_calls_processor
+    # patch_tool_calls capability is added later (see capabilities section below).
+    _patch_tool_calls = patch_tool_calls
 
-        all_processors.insert(0, patch_tool_calls_processor)
-
-    if eviction_token_limit is not None:
-        from pydantic_deep.processors.eviction import EvictionProcessor
-
-        eviction = EvictionProcessor(
-            backend=backend, token_limit=eviction_token_limit, on_eviction=on_eviction
-        )
-        # Eviction runs FIRST (before summarization reduces context)
-        all_processors.insert(0, eviction)
+    # Eviction capability is added later (see capabilities section below).
+    # Previously this was a history processor; now it uses after_tool_execute
+    # to intercept large outputs before they enter message history.
+    _eviction_token_limit = eviction_token_limit
+    _on_eviction = on_eviction
 
     # Resolve history_messages_path to absolute for the middleware
     abs_messages_path: str | None = None
@@ -834,8 +832,9 @@ def create_deep_agent(  # noqa: C901
 
     # Context manager capability (token tracking + auto-compression)
     context_mw: Any | None = None
+    limit_warner: Any | None = None
     if context_manager:
-        from pydantic_ai_summarization import ContextManagerCapability
+        from pydantic_ai_summarization import ContextManagerCapability, LimitWarnerCapability
 
         _cm_kwargs: dict[str, Any] = {
             "on_usage_update": on_context_update,
@@ -849,6 +848,14 @@ def create_deep_agent(  # noqa: C901
             _cm_kwargs["on_after_compress"] = on_after_compress
         _cm_kwargs["include_compact_tool"] = True
         context_mw = ContextManagerCapability(**_cm_kwargs)
+
+        # Warn the model before context limits are hit.
+        # warning_threshold=0.7 means URGENT at 70%, well before
+        # auto-compression kicks in at compress_threshold (default 0.9).
+        limit_warner = LimitWarnerCapability(
+            max_context_tokens=context_mw._resolved_max_tokens,
+            warning_threshold=0.7,
+        )
 
     # Cost tracking capability
     cost_cap: Any | None = None
@@ -885,6 +892,22 @@ def create_deep_agent(  # noqa: C901
     # Build capabilities list
     all_capabilities: list[Any] = []
 
+    if _patch_tool_calls:
+        from pydantic_deep.processors.patch import PatchToolCallsCapability
+
+        all_capabilities.append(PatchToolCallsCapability())
+
+    if _eviction_token_limit is not None:
+        from pydantic_deep.processors.eviction import EvictionCapability
+
+        all_capabilities.append(
+            EvictionCapability(
+                backend=backend,
+                token_limit=_eviction_token_limit,
+                on_eviction=_on_eviction,
+            )
+        )
+
     if hooks is not None:
         from pydantic_deep.capabilities.hooks import HooksCapability
 
@@ -903,11 +926,19 @@ def create_deep_agent(  # noqa: C901
             )
         )
 
+    if stuck_loop_detection:
+        from pydantic_deep.capabilities.stuck_loop import StuckLoopDetection
+
+        all_capabilities.append(StuckLoopDetection())
+
     if middleware:
         all_capabilities.extend(middleware)
 
     if context_mw is not None:
         all_capabilities.append(context_mw)
+
+    if limit_warner is not None:
+        all_capabilities.append(limit_warner)
 
     if cost_cap is not None:
         all_capabilities.append(cost_cap)
@@ -975,6 +1006,22 @@ def create_deep_agent(  # noqa: C901
                 subagent_prompt = get_subagent_system_prompt(prompt_configs)
                 if subagent_prompt:
                     parts.append(subagent_prompt)
+
+        if web_search or web_fetch:
+            web_lines = ["## Web Tools\n\nYou have access to the web:"]
+            if web_search:
+                web_lines.append(
+                    "- **web search** — search the internet for current information, news, docs"
+                )
+            if web_fetch:
+                web_lines.append(
+                    "- **web fetch** — fetch and read any URL as Markdown"
+                )
+            web_lines.append(
+                "\nWhen the user asks you to look something up online, visit a website, "
+                "or check current information — use these tools. Do NOT refuse."
+            )
+            parts.append("\n".join(web_lines))
 
         return "\n\n".join(parts) if parts else ""
 

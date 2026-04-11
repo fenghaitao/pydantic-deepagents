@@ -31,9 +31,9 @@
 
 ## What's New
 
+- **2026-04-12** &nbsp;**v0.3.8** — Stuck loop detection, context limit warnings for the model, expanded context file discovery (CLAUDE.md, .cursorrules, etc.), eviction & orphan repair migrated to capabilities hooks.
 - **2026-04-11** &nbsp;**v0.3.6** — One-command installer + self-update: `curl -fsSL .../install.sh | bash` installs everything automatically. New `pydantic-deep update` command. Startup update notifications with 24-hour PyPI cache.
 - **2026-04-10** &nbsp;**v0.3.5** — Headless runner (`pydantic-deep run`), Docker sandbox with named workspaces, browser automation via Playwright, Harbor adapter for Terminal Bench evaluation.
-- **2026-03-xx** &nbsp;**v0.3.0** — Migrated to pydantic-ai native Capabilities API. Added agent teams, plan mode, checkpoint middleware, eviction processor.
 
 > Full history: [CHANGELOG.md](CHANGELOG.md)
 
@@ -87,6 +87,14 @@ Pydantic Deep Agents is an **agent harness** — the complete infrastructure tha
 <tr>
 <td><b>📐 Structured output</b></td>
 <td>Type-safe Pydantic model responses via <code>output_type</code>. No JSON parsing. No <code>dict["key"]</code>. Full IDE autocomplete.</td>
+</tr>
+<tr>
+<td><b>🔄 Stuck loop detection</b></td>
+<td>Detects repeated identical tool calls, A-B-A-B alternating patterns, and no-op calls. Warns the model or stops the run.</td>
+</tr>
+<tr>
+<td><b>⚠️ Context limit warnings</b></td>
+<td>Model receives URGENT/CRITICAL warnings when approaching context limits (70%), well before auto-compression (90%).</td>
 </tr>
 <tr>
 <td><b>💰 Cost tracking</b></td>
@@ -306,10 +314,15 @@ Pydantic Deep Agents auto-discovers and injects project-specific context into ev
 | File | Purpose | Who Sees It |
 |------|---------|-------------|
 | `AGENTS.md` | Project conventions, architecture, instructions | Main agent + all subagents |
+| `CLAUDE.md` | Claude Code project instructions | Main agent + all subagents |
 | `SOUL.md` | Agent personality, style, communication preferences | Main agent only |
+| `.cursorrules` | Cursor editor conventions | Main agent only |
+| `.github/copilot-instructions.md` | GitHub Copilot instructions | Main agent only |
+| `CONVENTIONS.md` | Project coding conventions | Main agent only |
+| `CODING_GUIDELINES.md` | Coding guidelines | Main agent only |
 | `MEMORY.md` | Persistent memory — read/write/update tools | Per-agent (isolated) |
 
-`AGENTS.md` follows the [agents.md spec](https://agents.md/) — compatible with Claude Code, Cursor, and other agent frameworks.
+Compatible with Claude Code, Cursor, GitHub Copilot, and other agent frameworks. `AGENTS.md` follows the [agents.md spec](https://agents.md/).
 
 > See the full [API reference](https://vstorm-co.github.io/pydantic-deepagents/api/toolsets/) for all options.
 
@@ -363,6 +376,10 @@ Pydantic Deep Agents uses pydantic-ai's native **Capabilities API** for all cros
 |-----------|---------|--------------|
 | **CostTracking** | [pydantic-ai-shields](https://github.com/vstorm-co/pydantic-ai-shields) | Token/USD budget enforcement and real-time cost callbacks |
 | **ContextManagerCapability** | [summarization-pydantic-ai](https://github.com/vstorm-co/summarization-pydantic-ai) | Unlimited context via auto-summarization |
+| **LimitWarnerCapability** | [summarization-pydantic-ai](https://github.com/vstorm-co/summarization-pydantic-ai) | URGENT/CRITICAL warnings when context limits approach |
+| **StuckLoopDetection** | pydantic-deep | Detects and breaks repetitive agent loops |
+| **EvictionCapability** | pydantic-deep | Intercepts large tool outputs before they enter history |
+| **PatchToolCallsCapability** | pydantic-deep | Fixes orphaned tool calls/results in history |
 | **HooksCapability** | pydantic-deep | Claude Code-style PRE/POST_TOOL_USE lifecycle hooks |
 | **CheckpointMiddleware** | pydantic-deep | Save, rewind, and fork conversation state |
 | **WebSearch / WebFetch** | pydantic-ai built-in | Tool-calling: web search and URL fetching |
@@ -397,6 +414,7 @@ Every component is a standalone package — use only what you need:
 |  Summarization --> +------------------+ <-- Capabilities            |
 |  Checkpointing --> |    Deep Agent    | <-- Hooks                   |
 |  Cost Tracking --> |   (pydantic-ai)  | <-- Memory                  |
+|  Loop Detect   --> |                  | <-- Limit Warner            |
 |                    +--------+---------+                             |
 |                             |                                       |
 |           +-----------------+-----------------+                     |
@@ -435,9 +453,16 @@ Every component is a standalone package — use only what you need:
 ### Context & Memory
 
 - **Unlimited context** — Auto-summarization when approaching token budget (LLM-based or sliding window)
-- **Eviction processor** — Evict large tool outputs to files, keep context lean
-- **Context files** — Auto-discover and inject AGENTS.md, SOUL.md, DEEP.md, CLAUDE.md
-- **Checkpoints** — Save state, rewind or fork conversations. In-memory and file-based stores
+- **Context limit warnings** — Model receives URGENT/CRITICAL messages when approaching 70% context usage
+- **Eviction capability** — Intercepts large tool outputs via `after_tool_execute` before they enter history
+- **Context files** — Auto-discover and inject AGENTS.md, CLAUDE.md, SOUL.md, .cursorrules, copilot-instructions, CONVENTIONS.md, CODING_GUIDELINES.md
+- **Checkpoints** — Save state, rewind or fork conversations. In-memory and file-based stores. Per-run isolation via `for_run()`
+
+### Reliability
+
+- **Stuck loop detection** — Detects repeated identical calls, A-B-A-B alternating, and no-op patterns. Warns or stops the agent
+- **Orphan repair** — Fixes orphaned tool calls/results in conversation history before each model request
+- **Context limit warnings** — Injects URGENT/CRITICAL messages so the model knows to wrap up
 
 ### Production Features
 

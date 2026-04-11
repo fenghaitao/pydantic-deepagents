@@ -289,9 +289,9 @@ class TestNewConfigFields:
 class TestBrowserConfigFields:
     """Tests for include_browser and browser_headless config fields."""
 
-    def test_include_browser_defaults_false(self) -> None:
+    def test_include_browser_defaults_true(self) -> None:
         config = CliConfig()
-        assert config.include_browser is False
+        assert config.include_browser is True
 
     def test_browser_headless_defaults_false(self) -> None:
         """Browser should show a visible window by default."""

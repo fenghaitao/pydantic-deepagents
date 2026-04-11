@@ -542,6 +542,39 @@ class TestCheckpointMiddleware:
         )
         assert result == "ok"
 
+    async def test_for_run_isolates_state(self):
+        """for_run returns a fresh instance with isolated counters."""
+        store = InMemoryCheckpointStore()
+        mw = CheckpointMiddleware(store=store, frequency="every_turn")
+        # Simulate first run
+        await mw.before_model_request(_cp_ctx(), _FakeRequestContext(_make_messages(1)))
+        assert mw._turn_counter == 1
+
+        # for_run should return a fresh instance with reset counter
+        fresh = await mw.for_run(_cp_ctx())
+        assert fresh is not mw
+        assert fresh._turn_counter == 0
+        assert fresh._latest_messages == []
+        # Config should be preserved
+        assert fresh.store is store
+        assert fresh.frequency == "every_turn"
+        assert fresh.max_checkpoints == 20
+
+    async def test_for_run_concurrent_isolation(self):
+        """Concurrent runs via for_run don't share turn counters."""
+        store = InMemoryCheckpointStore()
+        mw = CheckpointMiddleware(store=store, frequency="every_turn")
+
+        run1 = await mw.for_run(_cp_ctx())
+        run2 = await mw.for_run(_cp_ctx())
+
+        await run1.before_model_request(_cp_ctx(), _FakeRequestContext(_make_messages(1)))
+        await run1.before_model_request(_cp_ctx(), _FakeRequestContext(_make_messages(1)))
+        await run2.before_model_request(_cp_ctx(), _FakeRequestContext(_make_messages(1)))
+
+        assert run1._turn_counter == 2
+        assert run2._turn_counter == 1
+
     async def test_tool_result_passed_through(self):
         """after_tool_execute returns the result unmodified."""
         store = InMemoryCheckpointStore()

@@ -202,7 +202,42 @@ def patch_tool_calls_processor(
     return messages
 
 
+from dataclasses import dataclass
+from typing import Any
+
+from pydantic_ai import RunContext
+from pydantic_ai.capabilities import AbstractCapability
+
+
+@dataclass
+class PatchToolCallsCapability(AbstractCapability[Any]):
+    """Capability that fixes orphaned tool calls/results via ``before_model_request``.
+
+    Repairs two cases before each model request:
+
+    1. **Orphaned tool calls** — ``ToolCallPart`` without a matching
+       ``ToolReturnPart`` → injects a synthetic return with
+       ``"Tool call was cancelled."``.
+    2. **Orphaned tool results** — ``ToolReturnPart`` without a matching
+       ``ToolCallPart`` → removes the orphaned return.
+
+    This replaces the ``patch_tool_calls_processor`` history processor with a
+    capability hook that runs at the same lifecycle point but integrates with
+    the pydantic-ai capabilities system.
+    """
+
+    async def before_model_request(
+        self,
+        ctx: RunContext[Any],
+        request_context: Any,
+    ) -> Any:
+        """Patch orphaned tool calls/results before each model request."""
+        request_context.messages = patch_tool_calls_processor(request_context.messages)
+        return request_context
+
+
 __all__ = [
     "CANCELLED_MESSAGE",
+    "PatchToolCallsCapability",
     "patch_tool_calls_processor",
 ]

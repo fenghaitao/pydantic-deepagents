@@ -116,7 +116,7 @@ def create_cli_agent(  # noqa: C901
         include_todo: Whether to include the todo toolset.
         include_local_context: Whether to include local context (git info, dir tree).
             Disable for Docker/sandbox backends where the root dir doesn't exist on host.
-        context_discovery: Whether to auto-discover context files (AGENT.md).
+        context_discovery: Whether to auto-discover context files (AGENTS.md).
         config_path: Override config file path (for testing).
         session_id: Session identifier for per-session plans storage.
         extra_instructions: Additional instructions appended to the system prompt.

@@ -132,15 +132,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `load_context_files()`: Load from backend (missing files silently skipped)
 - `format_context_prompt()`: Format with subagent filtering and truncation
 - `DEFAULT_CONTEXT_FILENAMES`: [DEEP.md, AGENTS.md, CLAUDE.md, SOUL.md]
-- `SUBAGENT_CONTEXT_ALLOWLIST`: {DEEP.md, AGENTS.md} — subagents don't see SOUL.md/CLAUDE.md
+- `SUBAGENT_CONTEXT_ALLOWLIST`: {AGENTS.md, CLAUDE.md} — subagents don't see SOUL.md/.cursorrules/etc.
 
-**Eviction Processor (`pydantic_deep/processors/eviction.py`)**
-- `EvictionProcessor`: History processor — saves large tool outputs to files, replaces with preview
-- `create_eviction_processor()`: Factory function
+**Eviction (`pydantic_deep/processors/eviction.py`)**
+- `EvictionCapability`: Capability — intercepts large tool outputs via `after_tool_execute` before they enter history
+- `EvictionProcessor`: Legacy history processor (backward compatibility)
+- `create_eviction_processor()`: Factory function for the legacy processor
 - `create_content_preview()`: Head/tail preview with truncation marker
 - Default threshold: 20,000 tokens (80,000 chars)
 - Uses runtime `ctx.deps.backend` for writing
 - Supports `on_eviction` callback for notification when content is evicted
+
+**Stuck Loop Detection (`pydantic_deep/capabilities/stuck_loop.py`)**
+- `StuckLoopDetection`: Capability — detects repetitive agent behavior via `after_tool_execute`
+- Three patterns: repeated identical calls, A-B-A-B alternating, no-op (same result)
+- `max_repeated`: Threshold (default 3), `action`: "warn" (ModelRetry) or "error" (StuckLoopError)
+- Per-run state isolation via `for_run()`
+- Enabled by default via `stuck_loop_detection=True`
 
 **Cost Tracking (from pydantic_ai_shields)**
 - Enabled by default via `cost_tracking=True`
@@ -150,7 +158,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Pricing from `genai-prices` package
 
 **Patch Tool Calls (`pydantic_deep/processors/patch.py`)**
-- `patch_tool_calls_processor()`: HistoryProcessor that fixes orphaned tool calls
+- `PatchToolCallsCapability`: Capability — fixes orphaned tool calls via `before_model_request`
+- `patch_tool_calls_processor()`: Legacy function (backward compatibility)
 - Injects synthetic `ToolReturnPart` with "Tool call was cancelled." message
 - Used when resuming interrupted conversations (`patch_tool_calls=True`)
 

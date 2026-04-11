@@ -9,7 +9,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-_AGENT_MD_TEMPLATE = """\
+_AGENTS_MD_TEMPLATE = """\
 
 Describe your project here. This file is read by pydantic-deep at startup
 to understand the project context.
@@ -73,10 +73,10 @@ def init_project(root: Path | None = None, *, quiet: bool = False) -> Path:
         if not quiet:
             _log(f"Created {memory_file.relative_to(root)}")
 
-    # Create AGENT.md in project root (if doesn't exist)
-    agent_md = root / "AGENT.md"
+    # Create AGENTS.md in project root (if doesn't exist)
+    agent_md = root / "AGENTS.md"
     if not agent_md.exists():
-        agent_md.write_text(_AGENT_MD_TEMPLATE)
+        agent_md.write_text(_AGENTS_MD_TEMPLATE)
         if not quiet:
             _log(f"Created {agent_md.name}")
 

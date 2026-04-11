@@ -533,12 +533,20 @@ class TestContextConstants:
 
     def test_default_filenames(self):
         """Test DEFAULT_CONTEXT_FILENAMES contains expected values."""
-        assert DEFAULT_CONTEXT_FILENAMES == ["AGENTS.md", "SOUL.md"]
+        assert "AGENTS.md" in DEFAULT_CONTEXT_FILENAMES
+        assert "CLAUDE.md" in DEFAULT_CONTEXT_FILENAMES
+        assert "SOUL.md" in DEFAULT_CONTEXT_FILENAMES
+        assert ".cursorrules" in DEFAULT_CONTEXT_FILENAMES
+        assert ".github/copilot-instructions.md" in DEFAULT_CONTEXT_FILENAMES
+        assert "CONVENTIONS.md" in DEFAULT_CONTEXT_FILENAMES
+        assert "CODING_GUIDELINES.md" in DEFAULT_CONTEXT_FILENAMES
 
     def test_subagent_allowlist(self):
         """Test SUBAGENT_CONTEXT_ALLOWLIST."""
-        assert frozenset({"AGENTS.md"}) == SUBAGENT_CONTEXT_ALLOWLIST
+        assert "AGENTS.md" in SUBAGENT_CONTEXT_ALLOWLIST
+        assert "CLAUDE.md" in SUBAGENT_CONTEXT_ALLOWLIST
         assert "SOUL.md" not in SUBAGENT_CONTEXT_ALLOWLIST
+        assert ".cursorrules" not in SUBAGENT_CONTEXT_ALLOWLIST
 
     def test_default_max_chars(self):
         """Test DEFAULT_MAX_CONTEXT_CHARS is 20K."""

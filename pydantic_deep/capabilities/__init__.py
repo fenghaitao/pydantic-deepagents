@@ -10,6 +10,7 @@ from pydantic_deep.capabilities.hooks import HooksCapability
 from pydantic_deep.capabilities.memory import MemoryCapability
 from pydantic_deep.capabilities.plan import PlanCapability
 from pydantic_deep.capabilities.skills import SkillsCapability
+from pydantic_deep.capabilities.stuck_loop import StuckLoopDetection, StuckLoopError
 from pydantic_deep.capabilities.teams import TeamCapability
 
 __all__ = [
@@ -19,5 +20,7 @@ __all__ = [
     "MemoryCapability",
     "PlanCapability",
     "SkillsCapability",
+    "StuckLoopDetection",
+    "StuckLoopError",
     "TeamCapability",
 ]

@@ -498,6 +498,7 @@ class TestBrowserCapability:
         assert cap.screenshot_on_navigate is False
         assert cap.max_content_tokens == DEFAULT_MAX_CONTENT_TOKENS
         assert cap.timeout_ms == DEFAULT_TIMEOUT_MS
+        assert cap.auto_install is True
         assert cap._toolset is not None
         assert cap._state is not None
 
@@ -521,7 +522,8 @@ class TestBrowserCapability:
 
     def test_get_instructions_contains_key_terms(self) -> None:
         cap = BrowserCapability()
-        instr = cap.get_instructions()
+        instr_fn = cap.get_instructions()
+        instr = instr_fn(_ctx())
         assert isinstance(instr, str)
         assert "navigate" in instr
         assert "screenshot" in instr
@@ -529,13 +531,13 @@ class TestBrowserCapability:
 
     def test_get_instructions_shows_custom_domains(self) -> None:
         cap = BrowserCapability(allowed_domains=["docs.python.org", "github.com"])
-        instr = cap.get_instructions()
+        instr = cap.get_instructions()(_ctx())
         assert "docs.python.org" in instr
         assert "github.com" in instr
 
     def test_get_instructions_shows_max_tokens(self) -> None:
         cap = BrowserCapability(max_content_tokens=9999)
-        instr = cap.get_instructions()
+        instr = cap.get_instructions()(_ctx())
         assert "9999" in instr
 
     @pytest.mark.asyncio
@@ -583,6 +585,106 @@ class TestBrowserCapability:
 
         assert cap._state.page is None
         browser.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_wrap_run_proceeds_without_browser_when_launch_fails(self) -> None:
+        """When Chromium binary is missing and auto-install fails, handler runs with launch_error."""
+        cap = BrowserCapability()
+        pw, browser, page = _make_playwright_mock()
+        browser.new_page = AsyncMock(return_value=page)
+        pw.__aenter__ = AsyncMock(return_value=pw)
+        pw.chromium.launch = AsyncMock(side_effect=Exception("Executable doesn't exist at ..."))
+
+        handler_called = False
+
+        async def handler() -> Any:
+            nonlocal handler_called
+            handler_called = True
+            return MagicMock()
+
+        with (
+            patch("pydantic_deep.capabilities.browser._require_browser"),
+            patch("pydantic_deep.capabilities.browser.async_playwright", return_value=pw),
+            patch(
+                "pydantic_deep.capabilities.browser._auto_install_chromium",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+        ):
+            await cap.wrap_run(_ctx(), handler=handler)
+
+        assert handler_called
+        assert cap._state.page is None
+        assert "playwright install chromium" in (cap._state.launch_error or "")
+
+    @pytest.mark.asyncio
+    async def test_wrap_run_auto_installs_and_retries_on_launch_failure(self) -> None:
+        """When launch fails but auto-install succeeds, browser is launched on retry."""
+        cap = BrowserCapability()
+        pw, browser, page = _make_playwright_mock()
+
+        # First call raises, second call (after install) succeeds.
+        pw.chromium.launch = AsyncMock(
+            side_effect=[Exception("binary missing"), browser]
+        )
+
+        page_during_run: Any = None
+
+        async def handler() -> Any:
+            nonlocal page_during_run
+            page_during_run = cap._state.page
+            return MagicMock()
+
+        with (
+            patch("pydantic_deep.capabilities.browser._require_browser"),
+            patch("pydantic_deep.capabilities.browser.async_playwright", return_value=pw),
+            patch(
+                "pydantic_deep.capabilities.browser._auto_install_chromium",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+        ):
+            await cap.wrap_run(_ctx(), handler=handler)
+
+        # Handler ran with a real page (auto-install path)
+        assert page_during_run is page
+        assert cap._state.launch_error is None
+        browser.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_wrap_run_no_auto_install_when_disabled(self) -> None:
+        """When auto_install=False, no install attempt is made on launch failure."""
+        cap = BrowserCapability(auto_install=False)
+        pw, browser, _ = _make_playwright_mock()
+        pw.chromium.launch = AsyncMock(side_effect=Exception("binary missing"))
+
+        async def handler() -> Any:
+            return MagicMock()
+
+        mock_installer = AsyncMock()
+        with (
+            patch("pydantic_deep.capabilities.browser._require_browser"),
+            patch("pydantic_deep.capabilities.browser.async_playwright", return_value=pw),
+            patch(
+                "pydantic_deep.capabilities.browser._auto_install_chromium",
+                mock_installer,
+            ),
+        ):
+            await cap.wrap_run(_ctx(), handler=handler)
+
+        mock_installer.assert_not_called()
+        assert "playwright install chromium" in (cap._state.launch_error or "")
+
+    @pytest.mark.asyncio
+    async def test_get_page_returns_launch_error_message(self) -> None:
+        """_get_page raises RuntimeError with launch_error when browser failed to start."""
+        from pydantic_deep.toolsets.browser import BrowserToolset, _BrowserState
+
+        state = _BrowserState(launch_error="Chromium is not installed. Run `playwright install chromium`")
+        toolset = BrowserToolset(state=state)
+
+        with pytest.raises(RuntimeError, match="playwright install chromium"):
+            toolset._get_page()
 
     @pytest.mark.asyncio
     async def test_wrap_run_raises_import_error_when_no_playwright(self) -> None:
@@ -654,6 +756,73 @@ class TestBrowserCapability:
             ),
         ):
             await cap.wrap_run(_ctx(), handler=handler)
+
+
+    async def test_prepare_tools_clears_unapproved_on_browser_tools(self) -> None:
+        """Browser tools with kind='unapproved' are reset to 'function'."""
+        from pydantic_ai.tools import ToolDefinition
+
+        cap = BrowserCapability()
+        tool_defs = [
+            ToolDefinition(name="navigate", description="nav", kind="unapproved"),
+            ToolDefinition(name="execute_js", description="js", kind="unapproved"),
+            ToolDefinition(name="execute", description="shell", kind="unapproved"),
+            ToolDefinition(name="click", description="click", kind="function"),
+        ]
+        result = await cap.prepare_tools(_ctx(), tool_defs)
+        # Browser tools should have kind='function'
+        by_name = {td.name: td for td in result}
+        assert by_name["navigate"].kind == "function"
+        assert by_name["execute_js"].kind == "function"
+        assert by_name["click"].kind == "function"  # already function, unchanged
+        # Non-browser tool keeps unapproved
+        assert by_name["execute"].kind == "unapproved"
+
+    async def test_prepare_tools_no_change_when_already_function(self) -> None:
+        """Browser tools already kind='function' pass through unchanged."""
+        from pydantic_ai.tools import ToolDefinition
+
+        cap = BrowserCapability()
+        tool_defs = [
+            ToolDefinition(name="navigate", description="nav", kind="function"),
+        ]
+        result = await cap.prepare_tools(_ctx(), tool_defs)
+        assert result[0].kind == "function"
+
+    async def test_prepare_tools_hides_browser_tools_when_launch_failed(self) -> None:
+        """When Chromium is not installed, browser tools are hidden from the model."""
+        from pydantic_ai.tools import ToolDefinition
+
+        cap = BrowserCapability()
+        cap._state.launch_error = "Chromium is not installed."
+        tool_defs = [
+            ToolDefinition(name="navigate", description="nav"),
+            ToolDefinition(name="execute_js", description="js"),
+            ToolDefinition(name="execute", description="shell"),  # non-browser
+            ToolDefinition(name="read_file", description="read"),  # non-browser
+        ]
+        result = await cap.prepare_tools(_ctx(), tool_defs)
+        names = [td.name for td in result]
+        assert "navigate" not in names
+        assert "execute_js" not in names
+        assert "execute" in names
+        assert "read_file" in names
+
+    async def test_get_instructions_returns_none_when_launch_failed(self) -> None:
+        """No browser instructions injected when Chromium is not available."""
+        cap = BrowserCapability()
+        cap._state.launch_error = "Chromium is not installed."
+        instructions_fn = cap.get_instructions()
+        result = instructions_fn(_ctx())
+        assert result is None
+
+    async def test_get_instructions_returns_text_when_browser_available(self) -> None:
+        """Browser instructions are injected when browser is available."""
+        cap = BrowserCapability()
+        instructions_fn = cap.get_instructions()
+        result = instructions_fn(_ctx())
+        assert result is not None
+        assert "navigate" in result
 
 
 # ── BrowseResult ──────────────────────────────────────────────────────────────

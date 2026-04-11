@@ -243,6 +243,9 @@ class _BrowserState:
     playwright_instance: Any | None = field(default=None)
     """Active playwright.async_api.Playwright, or None when the browser is not running."""
 
+    launch_error: str | None = field(default=None)
+    """Set when browser launch failed (e.g. Chromium not installed)."""
+
 
 # ── Toolset ───────────────────────────────────────────────────────────────────
 
@@ -306,6 +309,8 @@ class BrowserToolset(FunctionToolset[Any]):
     def _get_page(self) -> Any:
         """Return the active page or raise RuntimeError if browser is not running."""
         if self._state.page is None:
+            if self._state.launch_error:
+                raise RuntimeError(self._state.launch_error)
             raise RuntimeError(
                 "Browser is not running. BrowserCapability.wrap_run must be active "
                 "before any browser tool is called."
