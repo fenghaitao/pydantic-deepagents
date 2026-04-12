@@ -320,22 +320,23 @@ async def make_potpie_subagents(
         wrap_structured_tools,
     )
     from app.modules.intelligence.tools.tool_service import ToolService
-
-    # Open one DB session and one ToolService — reuse for all agents.
-    # This avoids the ~25s ToolService.__init__ cost per agent.
-    from potpie import PotpieRuntime as _RT  # type: ignore[import]
     from pydantic_ai.toolsets import FunctionToolset
 
     from apps.potpie.toolset import _inject_project_id
 
-    rt = _RT.from_env()
-    await rt.initialize()
+    # Open one DB session and create one ToolService so all seven toolsets share
+    # a single initialisation pass.  svc.get_tools() uses the lowercase registry
+    # keys directly, avoiding the name-mismatch that arises from indexing on
+    # StructuredTool.name (which uses title-case).
+    rt = await backend._get_runtime()
     session = rt.db.get_session()
     try:
         svc = ToolService(db=session, user_id=user_id)
 
         def _make_toolset(names: list[str], toolset_id: str) -> FunctionToolset:
-            langchain_tools = svc.get_tools(names, exclude_embedding_tools=exclude_embedding_tools)
+            langchain_tools = svc.get_tools(
+                names, exclude_embedding_tools=exclude_embedding_tools
+            )
             pydantic_tools = [_inject_project_id(t) for t in wrap_structured_tools(langchain_tools)]
             return FunctionToolset(tools=pydantic_tools, id=toolset_id)
 
@@ -348,7 +349,6 @@ async def make_potpie_subagents(
         blast_ts = _make_toolset(_BLAST_RADIUS_TOOL_NAMES, "potpie-blast-radius")
     finally:
         session.close()
-        await rt.close()
 
     return [
         {
