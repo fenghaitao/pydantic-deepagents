@@ -324,36 +324,36 @@ async def make_potpie_subagents(
         toolset_id="potpie-qna",
         exclude_embedding_tools=exclude_embedding_tools,
     )
-    debug_ts = await create_potpie_toolset(
-        backend=backend,
-        tool_names=_DEBUG_TOOL_NAMES,
-        toolset_id="potpie-debug",
-        exclude_embedding_tools=exclude_embedding_tools,
-    )
-    codegen_ts = await create_potpie_toolset(
-        backend=backend,
-        tool_names=_CODE_GEN_TOOL_NAMES,
-        toolset_id="potpie-codegen",
-        exclude_embedding_tools=exclude_embedding_tools,
-    )
-    lld_ts = await create_potpie_toolset(
-        backend=backend,
-        tool_names=_LLD_TOOL_NAMES,
-        toolset_id="potpie-lld",
-        exclude_embedding_tools=exclude_embedding_tools,
-    )
-    unit_ts = await create_potpie_toolset(
-        backend=backend,
-        tool_names=_UNIT_TEST_TOOL_NAMES,
-        toolset_id="potpie-unit-test",
-        exclude_embedding_tools=exclude_embedding_tools,
-    )
-    integ_ts = await create_potpie_toolset(
-        backend=backend,
-        tool_names=_INTEGRATION_TEST_TOOL_NAMES,
-        toolset_id="potpie-integ-test",
-        exclude_embedding_tools=exclude_embedding_tools,
-    )
+    # debug_ts = await create_potpie_toolset(
+    #     backend=backend,
+    #     tool_names=_DEBUG_TOOL_NAMES,
+    #     toolset_id="potpie-debug",
+    #     exclude_embedding_tools=exclude_embedding_tools,
+    # )
+    # codegen_ts = await create_potpie_toolset(
+    #     backend=backend,
+    #     tool_names=_CODE_GEN_TOOL_NAMES,
+    #     toolset_id="potpie-codegen",
+    #     exclude_embedding_tools=exclude_embedding_tools,
+    # )
+    # lld_ts = await create_potpie_toolset(
+    #     backend=backend,
+    #     tool_names=_LLD_TOOL_NAMES,
+    #     toolset_id="potpie-lld",
+    #     exclude_embedding_tools=exclude_embedding_tools,
+    # )
+    # unit_ts = await create_potpie_toolset(
+    #     backend=backend,
+    #     tool_names=_UNIT_TEST_TOOL_NAMES,
+    #     toolset_id="potpie-unit-test",
+    #     exclude_embedding_tools=exclude_embedding_tools,
+    # )
+    # integ_ts = await create_potpie_toolset(
+    #     backend=backend,
+    #     tool_names=_INTEGRATION_TEST_TOOL_NAMES,
+    #     toolset_id="potpie-integ-test",
+    #     exclude_embedding_tools=exclude_embedding_tools,
+    # )
     blast_ts = await create_potpie_toolset(
         backend=backend,
         tool_names=_BLAST_RADIUS_TOOL_NAMES,
@@ -374,63 +374,63 @@ async def make_potpie_subagents(
             "include_filesystem": True,
             "preferred_mode": "async",
         },
-        {
-            "name": "debugging",
-            "description": (
-                "Systematic root-cause debugging using the knowledge graph. "
-                "Use for: 'Why does X crash?', 'Fix the bug in Y', "
-                "'Trace why Z returns wrong value'"
-            ),
-            "instructions": _DEBUG_INSTRUCTIONS,
-            "toolsets": [debug_ts],
-            "include_filesystem": True,
-            "preferred_mode": "async",
-        },
-        {
-            "name": "code_generation",
-            "description": (
-                "Generate precise, copy-paste ready code changes. "
-                "Use for: 'Add feature X', 'Implement Y', 'Modify Z to support A'"
-            ),
-            "instructions": _CODE_GEN_INSTRUCTIONS,
-            "toolsets": [codegen_ts],
-            "include_filesystem": True,
-            "preferred_mode": "async",
-        },
-        {
-            "name": "lld",
-            "description": (
-                "Create a low-level design plan for implementing a new feature. "
-                "Use for: 'Design how to add X', 'Plan the implementation of Y'"
-            ),
-            "instructions": _LLD_INSTRUCTIONS,
-            "toolsets": [lld_ts],
-            "include_filesystem": True,
-            "preferred_mode": "async",
-        },
-        {
-            "name": "unit_test",
-            "description": (
-                "Write unit tests for specific functions or classes. "
-                "Use for: 'Write tests for X', 'Generate unit tests for Y function'"
-            ),
-            "instructions": _UNIT_TEST_INSTRUCTIONS,
-            "toolsets": [unit_ts],
-            "include_filesystem": True,
-            "preferred_mode": "async",
-        },
-        {
-            "name": "integration_test",
-            "description": (
-                "Write integration tests covering component interactions. "
-                "Use for: 'Write integration tests for X', "
-                "'Test the interaction between A and B'"
-            ),
-            "instructions": _INTEGRATION_TEST_INSTRUCTIONS,
-            "toolsets": [integ_ts],
-            "include_filesystem": True,
-            "preferred_mode": "async",
-        },
+        # {
+        #     "name": "debugging",
+        #     "description": (
+        #         "Systematic root-cause debugging using the knowledge graph. "
+        #         "Use for: 'Why does X crash?', 'Fix the bug in Y', "
+        #         "'Trace why Z returns wrong value'"
+        #     ),
+        #     "instructions": _DEBUG_INSTRUCTIONS,
+        #     "toolsets": [debug_ts],
+        #     "include_filesystem": True,
+        #     "preferred_mode": "async",
+        # },
+        # {
+        #     "name": "code_generation",
+        #     "description": (
+        #         "Generate precise, copy-paste ready code changes. "
+        #         "Use for: 'Add feature X', 'Implement Y', 'Modify Z to support A'"
+        #     ),
+        #     "instructions": _CODE_GEN_INSTRUCTIONS,
+        #     "toolsets": [codegen_ts],
+        #     "include_filesystem": True,
+        #     "preferred_mode": "async",
+        # },
+        # {
+        #     "name": "lld",
+        #     "description": (
+        #         "Create a low-level design plan for implementing a new feature. "
+        #         "Use for: 'Design how to add X', 'Plan the implementation of Y'"
+        #     ),
+        #     "instructions": _LLD_INSTRUCTIONS,
+        #     "toolsets": [lld_ts],
+        #     "include_filesystem": True,
+        #     "preferred_mode": "async",
+        # },
+        # {
+        #     "name": "unit_test",
+        #     "description": (
+        #         "Write unit tests for specific functions or classes. "
+        #         "Use for: 'Write tests for X', 'Generate unit tests for Y function'"
+        #     ),
+        #     "instructions": _UNIT_TEST_INSTRUCTIONS,
+        #     "toolsets": [unit_ts],
+        #     "include_filesystem": True,
+        #     "preferred_mode": "async",
+        # },
+        # {
+        #     "name": "integration_test",
+        #     "description": (
+        #         "Write integration tests covering component interactions. "
+        #         "Use for: 'Write integration tests for X', "
+        #         "'Test the interaction between A and B'"
+        #     ),
+        #     "instructions": _INTEGRATION_TEST_INSTRUCTIONS,
+        #     "toolsets": [integ_ts],
+        #     "include_filesystem": True,
+        #     "preferred_mode": "async",
+        # },
         {
             "name": "blast_radius",
             "description": (
