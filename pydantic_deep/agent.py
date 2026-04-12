@@ -554,6 +554,10 @@ def create_deep_agent(  # noqa: C901
 
         def _default_deep_agent_factory(cfg: dict[str, Any]) -> Any:  # pragma: no cover
             """Create a deep agent for subagent execution."""
+            # Merge parent-level extra toolsets with the subagent's own toolsets
+            # (e.g. potpie KG toolsets declared in SubAgentConfig["toolsets"]).
+            _cfg_toolsets = list(cfg.get("toolsets") or [])
+            _all_toolsets = _sub_extra + _cfg_toolsets
             return create_deep_agent(
                 model=cfg.get("model", _sub_model),
                 instructions=cfg["instructions"],
@@ -575,6 +579,7 @@ def create_deep_agent(  # noqa: C901
                 context_files=_sub_context_files,
                 context_discovery=_sub_context_discovery,
                 edit_format=_sub_edit_fmt,
+                toolsets=_all_toolsets or None,
                 subagent_extra_toolsets=_sub_extra or None,
             )
 
