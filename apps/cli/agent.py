@@ -331,25 +331,9 @@ def create_cli_agent(  # noqa: C901
     context_mw = getattr(agent, "_context_middleware", None)
     task_mgr = getattr(agent, "_task_manager", None)
 
-    # In non-interactive mode, force all subagent task() calls to use sync mode.
-    # This prevents the LLM from choosing async and exiting before results arrive.
-    if non_interactive and task_mgr is not None:
-        from pydantic_ai.toolsets import FunctionToolset
-
-        for toolset in agent._user_toolsets if hasattr(agent, "_user_toolsets") else []:  # type: ignore[attr-defined]
-            if isinstance(toolset, FunctionToolset) and "task" in toolset.tools:
-                _task_tool_obj = toolset.tools["task"]
-                _orig_task = _task_tool_obj.function_schema.function
-
-                async def _force_sync_task(
-                    ctx: Any, *args: Any, _orig: Any = _orig_task, **kwargs: Any
-                ) -> Any:
-                    kwargs["mode"] = "sync"
-                    return await _orig(ctx, *args, **kwargs)
-
-                _task_tool_obj.function = _force_sync_task
-                _task_tool_obj.function_schema.function = _force_sync_task
-                break
+    # Non-interactive mode: do not force sync — let preferred_mode on each subagent config
+    # control execution mode. Async subagents dispatch in background and the main agent
+    # polls check_task() until completion, which is the desired behavior.
 
     deps = DeepAgentDeps(
         backend=effective_backend,

@@ -363,7 +363,6 @@ async def make_potpie_subagents(
             "instructions": _QNA_INSTRUCTIONS,
             "toolsets": [qna_ts],
             "include_filesystem": True,
-            "preferred_mode": "sync",
         },
         {
             "name": "debugging",
@@ -375,7 +374,6 @@ async def make_potpie_subagents(
             "instructions": _DEBUG_INSTRUCTIONS,
             "toolsets": [debug_ts],
             "include_filesystem": True,
-            "preferred_mode": "sync",
         },
         {
             "name": "code_generation",
@@ -386,7 +384,6 @@ async def make_potpie_subagents(
             "instructions": _CODE_GEN_INSTRUCTIONS,
             "toolsets": [codegen_ts],
             "include_filesystem": True,
-            "preferred_mode": "sync",
         },
         {
             "name": "lld",
@@ -397,7 +394,6 @@ async def make_potpie_subagents(
             "instructions": _LLD_INSTRUCTIONS,
             "toolsets": [lld_ts],
             "include_filesystem": True,
-            "preferred_mode": "sync",
         },
         {
             "name": "unit_test",
@@ -408,7 +404,6 @@ async def make_potpie_subagents(
             "instructions": _UNIT_TEST_INSTRUCTIONS,
             "toolsets": [unit_ts],
             "include_filesystem": True,
-            "preferred_mode": "sync",
         },
         {
             "name": "integration_test",
@@ -420,7 +415,6 @@ async def make_potpie_subagents(
             "instructions": _INTEGRATION_TEST_INSTRUCTIONS,
             "toolsets": [integ_ts],
             "include_filesystem": True,
-            "preferred_mode": "sync",
         },
         {
             "name": "blast_radius",
@@ -433,7 +427,6 @@ async def make_potpie_subagents(
             "instructions": _BLAST_RADIUS_INSTRUCTIONS,
             "toolsets": [blast_ts],
             "include_filesystem": True,  # Isolated mode causes stream errors; use shared
-            "preferred_mode": "sync",
         },
     ]
 

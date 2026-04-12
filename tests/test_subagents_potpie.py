@@ -111,7 +111,7 @@ class TestMakePotpieSubagents:
             "code_generation", "lld", "unit_test", "integration_test",
         }
 
-    async def test_all_configs_have_sync_preferred_mode(self) -> None:
+    async def test_all_configs_have_no_preferred_mode(self) -> None:
         mock_backend = MagicMock()
         mock_rt = AsyncMock()
         mock_rt.db.get_session.return_value = MagicMock()
@@ -132,4 +132,4 @@ class TestMakePotpieSubagents:
             result = await make_potpie_subagents(mock_backend, "proj-123", "user-1")
 
         for config in result:
-            assert config.get("preferred_mode") == "sync", f"{config['name']} missing preferred_mode=sync"
+            assert "preferred_mode" not in config, f"{config['name']} should not have preferred_mode set"

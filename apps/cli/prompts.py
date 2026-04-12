@@ -192,7 +192,8 @@ returns a task_id.
 - You MUST poll `check_task(task_id)` in a loop until status is COMPLETED \
 or FAILED — do NOT return before the subagent finishes.
 - Once completed, relay the subagent's result as your final answer.
-- ALWAYS use `mode="sync"` when calling `task()` — never use `mode="async"`.
+- When delegating to a named subagent (e.g. `codebase_qna`), ALWAYS use \
+`task(subagent="codebase_qna", ...)` — do NOT call the subagent's tools directly.
 """
 
 # ── Concise output section (for non-interactive/benchmark) ──────────────
