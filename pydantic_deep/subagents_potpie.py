@@ -316,39 +316,50 @@ async def make_potpie_subagents(
     Returns:
         List of SubAgentConfig dicts for all seven agents.
     """
-    from app.modules.intelligence.agents.chat_agents.multi_agent.utils.tool_utils import (
-        wrap_structured_tools,
+    from apps.potpie.toolset import create_potpie_toolset
+
+    qna_ts = await create_potpie_toolset(
+        backend=backend,
+        tool_names=_QNA_TOOL_NAMES,
+        toolset_id="potpie-qna",
+        exclude_embedding_tools=exclude_embedding_tools,
     )
-    from app.modules.intelligence.tools.tool_service import ToolService
-    from pydantic_ai.toolsets import FunctionToolset
-
-    from apps.potpie.toolset import _inject_project_id
-
-    # Open one DB session and create one ToolService so all seven toolsets share
-    # a single initialisation pass.  svc.get_tools() uses the lowercase registry
-    # keys directly, avoiding the name-mismatch that arises from indexing on
-    # StructuredTool.name (which uses title-case).
-    rt = await backend._get_runtime()
-    session = rt.db.get_session()
-    try:
-        svc = ToolService(db=session, user_id=user_id)
-
-        def _make_toolset(names: list[str], toolset_id: str) -> FunctionToolset:
-            langchain_tools = svc.get_tools(
-                names, exclude_embedding_tools=exclude_embedding_tools
-            )
-            pydantic_tools = [_inject_project_id(t) for t in wrap_structured_tools(langchain_tools)]
-            return FunctionToolset(tools=pydantic_tools, id=toolset_id)
-
-        qna_ts = _make_toolset(_QNA_TOOL_NAMES, "potpie-qna")
-        debug_ts = _make_toolset(_DEBUG_TOOL_NAMES, "potpie-debug")
-        codegen_ts = _make_toolset(_CODE_GEN_TOOL_NAMES, "potpie-codegen")
-        lld_ts = _make_toolset(_LLD_TOOL_NAMES, "potpie-lld")
-        unit_ts = _make_toolset(_UNIT_TEST_TOOL_NAMES, "potpie-unit-test")
-        integ_ts = _make_toolset(_INTEGRATION_TEST_TOOL_NAMES, "potpie-integ-test")
-        blast_ts = _make_toolset(_BLAST_RADIUS_TOOL_NAMES, "potpie-blast-radius")
-    finally:
-        session.close()
+    debug_ts = await create_potpie_toolset(
+        backend=backend,
+        tool_names=_DEBUG_TOOL_NAMES,
+        toolset_id="potpie-debug",
+        exclude_embedding_tools=exclude_embedding_tools,
+    )
+    codegen_ts = await create_potpie_toolset(
+        backend=backend,
+        tool_names=_CODE_GEN_TOOL_NAMES,
+        toolset_id="potpie-codegen",
+        exclude_embedding_tools=exclude_embedding_tools,
+    )
+    lld_ts = await create_potpie_toolset(
+        backend=backend,
+        tool_names=_LLD_TOOL_NAMES,
+        toolset_id="potpie-lld",
+        exclude_embedding_tools=exclude_embedding_tools,
+    )
+    unit_ts = await create_potpie_toolset(
+        backend=backend,
+        tool_names=_UNIT_TEST_TOOL_NAMES,
+        toolset_id="potpie-unit-test",
+        exclude_embedding_tools=exclude_embedding_tools,
+    )
+    integ_ts = await create_potpie_toolset(
+        backend=backend,
+        tool_names=_INTEGRATION_TEST_TOOL_NAMES,
+        toolset_id="potpie-integ-test",
+        exclude_embedding_tools=exclude_embedding_tools,
+    )
+    blast_ts = await create_potpie_toolset(
+        backend=backend,
+        tool_names=_BLAST_RADIUS_TOOL_NAMES,
+        toolset_id="potpie-blast-radius",
+        exclude_embedding_tools=exclude_embedding_tools,
+    )
 
     return [
         {
@@ -361,6 +372,7 @@ async def make_potpie_subagents(
             "instructions": _QNA_INSTRUCTIONS,
             "toolsets": [qna_ts],
             "include_filesystem": True,
+            "preferred_mode": "async",
         },
         {
             "name": "debugging",
@@ -372,6 +384,7 @@ async def make_potpie_subagents(
             "instructions": _DEBUG_INSTRUCTIONS,
             "toolsets": [debug_ts],
             "include_filesystem": True,
+            "preferred_mode": "async",
         },
         {
             "name": "code_generation",
@@ -382,6 +395,7 @@ async def make_potpie_subagents(
             "instructions": _CODE_GEN_INSTRUCTIONS,
             "toolsets": [codegen_ts],
             "include_filesystem": True,
+            "preferred_mode": "async",
         },
         {
             "name": "lld",
@@ -392,6 +406,7 @@ async def make_potpie_subagents(
             "instructions": _LLD_INSTRUCTIONS,
             "toolsets": [lld_ts],
             "include_filesystem": True,
+            "preferred_mode": "async",
         },
         {
             "name": "unit_test",
@@ -402,6 +417,7 @@ async def make_potpie_subagents(
             "instructions": _UNIT_TEST_INSTRUCTIONS,
             "toolsets": [unit_ts],
             "include_filesystem": True,
+            "preferred_mode": "async",
         },
         {
             "name": "integration_test",
@@ -413,6 +429,7 @@ async def make_potpie_subagents(
             "instructions": _INTEGRATION_TEST_INSTRUCTIONS,
             "toolsets": [integ_ts],
             "include_filesystem": True,
+            "preferred_mode": "async",
         },
         {
             "name": "blast_radius",
@@ -424,7 +441,8 @@ async def make_potpie_subagents(
             ),
             "instructions": _BLAST_RADIUS_INSTRUCTIONS,
             "toolsets": [blast_ts],
-            "include_filesystem": True,  # Isolated mode causes stream errors; use shared
+            "include_filesystem": True,
+            "preferred_mode": "async",
         },
     ]
 
