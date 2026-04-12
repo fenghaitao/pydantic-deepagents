@@ -107,15 +107,17 @@ class CodeGraphToolset(FunctionToolset[Any]):
         @self.tool(description=_SEARCH_DESC)
         async def search_codebase(
             ctx: RunContext[Any],
-            project_id: str,
             query: str,
         ) -> str:
             """Fast keyword search.
 
             Args:
-                project_id: Project UUID.
                 query: Search term.
             """
+            potpie = getattr(ctx.deps, "potpie", None)
+            project_id = (getattr(potpie, "project_id", None) if potpie else None) or self._project_id
+            if not project_id:
+                return "Error: no project_id available. Use list_code_projects to find one."
             results = await self._backend.search(project_id, query)
             if not results:
                 return f"No results for '{query}' in project {project_id}."
@@ -124,34 +126,37 @@ class CodeGraphToolset(FunctionToolset[Any]):
         @self.tool(description=_NL_QUERY_DESC)
         async def query_code_graph(
             ctx: RunContext[Any],
-            project_id: str,
             question: str,
         ) -> str:
             """Structural NL→Cypher query.
 
             Args:
-                project_id: Project UUID.
                 question: Natural language structural question.
             """
+            potpie = getattr(ctx.deps, "potpie", None)
+            project_id = (getattr(potpie, "project_id", None) if potpie else None) or self._project_id
+            if not project_id:
+                return "Error: no project_id available. Use list_code_projects to find one."
             result = await self._backend.nl_query(project_id, question)
             return json.dumps(result, default=str)
 
         @self.tool(description=_KG_SEARCH_DESC)
         async def ask_knowledge_graph(
             ctx: RunContext[Any],
-            project_id: str,
             questions: list[str],
             node_ids: list[str] | None = None,
         ) -> str:
             """Semantic knowledge-graph search.
 
             Args:
-                project_id: Project UUID.
                 questions: List of natural language questions.
                 node_ids: Optional list of node IDs to restrict the search.
             """
-            # Guard: embeddings are not available during INFERRING state
             potpie = getattr(ctx.deps, "potpie", None)
+            project_id = (getattr(potpie, "project_id", None) if potpie else None) or self._project_id
+            if not project_id:
+                return "Error: no project_id available. Use list_code_projects to find one."
+            # Guard: embeddings are not available during INFERRING state
             if potpie is not None and getattr(potpie, "parsing_status", None) == "INFERRING":
                 return (
                     "Semantic search is unavailable while the project is being indexed "
