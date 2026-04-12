@@ -43,7 +43,6 @@ _QNA_TOOL_NAMES: list[str] = [
     "fetch_file",
     "fetch_files_batch",
     "analyze_code_structure",
-    "nl_cypher_query",
 ]
 
 _DEBUG_TOOL_NAMES: list[str] = [
@@ -119,8 +118,7 @@ _BLAST_RADIUS_TOOL_NAMES: list[str] = [
 _CODEBASE_NAV_GUIDE = """\
 ## How to explore the codebase
 
-1. Use `Ask_Knowledge_Graph_Queries` or `Query_Code_Graph_with_Natural_Language`
-   to locate where functionality resides.
+1. Use `Ask_Knowledge_Graph_Queries` to locate where functionality resides (semantic search).
 2. Use `Get_Code_and_docstring_From_Probable_Node_Name` for specific classes/functions.
 3. Use `Get_Code_and_docstring_From_Multiple_Node_IDs` to fetch code from multiple nodes.
 4. Use `Get_Node_Neighbours_From_Node_ID` to trace callers and callees.
