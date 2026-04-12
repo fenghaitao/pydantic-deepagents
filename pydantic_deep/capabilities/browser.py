@@ -77,8 +77,21 @@ async def _auto_install_chromium() -> bool:
 
 
 BROWSER_INSTRUCTIONS: str = """\
-You have access to a real web browser powered by Playwright. Use browser tools to:
+You have access to a real web browser powered by Playwright.
 
+**When to use the browser (and NOT web_search / web_fetch):**
+- Pages that require login, authentication, or session cookies
+- JavaScript-heavy SPAs that don't render without JS
+- Interactive workflows: clicking buttons, filling forms, multi-step flows
+- Scraping paginated or dynamically loaded content
+- Visual debugging — taking screenshots to inspect UI
+
+**When to use web_search / web_fetch instead:**
+- Looking up information, documentation, or public articles
+- Reading a known URL whose content is static or server-rendered
+- Any task that doesn't require interaction — prefer the lighter tools
+
+Browser tools:
 - `navigate(url)` — go to a URL and read the page as Markdown
 - `click(selector)` — click a CSS selector or pixel coordinates 'x,y'
 - `type_text(selector, text)` — fill an input field

@@ -52,15 +52,26 @@ fi
 echo ""
 
 # ── Step 2: install pydantic-deep ─────────────────────────────────────────────
-say "Installing pydantic-deep CLI..."
-uv tool install "pydantic-deep[cli]" --upgrade
+say "Installing pydantic-deep CLI (with browser support)..."
+uv tool install "pydantic-deep[cli,browser]" --upgrade
 
 echo ""
 
-# ── Step 3: verify ────────────────────────────────────────────────────────────
-# uv tool executables land in ~/.local/bin — add it for immediate verification
+# ── Step 3: install Chromium for browser automation ───────────────────────────
+say "Installing Chromium for browser automation..."
+# uv tool executables land in ~/.local/bin — ensure it's in PATH
 export PATH="$HOME/.local/bin:$PATH"
 
+# playwright entry-point is installed alongside pydantic-deep in the same tool env
+if playwright install chromium 2>/dev/null; then
+    ok "Chromium installed."
+else
+    warn "Chromium install failed — run 'playwright install chromium' manually."
+fi
+
+echo ""
+
+# ── Step 4: verify ────────────────────────────────────────────────────────────
 if command -v pydantic-deep &>/dev/null; then
     VERSION="$(pydantic-deep --version 2>&1 | head -1)"
     ok "${VERSION} installed successfully!"

@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.9] - 2026-04-12
+
+### Added
+
+- **Chromium auto-install (`BrowserCapability.auto_install`)** — when the Chromium binary is missing,
+  `BrowserCapability` now automatically runs `playwright install chromium` via the current Python
+  interpreter before the first agent run. On success the launch is retried immediately; on failure the
+  browser degrades gracefully (tools hidden, no instructions injected) without crashing the agent.
+  Controlled via `auto_install: bool = True` on `BrowserCapability`.
+
+### Changed
+
+- **`install.sh` now ships browser support out of the box** — the one-line installer now installs
+  `pydantic-deep[cli,browser]` (was `[cli]`) and runs `playwright install chromium` automatically.
+  New users get a fully working browser without any manual steps.
+- **Browser tool usage guidance** — `BROWSER_INSTRUCTIONS` now includes an explicit "when to use
+  browser vs web_search / web_fetch" section. The model is instructed to prefer the lighter
+  `web_search` / `web_fetch` tools for information lookup and static pages, and to reserve the
+  Playwright browser for interactive workflows (login, forms, JS-heavy SPAs, screenshots).
+
 ## [0.3.8] - 2026-04-12
 
 ### Added
