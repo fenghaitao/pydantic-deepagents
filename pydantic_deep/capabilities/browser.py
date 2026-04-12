@@ -228,31 +228,10 @@ class BrowserCapability(AbstractCapability[Any]):
                 result.append(td)
         return result
 
-    async def wrap_run(
-        self,
-        ctx: RunContext[Any],
-        *,
-        handler: WrapRunHandler,
-    ) -> AgentRunResult[Any]:
-        """Launch Chromium before the run and guarantee cleanup afterwards.
+    def _make_launcher(self, pw: Any) -> Any:
+        """Return an async callable that lazily launches Chromium on first tool call."""
 
-        The browser is started inside ``async with async_playwright()`` and the
-        active ``Page`` is injected into ``self._state.page`` so that tool calls
-        can reach it.  A ``finally`` block nulls the state references and closes
-        the browser whether the run succeeds, raises an exception, or is
-        cancelled.
-
-        If Chromium is not installed and ``auto_install`` is ``True`` (the
-        default), ``playwright install chromium`` is run automatically via the
-        current Python interpreter.  On success the launch is retried once.
-
-        If auto-install is disabled or fails, a warning is logged and the run
-        proceeds without browser support.  Browser tools will return a helpful
-        error message when called.
-        """
-        _require_browser()
-        assert async_playwright is not None  # guaranteed by _require_browser()
-        async with async_playwright() as pw:
+        async def _launch() -> None:
             browser = None
             try:
                 browser = await pw.chromium.launch(headless=self.headless)
@@ -284,7 +263,7 @@ class BrowserCapability(AbstractCapability[Any]):
                         "Chromium is not installed. Run `playwright install chromium` "
                         "and restart the agent to enable browser tools."
                     )
-                    return await handler()
+                    return
 
             page = await browser.new_page()
 
@@ -296,14 +275,47 @@ class BrowserCapability(AbstractCapability[Any]):
 
             page.on("popup", _on_popup)
 
-            self._state.playwright_instance = pw
             self._state.browser = browser
             self._state.page = page
+
+        return _launch
+
+    async def wrap_run(
+        self,
+        ctx: RunContext[Any],
+        *,
+        handler: WrapRunHandler,
+    ) -> AgentRunResult[Any]:
+        """Set up Playwright context and install a lazy browser launcher.
+
+        Chromium is **not** launched here.  Instead a launcher callable is
+        stored on ``_state._lazy_launcher`` and is invoked by
+        ``BrowserToolset._ensure_page()`` only when a browser tool is first
+        called.  Runs that never use the browser incur zero Playwright
+        overhead.
+
+        A ``finally`` block cleans up all state and closes the browser (if it
+        was ever launched) whether the run succeeds, raises, or is cancelled.
+
+        If Chromium is not installed and ``auto_install`` is ``True`` (the
+        default), ``playwright install chromium`` is run automatically on the
+        first tool call, and the launch is retried once.
+        """
+        _require_browser()
+        assert async_playwright is not None  # guaranteed by _require_browser()
+        async with async_playwright() as pw:
+            self._state.playwright_instance = pw
+            self._state._lazy_launcher = self._make_launcher(pw)
             try:
                 return await handler()
             finally:
-                self._state.page = None
-                self._state.browser = None
+                self._state._lazy_launcher = None
                 self._state.playwright_instance = None
                 self._state.launch_error = None
-                await browser.close()
+                if self._state.browser is not None:
+                    browser = self._state.browser
+                    self._state.page = None
+                    self._state.browser = None
+                    await browser.close()
+                else:
+                    self._state.page = None

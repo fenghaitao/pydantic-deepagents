@@ -243,6 +243,61 @@ def _make_page() -> AsyncMock:
 # ── BrowserToolset ────────────────────────────────────────────────────────────
 
 
+class TestBrowserState:
+    @pytest.mark.asyncio
+    async def test_ensure_page_raises_when_no_launcher(self) -> None:
+        state = _BrowserState()
+        with pytest.raises(RuntimeError, match="Browser is not running"):
+            await state.ensure_page()
+
+    @pytest.mark.asyncio
+    async def test_ensure_page_raises_when_launch_error_set(self) -> None:
+        state = _BrowserState(launch_error="Chromium not installed")
+        with pytest.raises(RuntimeError, match="Chromium not installed"):
+            await state.ensure_page()
+
+    @pytest.mark.asyncio
+    async def test_ensure_page_calls_launcher_and_returns_page(self) -> None:
+        mock_page = MagicMock()
+        called = False
+
+        async def launcher() -> None:
+            nonlocal called
+            called = True
+            state.page = mock_page
+
+        state = _BrowserState()
+        state._lazy_launcher = launcher
+        result = await state.ensure_page()
+        assert result is mock_page
+        assert called
+
+    @pytest.mark.asyncio
+    async def test_ensure_page_returns_existing_page_without_relaunching(self) -> None:
+        mock_page = MagicMock()
+        called = False
+
+        async def launcher() -> None:  # pragma: no cover
+            nonlocal called
+            called = True
+
+        state = _BrowserState(page=mock_page)
+        state._lazy_launcher = launcher
+        result = await state.ensure_page()
+        assert result is mock_page
+        assert not called  # launcher not called when page already set
+
+    @pytest.mark.asyncio
+    async def test_ensure_page_raises_when_launcher_sets_launch_error(self) -> None:
+        async def failing_launcher() -> None:
+            state.launch_error = "install failed"
+
+        state = _BrowserState()
+        state._lazy_launcher = failing_launcher
+        with pytest.raises(RuntimeError, match="install failed"):
+            await state.ensure_page()
+
+
 class TestBrowserToolset:
     def test_get_page_raises_when_no_page(self) -> None:
         state = _BrowserState()
@@ -255,6 +310,19 @@ class TestBrowserToolset:
         state = _BrowserState(page=mock_page)
         ts = BrowserToolset(state=state)
         assert ts._get_page() is mock_page
+
+    @pytest.mark.asyncio
+    async def test_ensure_page_triggers_lazy_launch(self) -> None:
+        mock_page = MagicMock()
+
+        async def launcher() -> None:
+            state.page = mock_page
+
+        state = _BrowserState()
+        state._lazy_launcher = launcher
+        ts = BrowserToolset(state=state)
+        result = await ts._ensure_page()
+        assert result is mock_page
 
     def test_tools_registered(self) -> None:
         ts = BrowserToolset(state=_BrowserState())
@@ -580,16 +648,42 @@ class TestBrowserCapability:
         assert "9999" in instr
 
     @pytest.mark.asyncio
-    async def test_wrap_run_injects_page_and_cleans_up(self) -> None:
+    async def test_wrap_run_installs_lazy_launcher(self) -> None:
+        """wrap_run installs _lazy_launcher on state; does NOT eagerly launch Chromium."""
+        cap = BrowserCapability()
+        pw, browser, page = _make_playwright_mock()
+
+        launcher_installed: Any = None
+
+        async def handler() -> Any:
+            nonlocal launcher_installed
+            # At handler entry the browser has NOT been launched yet
+            assert cap._state.page is None
+            launcher_installed = cap._state._lazy_launcher
+            return MagicMock()
+
+        with (
+            patch("pydantic_deep.capabilities.browser._require_browser"),
+            patch("pydantic_deep.capabilities.browser.async_playwright", return_value=pw),
+        ):
+            await cap.wrap_run(_ctx(), handler=handler)
+
+        assert launcher_installed is not None  # launcher was installed
+        pw.chromium.launch.assert_not_called()  # Chromium NOT started
+        browser.close.assert_not_called()       # nothing to close
+
+    @pytest.mark.asyncio
+    async def test_lazy_launcher_injects_page_and_cleanup_works(self) -> None:
+        """Calling _lazy_launcher() starts the browser; finally closes it."""
         cap = BrowserCapability()
         pw, browser, page = _make_playwright_mock()
 
         page_during_run: Any = None
-        handler_called = False
 
         async def handler() -> Any:
-            nonlocal handler_called, page_during_run
-            handler_called = True
+            nonlocal page_during_run
+            # Simulate a tool call: trigger lazy launch
+            await cap._state._lazy_launcher()
             page_during_run = cap._state.page
             return MagicMock()
 
@@ -597,10 +691,8 @@ class TestBrowserCapability:
             patch("pydantic_deep.capabilities.browser._require_browser"),
             patch("pydantic_deep.capabilities.browser.async_playwright", return_value=pw),
         ):
-            ctx = _ctx()
-            await cap.wrap_run(ctx, handler=handler)
+            await cap.wrap_run(_ctx(), handler=handler)
 
-        assert handler_called
         assert page_during_run is page
         assert cap._state.page is None
         assert cap._state.browser is None
@@ -608,7 +700,8 @@ class TestBrowserCapability:
         browser.close.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_wrap_run_cleans_up_on_exception(self) -> None:
+    async def test_wrap_run_cleans_up_on_exception_without_launch(self) -> None:
+        """If the handler raises before any tool call, no browser is opened or closed."""
         cap = BrowserCapability()
         pw, browser, _ = _make_playwright_mock()
 
@@ -623,22 +716,41 @@ class TestBrowserCapability:
             await cap.wrap_run(_ctx(), handler=handler)
 
         assert cap._state.page is None
+        browser.close.assert_not_called()  # browser was never launched
+
+    @pytest.mark.asyncio
+    async def test_wrap_run_cleans_up_browser_if_launched_then_exception(self) -> None:
+        """If the browser was lazily launched and then the handler raises, it is closed."""
+        cap = BrowserCapability()
+        pw, browser, page = _make_playwright_mock()
+
+        async def handler() -> Any:
+            await cap._state._lazy_launcher()  # triggers launch
+            raise RuntimeError("tool failed")
+
+        with (
+            patch("pydantic_deep.capabilities.browser._require_browser"),
+            patch("pydantic_deep.capabilities.browser.async_playwright", return_value=pw),
+            pytest.raises(RuntimeError, match="tool failed"),
+        ):
+            await cap.wrap_run(_ctx(), handler=handler)
+
+        assert cap._state.page is None
         browser.close.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_wrap_run_proceeds_without_browser_when_launch_fails(self) -> None:
-        """When Chromium binary is missing and auto-install fails, handler runs."""
+        """Launch_error is set when Chromium is missing and auto-install fails."""
         cap = BrowserCapability()
         pw, browser, page = _make_playwright_mock()
-        browser.new_page = AsyncMock(return_value=page)
-        pw.__aenter__ = AsyncMock(return_value=pw)
-        pw.chromium.launch = AsyncMock(side_effect=Exception("Executable doesn't exist at ..."))
+        pw.chromium.launch = AsyncMock(side_effect=Exception("Executable doesn't exist"))
 
-        handler_called = False
+        error_during_run: str | None = None
 
         async def handler() -> Any:
-            nonlocal handler_called
-            handler_called = True
+            nonlocal error_during_run
+            await cap._state._lazy_launcher()  # triggers failed launch
+            error_during_run = cap._state.launch_error
             return MagicMock()
 
         with (
@@ -652,9 +764,8 @@ class TestBrowserCapability:
         ):
             await cap.wrap_run(_ctx(), handler=handler)
 
-        assert handler_called
         assert cap._state.page is None
-        assert "playwright install chromium" in (cap._state.launch_error or "")
+        assert "playwright install chromium" in (error_during_run or "")
 
     @pytest.mark.asyncio
     async def test_wrap_run_auto_installs_and_retries_on_launch_failure(self) -> None:
@@ -669,6 +780,7 @@ class TestBrowserCapability:
 
         async def handler() -> Any:
             nonlocal page_during_run
+            await cap._state._lazy_launcher()  # triggers lazy launch + auto-install
             page_during_run = cap._state.page
             return MagicMock()
 
@@ -683,9 +795,7 @@ class TestBrowserCapability:
         ):
             await cap.wrap_run(_ctx(), handler=handler)
 
-        # Handler ran with a real page (auto-install path)
         assert page_during_run is page
-        assert cap._state.launch_error is None
         browser.close.assert_called_once()
 
     @pytest.mark.asyncio
@@ -696,6 +806,7 @@ class TestBrowserCapability:
         pw.chromium.launch = AsyncMock(side_effect=Exception("binary missing"))
 
         async def handler() -> Any:
+            await cap._state._lazy_launcher()  # triggers failed launch
             return MagicMock()
 
         mock_installer = AsyncMock()
@@ -710,7 +821,6 @@ class TestBrowserCapability:
             await cap.wrap_run(_ctx(), handler=handler)
 
         mock_installer.assert_not_called()
-        assert "playwright install chromium" in (cap._state.launch_error or "")
 
     @pytest.mark.asyncio
     async def test_get_page_returns_launch_error_message(self) -> None:
@@ -740,6 +850,7 @@ class TestBrowserCapability:
 
     @pytest.mark.asyncio
     async def test_wrap_run_popup_handler_registered(self) -> None:
+        """Popup handler is registered on the page after lazy launch."""
         cap = BrowserCapability()
         pw, browser, page = _make_playwright_mock()
         registered_events: list[str] = []
@@ -750,6 +861,7 @@ class TestBrowserCapability:
         page.on = on_event
 
         async def handler() -> Any:
+            await cap._state._lazy_launcher()  # triggers launch + popup registration
             return MagicMock()
 
         with (
@@ -762,7 +874,7 @@ class TestBrowserCapability:
 
     @pytest.mark.asyncio
     async def test_wrap_run_popup_callback_fires(self) -> None:
-        """The _on_popup callback actually executes its body when called."""
+        """The _on_popup callback executes after lazy launch."""
         cap = BrowserCapability()
         pw, browser, page = _make_playwright_mock()
         captured_callback: Any = None
@@ -776,6 +888,7 @@ class TestBrowserCapability:
         ensure_future_calls: list[Any] = []
 
         async def handler() -> Any:
+            await cap._state._lazy_launcher()  # triggers launch + popup registration
             # Invoke the popup callback while still inside wrap_run (and the patch)
             assert captured_callback is not None
             fake_popup = MagicMock()

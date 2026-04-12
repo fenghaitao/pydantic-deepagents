@@ -228,23 +228,51 @@ def _check_allowed_domain(url: str, allowed_domains: list[str] | None) -> bool:
 
 @dataclass
 class _BrowserState:
-    """Mutable browser state injected by BrowserCapability.wrap_run.
+    """Mutable browser state shared between BrowserCapability and BrowserToolset.
 
-    ``BrowserToolset`` receives a reference at construction time and reads
-    ``page`` at tool call time — after ``wrap_run`` has populated it.
+    ``BrowserCapability.wrap_run`` sets ``_lazy_launcher`` at the start of
+    each agent run.  ``BrowserToolset`` calls ``ensure_page()`` on the first
+    tool invocation, which triggers the actual Chromium launch only when a
+    browser tool is actually needed — keeping runs that never use the browser
+    free of any Playwright overhead.
     """
 
     page: Any | None = field(default=None)
-    """Active playwright.async_api.Page, or None when the browser is not running."""
+    """Active playwright.async_api.Page, or None when the browser has not been launched."""
 
     browser: Any | None = field(default=None)
-    """Active playwright.async_api.Browser, or None when the browser is not running."""
+    """Active playwright.async_api.Browser, or None when the browser has not been launched."""
 
     playwright_instance: Any | None = field(default=None)
-    """Active playwright.async_api.Playwright, or None when the browser is not running."""
+    """Active playwright.async_api.Playwright context, set for the duration of wrap_run."""
 
     launch_error: str | None = field(default=None)
     """Set when browser launch failed (e.g. Chromium not installed)."""
+
+    _lazy_launcher: Any | None = field(default=None, init=False, repr=False)
+    """Async callable installed by BrowserCapability.wrap_run; triggers the actual launch."""
+
+    async def ensure_page(self) -> Any:
+        """Return the active page, launching Chromium lazily on the first call.
+
+        Raises:
+            RuntimeError: If the browser is not configured (wrap_run not active)
+                or if the launch failed.
+        """
+        if self.launch_error:
+            raise RuntimeError(self.launch_error)
+        if self.page is None:
+            if self._lazy_launcher is None:
+                raise RuntimeError(
+                    "Browser is not running. BrowserCapability.wrap_run must be active "
+                    "before any browser tool is called."
+                )
+            await self._lazy_launcher()
+            if self.page is None:
+                raise RuntimeError(
+                    self.launch_error or "Browser failed to launch."
+                )
+        return self.page
 
 
 # ── Toolset ───────────────────────────────────────────────────────────────────
@@ -307,7 +335,10 @@ class BrowserToolset(FunctionToolset[Any]):
     # ── Internal helpers ──────────────────────────────────────────────────
 
     def _get_page(self) -> Any:
-        """Return the active page or raise RuntimeError if browser is not running."""
+        """Return the active page or raise RuntimeError if browser is not running.
+
+        Sync accessor — only valid after ``_ensure_page()`` has been awaited.
+        """
         if self._state.page is None:
             if self._state.launch_error:
                 raise RuntimeError(self._state.launch_error)
@@ -316,6 +347,15 @@ class BrowserToolset(FunctionToolset[Any]):
                 "before any browser tool is called."
             )
         return self._state.page
+
+    async def _ensure_page(self) -> Any:
+        """Trigger lazy browser launch and return the active page.
+
+        Call this at the start of every tool function instead of
+        ``_get_page()`` so that Chromium is only launched when a tool is
+        actually invoked.
+        """
+        return await self._state.ensure_page()
 
     async def _page_content_as_markdown(self) -> str:
         """Return current page content as truncated Markdown."""
@@ -344,7 +384,7 @@ class BrowserToolset(FunctionToolset[Any]):
             """
             if not _check_allowed_domain(url, self._allowed_domains):
                 return f"Error: domain not in allowed_domains list: {url}"
-            page = self._get_page()
+            page = await self._ensure_page()
             await page.goto(url, timeout=self._timeout_ms)
             await page.wait_for_load_state("domcontentloaded")
             title: str = await page.title()
@@ -362,7 +402,7 @@ class BrowserToolset(FunctionToolset[Any]):
             Args:
                 selector: CSS selector or pixel coordinates 'x,y'.
             """
-            page = self._get_page()
+            page = await self._ensure_page()
             parts = selector.split(",", 1)
             if len(parts) == 2 and all(p.strip().lstrip("-").isdigit() for p in parts):
                 x, y = int(parts[0].strip()), int(parts[1].strip())
@@ -381,7 +421,7 @@ class BrowserToolset(FunctionToolset[Any]):
                 selector: CSS selector for the target input element.
                 text: Text to type (replaces existing value).
             """
-            page = self._get_page()
+            page = await self._ensure_page()
             await page.fill(selector, text, timeout=self._timeout_ms)
             content = await self._page_content_as_markdown()
             return f"Typed into '{selector}'.\n\n{content}"
@@ -393,8 +433,8 @@ class BrowserToolset(FunctionToolset[Any]):
             Args:
                 full_page: Capture the full scrollable page when True.
             """
+            page = await self._ensure_page()
             b64 = await self._screenshot_b64(full_page=full_page)
-            page = self._get_page()
             return f"data:image/png;base64,{b64}\nURL: {page.url}"
 
         @self.tool(description=descs.get("get_text", GET_TEXT_DESCRIPTION))
@@ -404,7 +444,7 @@ class BrowserToolset(FunctionToolset[Any]):
             Args:
                 selector: CSS selector to target. Omit for full page Markdown.
             """
-            page = self._get_page()
+            page = await self._ensure_page()
             if selector:
                 try:
                     return str(await page.inner_text(selector, timeout=self._timeout_ms))
@@ -426,7 +466,7 @@ class BrowserToolset(FunctionToolset[Any]):
                 x: Optional x coordinate for localised scroll.
                 y: Optional y coordinate for localised scroll.
             """
-            page = self._get_page()
+            page = await self._ensure_page()
             delta_map: dict[str, tuple[int, int]] = {
                 "up": (0, -300),
                 "down": (0, 300),
@@ -445,7 +485,7 @@ class BrowserToolset(FunctionToolset[Any]):
         @self.tool(description=descs.get("go_back", GO_BACK_DESCRIPTION))
         async def go_back(ctx: RunContext[Any]) -> str:
             """Navigate back in the browser history."""
-            page = self._get_page()
+            page = await self._ensure_page()
             await page.go_back(timeout=self._timeout_ms)
             await page.wait_for_load_state("domcontentloaded")
             content = await self._page_content_as_markdown()
@@ -454,7 +494,7 @@ class BrowserToolset(FunctionToolset[Any]):
         @self.tool(description=descs.get("go_forward", GO_FORWARD_DESCRIPTION))
         async def go_forward(ctx: RunContext[Any]) -> str:
             """Navigate forward in the browser history."""
-            page = self._get_page()
+            page = await self._ensure_page()
             await page.go_forward(timeout=self._timeout_ms)
             await page.wait_for_load_state("domcontentloaded")
             content = await self._page_content_as_markdown()
@@ -467,7 +507,7 @@ class BrowserToolset(FunctionToolset[Any]):
             Args:
                 script: JavaScript expression to evaluate.
             """
-            page = self._get_page()
+            page = await self._ensure_page()
             try:
                 result = await page.evaluate(script)
                 return str(result)
