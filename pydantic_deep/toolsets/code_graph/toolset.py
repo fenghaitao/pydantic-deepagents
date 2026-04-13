@@ -8,18 +8,20 @@ The toolset is backend-agnostic: it accepts any PotpieBackend implementation
   query_code_graph     — structural NL→Cypher query (call graphs, imports, etc.)
   ask_knowledge_graph  — semantic / docstring similarity search
 
+For subagent use, ``CodeGraphToolset.from_runtime()`` fetches the full set of
+low-level KG tools from a RuntimeBackend and wraps them with project_id injection.
+
 ``get_instructions()`` injects the list of available project IDs into the
 system prompt so the agent can reference them without a round-trip.
-
-Pattern follows pydantic_deep/toolsets/memory.py exactly.
 """
 
 from __future__ import annotations
 
+import copy
 import json
 from typing import Any
 
-from pydantic_ai import RunContext
+from pydantic_ai import RunContext, Tool
 from pydantic_ai.toolsets import FunctionToolset
 
 from pydantic_deep.toolsets.code_graph.backend import PotpieBackend
@@ -67,6 +69,88 @@ Returns a ranked list of nodes with docstrings, file paths, and similarity score
 
 :param questions: One or more natural-language questions (list of strings).
 :param node_ids: Optional list of node IDs to narrow the search scope."""
+
+# ── Low-level KG tool names (RuntimeBackend only) ────────────────────────────
+
+KG_TOOL_NAMES: list[str] = [
+    "ask_knowledge_graph_queries",
+    "nl_cypher_query",
+    "get_code_from_multiple_node_ids",
+    "get_code_from_probable_node_name",
+    "get_code_file_structure",
+    "fetch_file",
+    "fetch_files_batch",
+    "get_node_neighbours_from_node_id",
+    "analyze_code_structure",
+]
+
+_EMBEDDING_DEPENDENT_TOOLS: frozenset[str] = frozenset({"ask_knowledge_graph_queries"})
+
+
+def _inject_project_id(tool: Tool) -> Tool:
+    """Wrap a tool to inject project_id from ctx.deps.potpie, removing it from the schema.
+
+    If the tool's JSON schema has a 'project_id' property, wraps the function
+    to accept RunContext as the first argument and fills project_id from
+    ctx.deps.potpie.project_id, so the LLM never needs to supply it.
+    """
+    schema = getattr(tool, "parameters_json_schema", None)
+    if schema is None:
+        fs = getattr(tool, "function_schema", None)
+        schema = getattr(fs, "json_schema", None) or {}
+
+    if "project_id" not in schema.get("properties", {}):
+        return tool
+
+    original_func = tool.function
+    import asyncio as _asyncio
+    _is_async = _asyncio.iscoroutinefunction(original_func)
+
+    if _is_async:
+        async def ctx_wrapper(ctx: RunContext[Any], **kwargs: Any) -> Any:
+            potpie = ctx.deps.potpie if ctx.deps.potpie is not None else None
+            project_id = getattr(potpie, "project_id", None) if potpie else None
+            if project_id:
+                kwargs["project_id"] = project_id
+            if tool.name in _EMBEDDING_DEPENDENT_TOOLS:
+                status = getattr(potpie, "parsing_status", None) if potpie else None
+                if status == "INFERRING":
+                    return (
+                        f"Tool '{tool.name}' is unavailable while the project is being indexed "
+                        "(status: INFERRING). Use 'nl_cypher_query' or 'get_code_file_structure'."
+                    )
+            return await original_func(**kwargs)
+    else:
+        def ctx_wrapper(ctx: RunContext[Any], **kwargs: Any) -> Any:  # type: ignore[misc]
+            potpie = ctx.deps.potpie if ctx.deps.potpie is not None else None
+            project_id = getattr(potpie, "project_id", None) if potpie else None
+            if project_id:
+                kwargs["project_id"] = project_id
+            if tool.name in _EMBEDDING_DEPENDENT_TOOLS:
+                status = getattr(potpie, "parsing_status", None) if potpie else None
+                if status == "INFERRING":
+                    return (
+                        f"Tool '{tool.name}' is unavailable while the project is being indexed "
+                        "(status: INFERRING). Use 'nl_cypher_query' or 'get_code_file_structure'."
+                    )
+            return original_func(**kwargs)
+
+    ctx_wrapper.__name__ = getattr(original_func, "__name__", tool.name)
+    ctx_wrapper.__doc__ = tool.description
+
+    new_schema = copy.deepcopy(schema)
+    new_schema.get("properties", {}).pop("project_id", None)
+    required = new_schema.get("required", [])
+    if "project_id" in required:
+        required.remove("project_id")
+
+    return Tool.from_schema(
+        function=ctx_wrapper,
+        name=tool.name,
+        description=tool.description,
+        json_schema=new_schema,
+        takes_ctx=True,
+    )
 
 
 class CodeGraphToolset(FunctionToolset[Any]):
@@ -207,6 +291,43 @@ class CodeGraphToolset(FunctionToolset[Any]):
             )
 
         return parts if parts else None
+    @classmethod
+    async def from_runtime(
+        cls,
+        backend: PotpieBackend,
+        tool_names: list[str] | None = None,
+        toolset_id: str = "potpie-kg",
+        exclude_embedding_tools: bool = False,
+    ) -> FunctionToolset[Any]:
+        """Create a FunctionToolset of low-level KG tools from a RuntimeBackend.
+
+        Fetches StructuredTool instances via backend.get_tools(), wraps them
+        with project_id injection, and returns a FunctionToolset for subagent use.
+
+        Requires RuntimeBackend — RestBackend raises NotImplementedError for get_tools().
+
+        Args:
+            backend: An initialised RuntimeBackend.
+            tool_names: Tool names to retrieve. Defaults to KG_TOOL_NAMES.
+            toolset_id: FunctionToolset identifier.
+            exclude_embedding_tools: Skip embedding-dependent tools.
+
+        Returns:
+            FunctionToolset with all requested tools wrapped and ready for use.
+        """
+        # Lazy import — keeps pydantic_deep importable without app.* at module load time.
+        from app.modules.intelligence.agents.chat_agents.multi_agent.utils.tool_utils import (
+            wrap_structured_tools,
+        )
+
+        names = tool_names if tool_names is not None else KG_TOOL_NAMES
+        langchain_tools = await backend.get_tools(
+            names, exclude_embedding_tools=exclude_embedding_tools
+        )
+        pydantic_tools = [_inject_project_id(t) for t in wrap_structured_tools(langchain_tools)]
+        return FunctionToolset(tools=pydantic_tools, id=toolset_id)
+
+
 
 
 __all__ = ["CodeGraphToolset"]

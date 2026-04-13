@@ -7,10 +7,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from pydantic_deep.subagents_potpie import (
-    _BLAST_RADIUS_TOOL_NAMES,
-    _QNA_TOOL_NAMES,
     _BLAST_RADIUS_INSTRUCTIONS,
+    _BLAST_RADIUS_TOOL_NAMES,
     _QNA_INSTRUCTIONS,
+    _QNA_TOOL_NAMES,
     make_potpie_subagents,
 )
 
@@ -19,7 +19,7 @@ class TestToolNameLists:
     def test_qna_tool_names_contains_expected_tools(self) -> None:
         assert "ask_knowledge_graph_queries" in _QNA_TOOL_NAMES
         assert "get_code_from_multiple_node_ids" in _QNA_TOOL_NAMES
-        assert "nl_cypher_query" in _QNA_TOOL_NAMES
+        assert "get_code_file_structure" in _QNA_TOOL_NAMES
 
     def test_blast_radius_tool_names_contains_change_detection(self) -> None:
         assert "change_detection" in _BLAST_RADIUS_TOOL_NAMES
@@ -60,76 +60,55 @@ class TestInstructions:
 
 
 class TestMakePotpieSubagents:
-    async def test_returns_seven_subagent_configs(self) -> None:
-        mock_backend = MagicMock()
-
+    def _patch_ctx(self) -> dict:
+        """Common sys.modules patches for make_potpie_subagents."""
         mock_rt = AsyncMock()
         mock_rt.db.get_session.return_value = MagicMock()
-        mock_svc = MagicMock()
-        mock_svc.get_tools.return_value = []
+        return {
+            "app.modules.intelligence.agents.chat_agents.multi_agent.utils.tool_utils": MagicMock(
+                wrap_structured_tools=MagicMock(return_value=[])
+            ),
+        }
 
-        with (
-            patch.dict("sys.modules", {
-                "potpie": MagicMock(PotpieRuntime=MagicMock(from_env=MagicMock(return_value=mock_rt))),
-                "app.modules.intelligence.agents.chat_agents.multi_agent.utils.tool_utils": MagicMock(
-                    wrap_structured_tools=MagicMock(return_value=[])
-                ),
-                "app.modules.intelligence.tools.tool_service": MagicMock(
-                    ToolService=MagicMock(return_value=mock_svc)
-                ),
-                "apps.potpie.toolset": MagicMock(_inject_project_id=lambda t: t),
-                "pydantic_ai.toolsets": MagicMock(FunctionToolset=MagicMock()),
-            }),
+    async def test_returns_two_active_subagent_configs(self) -> None:
+        mock_backend = MagicMock()
+
+        with patch(
+            "pydantic_deep.toolsets.code_graph.toolset.CodeGraphToolset.from_runtime",
+            new=AsyncMock(return_value=MagicMock()),
         ):
-            result = await make_potpie_subagents(mock_backend, "proj-123", "user-1")
+            result = await make_potpie_subagents(mock_backend, "user-1")
 
-        assert len(result) == 7
+        assert len(result) == 2
 
     async def test_subagent_names(self) -> None:
         mock_backend = MagicMock()
-        mock_rt = AsyncMock()
-        mock_rt.db.get_session.return_value = MagicMock()
-        mock_svc = MagicMock()
-        mock_svc.get_tools.return_value = []
 
-        with patch.dict("sys.modules", {
-            "potpie": MagicMock(PotpieRuntime=MagicMock(from_env=MagicMock(return_value=mock_rt))),
-            "app.modules.intelligence.agents.chat_agents.multi_agent.utils.tool_utils": MagicMock(
-                wrap_structured_tools=MagicMock(return_value=[])
-            ),
-            "app.modules.intelligence.tools.tool_service": MagicMock(
-                ToolService=MagicMock(return_value=mock_svc)
-            ),
-            "apps.potpie.toolset": MagicMock(_inject_project_id=lambda t: t),
-            "pydantic_ai.toolsets": MagicMock(FunctionToolset=MagicMock()),
-        }):
-            result = await make_potpie_subagents(mock_backend, "proj-123", "user-1")
+        with patch(
+            "pydantic_deep.toolsets.code_graph.toolset.CodeGraphToolset.from_runtime",
+            new=AsyncMock(return_value=MagicMock()),
+        ):
+            result = await make_potpie_subagents(mock_backend, "user-1")
 
         names = [s["name"] for s in result]
-        assert set(names) == {
-            "codebase_qna", "blast_radius", "debugging",
-            "code_generation", "lld", "unit_test", "integration_test",
-        }
+        assert set(names) == {"codebase_qna", "blast_radius"}
 
-    async def test_all_configs_have_no_preferred_mode(self) -> None:
+    async def test_all_configs_have_preferred_mode_async(self) -> None:
         mock_backend = MagicMock()
-        mock_rt = AsyncMock()
-        mock_rt.db.get_session.return_value = MagicMock()
-        mock_svc = MagicMock()
-        mock_svc.get_tools.return_value = []
 
-        with patch.dict("sys.modules", {
-            "potpie": MagicMock(PotpieRuntime=MagicMock(from_env=MagicMock(return_value=mock_rt))),
-            "app.modules.intelligence.agents.chat_agents.multi_agent.utils.tool_utils": MagicMock(
-                wrap_structured_tools=MagicMock(return_value=[])
-            ),
-            "app.modules.intelligence.tools.tool_service": MagicMock(
-                ToolService=MagicMock(return_value=mock_svc)
-            ),
-            "apps.potpie.toolset": MagicMock(_inject_project_id=lambda t: t),
-            "pydantic_ai.toolsets": MagicMock(FunctionToolset=MagicMock()),
-        }):
-            result = await make_potpie_subagents(mock_backend, "proj-123", "user-1")
+        with patch(
+            "pydantic_deep.toolsets.code_graph.toolset.CodeGraphToolset.from_runtime",
+            new=AsyncMock(return_value=MagicMock()),
+        ):
+            result = await make_potpie_subagents(mock_backend, "user-1")
 
         for config in result:
-            assert "preferred_mode" not in config, f"{config['name']} should not have preferred_mode set"
+            assert config.get("preferred_mode") == "async", (
+                f"{config['name']} should have preferred_mode='async'"
+            )
+
+    async def test_no_project_id_parameter(self) -> None:
+        """make_potpie_subagents should not accept project_id."""
+        import inspect
+        sig = inspect.signature(make_potpie_subagents)
+        assert "project_id" not in sig.parameters

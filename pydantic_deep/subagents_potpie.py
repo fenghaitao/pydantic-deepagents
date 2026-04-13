@@ -314,45 +314,45 @@ async def make_potpie_subagents(
     Returns:
         List of SubAgentConfig dicts for all seven agents.
     """
-    from apps.potpie.toolset import create_potpie_toolset
+    from pydantic_deep.toolsets.code_graph import CodeGraphToolset
 
-    qna_ts = await create_potpie_toolset(
+    qna_ts = await CodeGraphToolset.from_runtime(
         backend=backend,
         tool_names=_QNA_TOOL_NAMES,
         toolset_id="potpie-qna",
         exclude_embedding_tools=exclude_embedding_tools,
     )
-    # debug_ts = await create_potpie_toolset(
+    # debug_ts = await CodeGraphToolset.from_runtime(
     #     backend=backend,
     #     tool_names=_DEBUG_TOOL_NAMES,
     #     toolset_id="potpie-debug",
     #     exclude_embedding_tools=exclude_embedding_tools,
     # )
-    # codegen_ts = await create_potpie_toolset(
+    # codegen_ts = await CodeGraphToolset.from_runtime(
     #     backend=backend,
     #     tool_names=_CODE_GEN_TOOL_NAMES,
     #     toolset_id="potpie-codegen",
     #     exclude_embedding_tools=exclude_embedding_tools,
     # )
-    # lld_ts = await create_potpie_toolset(
+    # lld_ts = await CodeGraphToolset.from_runtime(
     #     backend=backend,
     #     tool_names=_LLD_TOOL_NAMES,
     #     toolset_id="potpie-lld",
     #     exclude_embedding_tools=exclude_embedding_tools,
     # )
-    # unit_ts = await create_potpie_toolset(
+    # unit_ts = await CodeGraphToolset.from_runtime(
     #     backend=backend,
     #     tool_names=_UNIT_TEST_TOOL_NAMES,
     #     toolset_id="potpie-unit-test",
     #     exclude_embedding_tools=exclude_embedding_tools,
     # )
-    # integ_ts = await create_potpie_toolset(
+    # integ_ts = await CodeGraphToolset.from_runtime(
     #     backend=backend,
     #     tool_names=_INTEGRATION_TEST_TOOL_NAMES,
     #     toolset_id="potpie-integ-test",
     #     exclude_embedding_tools=exclude_embedding_tools,
     # )
-    blast_ts = await create_potpie_toolset(
+    blast_ts = await CodeGraphToolset.from_runtime(
         backend=backend,
         tool_names=_BLAST_RADIUS_TOOL_NAMES,
         toolset_id="potpie-blast-radius",

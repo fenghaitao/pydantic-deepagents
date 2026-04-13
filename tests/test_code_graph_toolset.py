@@ -73,68 +73,90 @@ class TestListCodeProjects:
 class TestSearchCodebase:
     async def test_returns_results(self) -> None:
         b = _make_backend(search_result=[{"file": "foo.py"}])
-        ts = CodeGraphToolset(backend=b)
+        ts = CodeGraphToolset(backend=b, project_id="p1")
         ctx = _make_ctx()
-        result = await ts.tools["search_codebase"].function(ctx, project_id="p1", query="foo")
+        result = await ts.tools["search_codebase"].function(ctx, query="foo")
         data = json.loads(result)
         assert data[0]["file"] == "foo.py"
 
     async def test_returns_no_results_message(self) -> None:
         b = _make_backend(search_result=[])
+        ts = CodeGraphToolset(backend=b, project_id="p1")
+        ctx = _make_ctx()
+        result = await ts.tools["search_codebase"].function(ctx, query="xyz")
+        assert "No results" in result
+
+    async def test_no_project_id_returns_error(self) -> None:
+        b = _make_backend()
         ts = CodeGraphToolset(backend=b)
         ctx = _make_ctx()
-        result = await ts.tools["search_codebase"].function(ctx, project_id="p1", query="xyz")
-        assert "No results" in result
+        result = await ts.tools["search_codebase"].function(ctx, query="foo")
+        assert "no project_id" in result
 
 
 class TestQueryCodeGraph:
     async def test_returns_json(self) -> None:
         b = _make_backend(nl_result={"cypher_used": "MATCH...", "results": [], "count": 0})
-        ts = CodeGraphToolset(backend=b)
+        ts = CodeGraphToolset(backend=b, project_id="p1")
         ctx = _make_ctx()
-        result = await ts.tools["query_code_graph"].function(ctx, project_id="p1", question="what calls foo?")
+        result = await ts.tools["query_code_graph"].function(ctx, question="what calls foo?")
         data = json.loads(result)
         assert "cypher_used" in data
+
+    async def test_no_project_id_returns_error(self) -> None:
+        b = _make_backend()
+        ts = CodeGraphToolset(backend=b)
+        ctx = _make_ctx()
+        result = await ts.tools["query_code_graph"].function(ctx, question="foo?")
+        assert "no project_id" in result
 
 
 class TestAskKnowledgeGraph:
     async def test_returns_results(self) -> None:
         b = _make_backend(kg_result=[{"node": "A", "score": 0.9}])
-        ts = CodeGraphToolset(backend=b)
+        ts = CodeGraphToolset(backend=b, project_id="p1")
         ctx = _make_ctx()
         result = await ts.tools["ask_knowledge_graph"].function(
-            ctx, project_id="p1", questions=["find auth"]
+            ctx, questions=["find auth"]
         )
         data = json.loads(result)
         assert data[0]["node"] == "A"
 
     async def test_returns_no_results_message(self) -> None:
         b = _make_backend(kg_result=[])
-        ts = CodeGraphToolset(backend=b)
+        ts = CodeGraphToolset(backend=b, project_id="p1")
         ctx = _make_ctx()
         result = await ts.tools["ask_knowledge_graph"].function(
-            ctx, project_id="p1", questions=["find auth"]
+            ctx, questions=["find auth"]
         )
         assert "No results" in result
 
-    async def test_blocked_during_inferring(self) -> None:
+    async def test_no_project_id_returns_error(self) -> None:
         b = _make_backend()
         ts = CodeGraphToolset(backend=b)
+        ctx = _make_ctx()
+        result = await ts.tools["ask_knowledge_graph"].function(ctx, questions=["foo"])
+        assert "no project_id" in result
+
+    async def test_blocked_during_inferring(self) -> None:
+        b = _make_backend()
+        ts = CodeGraphToolset(backend=b, project_id="p1")
         potpie = MagicMock()
         potpie.parsing_status = "INFERRING"
+        potpie.project_id = "p1"
         ctx = _make_ctx(potpie=potpie)
         result = await ts.tools["ask_knowledge_graph"].function(
-            ctx, project_id="p1", questions=["find auth"]
+            ctx, questions=["find auth"]
         )
         assert "INFERRING" in result
         b.kg_search.assert_not_called()
 
     async def test_passes_node_ids(self) -> None:
         b = _make_backend(kg_result=[{"node": "B"}])
-        ts = CodeGraphToolset(backend=b)
+        ts = CodeGraphToolset(backend=b, project_id="p1")
         ctx = _make_ctx()
         await ts.tools["ask_knowledge_graph"].function(
-            ctx, project_id="p1", questions=["q"], node_ids=["n1"]
+            ctx, questions=["q"], node_ids=["n1"]
         )
         b.kg_search.assert_called_once_with("p1", ["q"], ["n1"])
 

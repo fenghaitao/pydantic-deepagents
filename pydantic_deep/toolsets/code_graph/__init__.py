@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING
 
 from pydantic_deep.toolsets.code_graph.backend import PotpieBackend
 from pydantic_deep.toolsets.code_graph.context import PotpieContext
-from pydantic_deep.toolsets.code_graph.toolset import CodeGraphToolset
+from pydantic_deep.toolsets.code_graph.toolset import KG_TOOL_NAMES, CodeGraphToolset
 
 if TYPE_CHECKING:
     # Avoid importing CliConfig at module level to prevent circular imports
@@ -87,5 +87,6 @@ __all__ = [
     "PotpieBackend",
     "PotpieContext",
     "CodeGraphToolset",
+    "KG_TOOL_NAMES",
     "make_backend",
 ]
