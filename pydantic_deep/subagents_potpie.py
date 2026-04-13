@@ -42,7 +42,6 @@ _QNA_TOOL_NAMES: list[str] = [
     "get_code_file_structure",
     "fetch_file",
     "fetch_files_batch",
-    "analyze_code_structure",
 ]
 
 _DEBUG_TOOL_NAMES: list[str] = [
@@ -369,7 +368,7 @@ async def make_potpie_subagents(
             ),
             "instructions": _QNA_INSTRUCTIONS,
             "toolsets": [qna_ts],
-            "include_filesystem": True,
+            "include_filesystem": False,
             "preferred_mode": "async",
         },
         # {

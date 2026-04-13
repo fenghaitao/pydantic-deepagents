@@ -563,7 +563,7 @@ def create_deep_agent(  # noqa: C901
             return create_deep_agent(
                 model=cfg.get("model", _sub_model),
                 instructions=cfg["instructions"],
-                include_filesystem=True,
+                include_filesystem=cfg.get("include_filesystem", True),
                 include_execute=True,
                 include_todo=True,
                 web_search=_sub_web_search,

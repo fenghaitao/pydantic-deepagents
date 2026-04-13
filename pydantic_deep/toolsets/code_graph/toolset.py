@@ -291,6 +291,7 @@ class CodeGraphToolset(FunctionToolset[Any]):
             )
 
         return parts if parts else None
+
     @classmethod
     async def from_runtime(
         cls,
