@@ -70,6 +70,7 @@ def _setup_logfire() -> None:
         from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 
         from apps.cli.logfire_tracer import SessionFileExporter
+        import apps.cli.logfire_tracer as _tracer
 
         token = os.environ.get("LOGFIRE_TOKEN")
         kwargs: dict = {"token": token, "send_to_logfire": "if-token-present"}
@@ -82,6 +83,7 @@ def _setup_logfire() -> None:
 
         logfire.configure(**kwargs)
         logfire.instrument_pydantic_ai()
+        _tracer._logfire_enabled = True
     except ImportError:
         print(
             "Logfire not installed. Run: pip install pydantic-deep[logfire]",

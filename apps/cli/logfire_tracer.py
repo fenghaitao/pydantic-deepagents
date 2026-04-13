@@ -16,6 +16,9 @@ _trace_id_to_path: dict[str, Path] = {}
 # Registry of open root spans keyed by session_id
 _root_spans: dict[str, tuple] = {}
 
+# Set to True by _setup_logfire() when logfire is configured
+_logfire_enabled: bool = False
+
 
 def _span_to_dict(span: "ReadableSpan") -> dict:
     """Serialize a ReadableSpan to a plain dict suitable for JSONL."""
@@ -109,15 +112,11 @@ def end_session_span(session_id: str) -> None:
 
 
 def notify_session_start(session_id: str, session_dir: Path) -> None:
-    """Start a session span and print the trace path if no token is set.
-
-    Call this once per session after the session_id is resolved.
-    """
-    import os
+    """Start a session span and print the trace path if logfire is enabled without a token."""
     import sys
 
     start_session_span(session_id, session_dir)
-    if not os.environ.get("LOGFIRE_TOKEN"):
+    if _logfire_enabled and not __import__("os").environ.get("LOGFIRE_TOKEN"):
         print(
             f"No LOGFIRE_TOKEN — traces will be written to {session_dir}/traces.jsonl",
             file=sys.stderr,
