@@ -39,7 +39,6 @@ Fast keyword search over the indexed code base (SQL-backed).
 Use this when you know the name of a function, class, or file and want to find
 it quickly. Returns matching nodes with file paths and brief metadata.
 
-:param project_id: The project UUID to search in.
 :param query: Search term — function name, class name, file path fragment, etc."""
 
 _NL_QUERY_DESC = """\
@@ -54,7 +53,6 @@ Use this for STRUCTURAL / RELATIONAL questions:
 
 Returns: {"cypher_used": str, "results": list[dict], "count": int}
 
-:param project_id: The project UUID to query.
 :param question: Natural language question about code structure."""
 
 _KG_SEARCH_DESC = """\
@@ -67,7 +65,6 @@ Use this for MEANING / BEHAVIOUR questions:
 
 Returns a ranked list of nodes with docstrings, file paths, and similarity scores.
 
-:param project_id: The project UUID to search.
 :param questions: One or more natural-language questions (list of strings).
 :param node_ids: Optional list of node IDs to narrow the search scope."""
 

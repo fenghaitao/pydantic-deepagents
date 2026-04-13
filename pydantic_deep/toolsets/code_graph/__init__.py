@@ -32,6 +32,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from pydantic_deep.toolsets.code_graph.backend import PotpieBackend
+from pydantic_deep.toolsets.code_graph.context import PotpieContext
 from pydantic_deep.toolsets.code_graph.toolset import CodeGraphToolset
 
 if TYPE_CHECKING:
@@ -84,6 +85,7 @@ def make_backend(config: CliConfig) -> PotpieBackend:
 
 __all__ = [
     "PotpieBackend",
+    "PotpieContext",
     "CodeGraphToolset",
     "make_backend",
 ]

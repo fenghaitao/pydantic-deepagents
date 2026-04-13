@@ -295,7 +295,6 @@ Be specific: name the affected files, functions, and APIs.
 
 async def make_potpie_subagents(
     backend: PotpieBackend,
-    project_id: str,
     user_id: str,
     exclude_embedding_tools: bool = False,
 ) -> list[Any]:
@@ -308,7 +307,6 @@ async def make_potpie_subagents(
     Args:
         backend: Initialised PotpieBackend (RuntimeBackend required for
             get_tools(); RestBackend raises NotImplementedError).
-        project_id: Active project UUID — injected into tool calls.
         user_id: User ID for ToolService access control.
         exclude_embedding_tools: Skip embedding-dependent tools (use when
             project is in INFERRING state).

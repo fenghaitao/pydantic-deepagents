@@ -52,93 +52,6 @@ from pydantic_deep.deps import DeepAgentDeps
 console = Console()
 
 
-def _build_potpie_context(project_id: str | None, user_id: str) -> Any:
-    """Build a PotpieContext if project_id is set, else return None."""
-    if not project_id:
-        return None
-    try:
-        from apps.potpie.context import PotpieContext
-
-        return PotpieContext(project_id=project_id, user_id=user_id)
-    except Exception:
-        return None
-
-
-async def _build_potpie_capability(project_id: str | None, user_id: str) -> Any:
-    """Async-build PotpieKGCapability for the given project, or return None."""
-    if not project_id:
-        return None
-    try:
-        from apps.cli.config import load_config
-        from apps.potpie.capability import PotpieKGCapability
-        from pydantic_deep.toolsets.code_graph import make_backend
-
-        cfg = load_config()
-        cfg.potpie_mode = "local"
-        backend = make_backend(cfg)
-        return await PotpieKGCapability.create(
-            backend=backend,
-            project_id=project_id,
-            user_id=user_id,
-        )
-    except Exception as e:
-        import sys
-
-        print(f"[potpie-kg] Warning: could not load KG tools: {e}", file=sys.stderr)
-        return None
-
-
-async def _build_potpie_resources(
-    project_id: str | None, user_id: str, root: Path | None = None
-) -> tuple[Any, list[Any], str | None]:
-    """Build PotpieKGCapability and SubAgentConfigs sharing one RuntimeBackend.
-
-    When *project_id* is ``None`` and *root* is provided, auto-discovers the
-    project from the git repo using the already-created backend — avoiding a
-    second PotpieRuntime initialization.
-
-    Returns:
-        ``(capability_or_None, subagents_list, effective_project_id_or_None)``
-    """
-    try:
-        from apps.cli.config import load_config
-        from apps.potpie.capability import PotpieKGCapability
-        from pydantic_deep.subagents_potpie import make_potpie_subagents
-        from pydantic_deep.toolsets.code_graph import make_backend
-
-        cfg = load_config()
-        cfg.potpie_mode = "local"
-        backend = make_backend(cfg)
-
-        # Auto-discover project from git using the already-created backend,
-        # avoiding a separate PotpieRuntime initialization.
-        if not project_id and root is not None:
-            from apps.cli.potpie_discovery import parse_git_identity
-
-            identity = parse_git_identity(root)
-            if identity:
-                repo_name, branch = identity
-                for p in await backend.list_projects():
-                    if p["repo_name"] == repo_name and p["branch_name"] == branch:
-                        project_id = p["id"]
-                        break
-
-        if not project_id:
-            await backend.close()
-            return None, [], None
-
-        cap = await PotpieKGCapability.create(
-            backend=backend, project_id=project_id, user_id=user_id
-        )
-        subs = await make_potpie_subagents(backend=backend, project_id=project_id, user_id=user_id)
-        return cap, subs, project_id
-    except Exception as e:
-        import sys
-
-        print(f"[potpie] Warning: could not load KG tools/subagents: {e}", file=sys.stderr)
-        return None, [], None
-
-
 logger = logging.getLogger(__name__)
 
 # Bold emerald prompt using RGB ANSI escapes (works on modern terminals)
@@ -2500,6 +2413,7 @@ async def run_interactive(  # noqa: C901
             _show_compression_start(context_pct, context_current, context_max)
 
     _auto_approve_state["active"] = auto_approve
+    _res: Any = None  # PotpieResources — closed in finally
 
     try:
         backend = None
@@ -2533,12 +2447,13 @@ async def run_interactive(  # noqa: C901
         # Auto-discover potpie project and build KG resources in one step,
         # sharing a single RuntimeBackend to avoid double PotpieRuntime init.
         _root = Path(working_dir) if working_dir else Path.cwd()
-        _potpie_cap, _potpie_subs, _effective_pid = await _build_potpie_resources(
-            project_id, user_id, root=_root
+        from apps.cli.potpie_setup import build_potpie_resources
+        _res = await build_potpie_resources(
+            project_id,
+            user_id,
+            root=_root,
+            on_status=lambda msg: console.print(f"[dim]{msg}[/dim]"),
         )
-        if _effective_pid and _effective_pid != project_id:
-            console.print(f"[dim]Auto-discovered Potpie project: {_effective_pid}[/dim]")
-        effective_project_id = project_id or _effective_pid
 
         result = _create_agent_with_retry(
             model=setup_model,
@@ -2550,9 +2465,9 @@ async def run_interactive(  # noqa: C901
             backend=backend,
             model_settings=model_settings,
             session_id=session_id,
-            potpie_context=_build_potpie_context(effective_project_id, user_id),
-            extra_capabilities=[_potpie_cap] if _potpie_cap else None,
-            potpie_subagents=_potpie_subs or None,
+            potpie_context=_res.context,
+            extra_toolsets=[_res.toolset] if _res.toolset else None,
+            potpie_subagents=_res.subagents or None,
             lean=lean,
         )
         if result[0] is None:
@@ -2590,6 +2505,10 @@ async def run_interactive(  # noqa: C901
         _save_readline_history()
         if sandbox_instance is not None:
             _stop_sandbox(sandbox_instance)
+        if _res is not None and _res.backend is not None:
+            import contextlib
+            with contextlib.suppress(Exception):
+                await _res.backend.close()
 
 
 async def _get_session_info(session_dir: Path) -> dict[str, Any] | None:

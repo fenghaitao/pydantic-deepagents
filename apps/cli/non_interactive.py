@@ -147,6 +147,7 @@ async def run_non_interactive(  # noqa: C901
                     err_console.print(line)
 
     sandbox_instance: Any = None
+    _potpie_backend: Any = None
 
     try:
         backend = None
@@ -158,58 +159,21 @@ async def run_non_interactive(  # noqa: C901
             sandbox_instance = backend
 
         # Potpie KG toolset — injected when --project-id is provided or auto-discovered
-        potpie_cap: Any = None
-        potpie_ctx: Any = None
-        potpie_subs: list[Any] = []
         try:
             from pathlib import Path as _Path
 
-            from apps.cli.config import load_config as _load_config
-            from apps.potpie.capability import PotpieKGCapability
-            from apps.potpie.context import PotpieContext
-            from pydantic_deep.subagents_potpie import make_potpie_subagents
-            from pydantic_deep.toolsets.code_graph import make_backend
+            from apps.cli.potpie_setup import build_potpie_resources
 
-            _cfg = _load_config()
-            if _cfg.potpie_mode == "local":
-                _backend = make_backend(_cfg)
-                try:
-                    # Auto-discover project ID from git using the already-created backend,
-                    # avoiding a separate PotpieRuntime initialization.
-                    if not project_id:
-                        from apps.cli.potpie_discovery import parse_git_identity
-
-                        _root = _Path(working_dir) if working_dir else _Path.cwd()
-                        _identity = parse_git_identity(_root)
-                        if _identity:
-                            _repo, _branch = _identity
-                            for _p in await _backend.list_projects():
-                                if _p["repo_name"] == _repo and _p["branch_name"] == _branch:
-                                    project_id = _p["id"]
-                                    if not effective_quiet:
-                                        err_console.print(
-                                            "[dim]Auto-discovered Potpie"
-                                            f" project: {project_id}[/dim]"
-                                        )
-                                    break
-
-                    if project_id:
-                        potpie_cap = await PotpieKGCapability.create(
-                            backend=_backend, project_id=project_id, user_id=user_id
-                        )
-                        potpie_ctx = PotpieContext(project_id=project_id, user_id=user_id)
-                        potpie_subs = await make_potpie_subagents(
-                            backend=_backend, project_id=project_id, user_id=user_id
-                        )
-                        if not effective_quiet:
-                            err_console.print(
-                                f"[dim]Potpie KG tools loaded for project {project_id}[/dim]"
-                            )
-                    else:
-                        await _backend.close()
-                except Exception:
-                    await _backend.close()
-                    raise
+            _root = _Path(working_dir) if working_dir else _Path.cwd()
+            _res = await build_potpie_resources(
+                project_id,
+                user_id,
+                root=_root,
+                on_status=None if effective_quiet else lambda msg: err_console.print(f"[dim]{msg}[/dim]"),
+            )
+            _potpie_backend = _res.backend
+            if _res.project_id:
+                project_id = _res.project_id
         except Exception as e:
             err_console.print(f"[yellow]Warning: could not load Potpie KG tools: {e}[/yellow]")
 
@@ -223,9 +187,9 @@ async def run_non_interactive(  # noqa: C901
             lean=lean,
             model_settings=model_settings,
             session_id=session_id,
-            extra_capabilities=[potpie_cap] if potpie_cap else None,
-            potpie_context=potpie_ctx,
-            potpie_subagents=potpie_subs or None,
+            extra_toolsets=[_res.toolset] if _res.toolset else None,
+            potpie_context=_res.context,
+            potpie_subagents=_res.subagents or None,
         )
 
         show_tools = not effective_quiet or verbose
@@ -275,9 +239,9 @@ async def run_non_interactive(  # noqa: C901
     finally:
         if sandbox_instance is not None:
             _stop_sandbox(sandbox_instance, err_console)
-        if potpie_cap is not None:
+        if _potpie_backend is not None:
             with contextlib.suppress(Exception):
-                await potpie_cap.aclose()
+                await _potpie_backend.close()
 
 
 def _write_output(console: Console, text: str, fmt: str) -> None:
