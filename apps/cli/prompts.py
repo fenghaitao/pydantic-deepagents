@@ -189,8 +189,10 @@ what was asked.
 SUBAGENT DELEGATION:
 - When you delegate a task via `task()`, it starts in the background and \
 returns a task_id.
-- Call `wait_tasks([task_id])` to block until the subagent finishes and \
-retrieve its result in one shot — do NOT return before the subagent finishes.
+- Poll with `check_task(task_id)` until status is 'completed' or 'failed'. \
+Do NOT return before the subagent finishes.
+- If status is 'waiting_for_answer', call `answer_subagent(task_id, <answer>)` \
+to unblock it, then keep polling.
 - Once completed, relay the subagent's result as your final answer.
 - When delegating to a named subagent (e.g. `codebase_qna`), ALWAYS use \
 `task(subagent="codebase_qna", ...)` — do NOT call the subagent's tools directly.
