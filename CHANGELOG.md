@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.13] - 2026-04-13
+
+### Fixed
+
+- **User-provided tools lost metadata when passed via `tools=` parameter** — tools registered through `create_deep_agent(tools=[...])` were previously added via `agent.tool(tool.function)` after construction, which hardcoded `takes_ctx=True` and discarded all `Tool`-level metadata (`name`, `description`, `prepare`, `max_retries`, `requires_approval`, `timeout`). Tools are now passed directly to the `Agent` constructor, preserving all metadata and correctly honouring the original `takes_ctx` value. (PR #75 by [@ilayu-blip](https://github.com/ilayu-blip))
+
 ## [0.3.12] - 2026-04-13
 
 ### Added
