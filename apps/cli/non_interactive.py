@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import os
 from typing import Any
 
 from pydantic_ai import (
@@ -136,6 +137,14 @@ async def run_non_interactive(  # noqa: C901
 
     _print_diagnostics(err_console, model, working_dir, sandbox, runtime, effective_quiet)
 
+    # Start a root OTEL span so all child spans are nested under this session
+    try:
+        from apps.cli.config import get_sessions_dir
+        from apps.cli.logfire_tracer import notify_session_start
+        notify_session_start(session_id, get_sessions_dir() / session_id)
+    except Exception:
+        pass
+
     def _on_cost(cost_info: Any) -> None:
         if not effective_quiet:
             run_cost = getattr(cost_info, "run_cost_usd", None)
@@ -242,6 +251,11 @@ async def run_non_interactive(  # noqa: C901
         if _potpie_backend is not None:
             with contextlib.suppress(Exception):
                 await _potpie_backend.close()
+        try:
+            from apps.cli.logfire_tracer import end_session_span
+            end_session_span(session_id)
+        except Exception:
+            pass
 
 
 def _write_output(console: Console, text: str, fmt: str) -> None:

@@ -2434,6 +2434,14 @@ async def run_interactive(  # noqa: C901
                 # Continue: reuse old session_id
                 session_id = resumed_id
 
+        # Start a root OTEL span so all child spans are nested under this session
+        try:
+            from apps.cli.config import get_sessions_dir
+            from apps.cli.logfire_tracer import notify_session_start
+            notify_session_start(session_id, get_sessions_dir() / session_id)
+        except Exception:
+            pass
+
         # First-run: check if any provider is configured
         from apps.cli.provider_setup import has_any_provider_configured, run_provider_setup
 
@@ -2509,6 +2517,11 @@ async def run_interactive(  # noqa: C901
             import contextlib
             with contextlib.suppress(Exception):
                 await _res.backend.close()
+        try:
+            from apps.cli.logfire_tracer import end_session_span
+            end_session_span(session_id)
+        except Exception:
+            pass
 
 
 async def _get_session_info(session_dir: Path) -> dict[str, Any] | None:

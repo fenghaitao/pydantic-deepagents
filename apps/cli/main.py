@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 from dataclasses import fields
 from pathlib import Path
 from typing import Annotated, Any
@@ -59,18 +60,29 @@ def _version_callback(value: bool) -> None:
 
 
 def _setup_logfire() -> None:
-    """Configure Logfire tracing for all pydantic-ai agents."""
+    """Configure Logfire tracing for all pydantic-ai agents.
+
+    When LOGFIRE_TOKEN is set, spans are sent to logfire.pydantic.dev.
+    Without a token, spans are written locally to .traces/<session_id>.jsonl.
+    """
     try:
         import logfire
+        from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 
-        logfire.configure(
-            token=os.environ.get("LOGFIRE_TOKEN"),
-            send_to_logfire="if-token-present",
-        )
+        from apps.cli.logfire_tracer import SessionFileExporter
+
+        token = os.environ.get("LOGFIRE_TOKEN")
+        kwargs: dict = {"token": token, "send_to_logfire": "if-token-present"}
+
+        if not token:
+            kwargs["additional_span_processors"] = [
+                SimpleSpanProcessor(SessionFileExporter())
+            ]
+            kwargs["console"] = False
+
+        logfire.configure(**kwargs)
         logfire.instrument_pydantic_ai()
     except ImportError:
-        import sys
-
         print(
             "Logfire not installed. Run: pip install pydantic-deep[logfire]",
             file=sys.stderr,
@@ -629,6 +641,41 @@ def providers_check(
 
 threads_app = typer.Typer(name="threads", help="Manage conversation threads.", no_args_is_help=True)
 app.add_typer(threads_app)
+
+
+# ── traces sub-app ────────────────────────────────────────────────────────────
+
+traces_app = typer.Typer(name="traces", help="View session traces.", no_args_is_help=True)
+app.add_typer(traces_app)
+
+
+@traces_app.command("view")
+def traces_view(
+    session_id: Annotated[str, typer.Argument(help="Session ID (or prefix)")],
+    directory: Annotated[
+        str | None,
+        typer.Option("--dir", "-d", help="Sessions directory"),
+    ] = None,
+) -> None:
+    """Render a session trace as a timeline in the terminal."""
+    from apps.cli.config import get_sessions_dir
+    from apps.cli.traces_view import render_traces
+
+    sessions_dir = Path(directory) if directory else get_sessions_dir()
+
+    # Support prefix matching
+    match = None
+    if sessions_dir.exists():
+        for d in sessions_dir.iterdir():
+            if d.is_dir() and d.name.startswith(session_id):
+                match = d
+                break
+
+    if match is None:
+        typer.echo(f"Session '{session_id}' not found in {sessions_dir}", err=True)
+        raise typer.Exit(1)
+
+    render_traces(match.name, match / "traces.jsonl")
 
 
 @threads_app.command("list")
