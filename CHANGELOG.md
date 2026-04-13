@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **CONTRIBUTING.md** — expanded with an explicit test policy (new functionality requires tests; 100 % coverage is enforced mechanically), a coding-standards reference table (Ruff, Pyright, MyPy, Bandit with `pyproject.toml` links), English-language requirement, API docs pointer, and a static-analysis section documenting all quality gates.
 - **`make all`** — now includes `make security` (Bandit scan) in addition to the existing format → lint → typecheck → testcov sequence.
+- **Docs site** — homepage (`docs/index.md`) rewritten with a plain-language problem/solution description and explicit "Next Steps" links to Installation, Getting Help, and Contributing. New `docs/contributing.md` page added to the nav, covering setup, PR requirements, and test policy. `docs/index.md` subtitle updated to remove jargon.
+- **OpenSSF Best Practices badge** — badge embedded in README and docs homepage; badge targets project ID 12495 at bestpractices.dev.
 
 ## [0.3.11] - 2026-04-13
 
