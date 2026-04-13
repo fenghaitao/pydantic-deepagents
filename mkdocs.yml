@@ -204,6 +204,7 @@ nav:
   - Pydantic Deep Agents: index.md
   - Installation: installation.md
   - Getting Help: getting-help.md
+  - Contributing: contributing.md
   - Core Concepts:
     - concepts/index.md
     - Agents: concepts/agents.md

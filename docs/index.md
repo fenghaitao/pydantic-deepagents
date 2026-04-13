@@ -1,6 +1,6 @@
 <h1 align="center">Pydantic Deep Agents</h1>
 <p align="center">
-  <em>Deep Agent Framework, the Pydantic AI way</em>
+  <em>Build autonomous AI assistants in Python — file access, web search, memory, multi-agent teams, and unlimited context, out of the box.</em>
 </p>
 <p align="center">
   <a href="https://github.com/vstorm-co/pydantic-deepagents/actions/workflows/ci.yml"><img src="https://github.com/vstorm-co/pydantic-deepagents/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -12,9 +12,13 @@
 
 ---
 
-**Pydantic Deep Agents** is a Python framework for building autonomous AI agents with planning, filesystem operations, subagent delegation, and skills. Built on [Pydantic AI](https://ai.pydantic.dev/).
+**pydantic-deep** is a Python library that solves the gap between an AI language model and a useful autonomous assistant.
 
-Think of it as the building blocks for creating your own [Claude Code](https://claude.ai/code), [Manus](https://manus.im/), or [Devin](https://devin.ai/)-style agents - but open source and self-hosted.
+A language model on its own can answer questions, but it cannot read your files, run code, search the web, remember things between sessions, or work on several tasks at once. **pydantic-deep provides all of that infrastructure** — so you wire up `create_deep_agent()` once and the model gains: file read/write/edit, shell execution, web search and browsing, persistent memory, parallel sub-tasks, and automatic handling of long conversations. You focus on what the agent should do; pydantic-deep handles the rest.
+
+Built on [Pydantic AI](https://ai.pydantic.dev/). Works with Claude, GPT-4, Gemini, and any other model supported by Pydantic AI.
+
+Think of it as the open-source, self-hosted foundation for building your own [Claude Code](https://claude.ai/code), [Manus](https://manus.im/), or [Devin](https://devin.ai/)-style AI assistant.
 
 ## Why use Pydantic Deep Agents?
 
@@ -119,3 +123,5 @@ Pydantic Deep Agents supports the [llms.txt](https://llmstxt.org/) standard. Acc
 - [Core Concepts](concepts/index.md) - Learn about agents, backends, and toolsets
 - [Examples](examples/index.md) - See pydantic-deep in action
 - [API Reference](api/index.md) - Complete API documentation
+- [Getting Help](getting-help.md) - Report bugs or request features
+- [Contributing](contributing.md) - How to contribute code or documentation
