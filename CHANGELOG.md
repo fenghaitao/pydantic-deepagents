@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.11] - 2026-04-13
+
+### Fixed
+
+- **Browser opens on every message (`BrowserCapability`)** — `async_playwright()` was entered eagerly
+  at the start of `wrap_run`, spawning the Playwright Node.js driver process (which in turn opened a
+  browser window) on every agent run — even when no browser tool was ever called. The Playwright context
+  manager is now entered lazily inside the first-tool-call launcher, so runs that never use the browser
+  incur zero Playwright overhead and no browser process is started.
+- **Browser window always visible (`browser_headless` default)** — the CLI config defaulted
+  `browser_headless = false`, meaning any browser launch produced a visible Chrome window. Changed to
+  `browser_headless = true`.
+
 ## [0.3.10] - 2026-04-12
 
 ### Changed

@@ -109,8 +109,8 @@ class CliConfig:
     logfire: bool = False
     include_browser: bool = True
     """Enable browser automation via Playwright (requires ``pydantic-deep[browser]``)."""
-    browser_headless: bool = False
-    """Run browser without a visible window. Default ``False`` — browser window is shown."""
+    browser_headless: bool = True
+    """Run browser without a visible window. Default ``True`` — browser window is hidden."""
 
 
 def load_config(path: Path | None = None) -> CliConfig:

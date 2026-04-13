@@ -669,6 +669,7 @@ class TestBrowserCapability:
             await cap.wrap_run(_ctx(), handler=handler)
 
         assert launcher_installed is not None  # launcher was installed
+        pw.__aenter__.assert_not_called()  # Playwright driver NOT started
         pw.chromium.launch.assert_not_called()  # Chromium NOT started
         browser.close.assert_not_called()  # nothing to close
 

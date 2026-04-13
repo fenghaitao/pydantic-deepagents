@@ -112,9 +112,10 @@ Allowed domains: {allowed_domains}
 class BrowserCapability(AbstractCapability[Any]):
     """Provides a real async Playwright browser to the agent.
 
-    Manages the full browser lifecycle: Chromium is launched before the agent
-    run starts (via ``wrap_run``) and closed in a ``finally`` block, guaranteeing
-    cleanup on both success and failure paths.
+    Manages the full browser lifecycle: Playwright and Chromium are started
+    lazily on the first browser-tool call and closed in a ``finally`` block,
+    guaranteeing cleanup on both success and failure paths.  Runs that never
+    invoke a browser tool incur zero Playwright overhead.
 
     Requires the ``browser`` optional extra::
 
@@ -228,10 +229,38 @@ class BrowserCapability(AbstractCapability[Any]):
                 result.append(td)
         return result
 
-    def _make_launcher(self, pw: Any) -> Any:
-        """Return an async callable that lazily launches Chromium on first tool call."""
+    async def wrap_run(
+        self,
+        ctx: RunContext[Any],
+        *,
+        handler: WrapRunHandler,
+    ) -> AgentRunResult[Any]:
+        """Install a lazy browser launcher and clean up after the run.
+
+        Both Playwright and Chromium are started only when the first browser
+        tool is actually called.  Runs that never use the browser incur zero
+        Playwright overhead — no subprocess is spawned, no browser window
+        appears.
+
+        A ``finally`` block guarantees cleanup of the browser and the
+        Playwright driver whether the run succeeds, raises, or is cancelled.
+
+        If Chromium is not installed and ``auto_install`` is ``True`` (the
+        default), ``playwright install chromium`` is run automatically on the
+        first tool call, and the launch is retried once.
+        """
+        _require_browser()
+        assert async_playwright is not None  # guaranteed by _require_browser()
+        _start_playwright = async_playwright  # local non-None reference for the closure
+
+        _pw_ctx: Any = None  # Playwright context manager — entered lazily
 
         async def _launch() -> None:
+            nonlocal _pw_ctx
+            _pw_ctx = _start_playwright()
+            pw = await _pw_ctx.__aenter__()
+            self._state.playwright_instance = pw
+
             browser = None
             try:
                 browser = await pw.chromium.launch(headless=self.headless)
@@ -278,44 +307,19 @@ class BrowserCapability(AbstractCapability[Any]):
             self._state.browser = browser
             self._state.page = page
 
-        return _launch
-
-    async def wrap_run(
-        self,
-        ctx: RunContext[Any],
-        *,
-        handler: WrapRunHandler,
-    ) -> AgentRunResult[Any]:
-        """Set up Playwright context and install a lazy browser launcher.
-
-        Chromium is **not** launched here.  Instead a launcher callable is
-        stored on ``_state._lazy_launcher`` and is invoked by
-        ``BrowserToolset._ensure_page()`` only when a browser tool is first
-        called.  Runs that never use the browser incur zero Playwright
-        overhead.
-
-        A ``finally`` block cleans up all state and closes the browser (if it
-        was ever launched) whether the run succeeds, raises, or is cancelled.
-
-        If Chromium is not installed and ``auto_install`` is ``True`` (the
-        default), ``playwright install chromium`` is run automatically on the
-        first tool call, and the launch is retried once.
-        """
-        _require_browser()
-        assert async_playwright is not None  # guaranteed by _require_browser()
-        async with async_playwright() as pw:
-            self._state.playwright_instance = pw
-            self._state._lazy_launcher = self._make_launcher(pw)
-            try:
-                return await handler()
-            finally:
-                self._state._lazy_launcher = None
-                self._state.playwright_instance = None
-                self._state.launch_error = None
-                if self._state.browser is not None:
-                    browser = self._state.browser
-                    self._state.page = None
-                    self._state.browser = None
-                    await browser.close()
-                else:
-                    self._state.page = None
+        self._state._lazy_launcher = _launch
+        try:
+            return await handler()
+        finally:
+            self._state._lazy_launcher = None
+            self._state.playwright_instance = None
+            self._state.launch_error = None
+            if self._state.browser is not None:
+                browser = self._state.browser
+                self._state.page = None
+                self._state.browser = None
+                await browser.close()
+            else:
+                self._state.page = None
+            if _pw_ctx is not None:
+                await _pw_ctx.__aexit__(None, None, None)
