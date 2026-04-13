@@ -5,7 +5,7 @@ The toolset is backend-agnostic: it accepts any PotpieBackend implementation
 
   list_code_projects   — enumerate indexed repositories
   search_codebase      — fast keyword search (SQL index)
-  query_code_graph     — structural NL→Cypher query (call graphs, imports, etc.)
+  nl_query             — structural NL→Cypher query (call graphs, imports, etc.)
   ask_knowledge_graph  — semantic / docstring similarity search
 
 For subagent use, ``CodeGraphToolset.from_runtime()`` fetches the full set of
@@ -162,7 +162,7 @@ class CodeGraphToolset(FunctionToolset[Any]):
     Tools:
         - ``list_code_projects``: enumerate indexed repos
         - ``search_codebase``: fast keyword search
-        - ``query_code_graph``: structural NL→Cypher query
+        - ``nl_query``: structural NL→Cypher query
         - ``ask_knowledge_graph``: semantic/docstring similarity search
     """
 
@@ -205,7 +205,7 @@ class CodeGraphToolset(FunctionToolset[Any]):
             return json.dumps(results, default=str)
 
         @self.tool(description=_NL_QUERY_DESC)
-        async def query_code_graph(
+        async def nl_query(
             ctx: RunContext[Any],
             question: str,
         ) -> str:
@@ -242,7 +242,7 @@ class CodeGraphToolset(FunctionToolset[Any]):
                 return (
                     "Semantic search is unavailable while the project is being indexed "
                     "(status: INFERRING). Embeddings are not ready yet. "
-                    "Use `query_code_graph` for structural questions instead."
+                    "Use `nl_query` for structural questions instead."
                 )
             results = await self._backend.kg_search(project_id, questions, node_ids or [])
             if not results:
@@ -264,7 +264,7 @@ class CodeGraphToolset(FunctionToolset[Any]):
             if is_inferring:
                 status_note = (
                     "\n\n> **Note:** Project is in INFERRING state — embeddings are being built. "
-                    "`ask_knowledge_graph` is unavailable. Use `query_code_graph` instead."
+                    "`ask_knowledge_graph` is unavailable. Use `nl_query` instead."
                 )
             elif is_parsing:
                 status_note = (
@@ -275,10 +275,10 @@ class CodeGraphToolset(FunctionToolset[Any]):
             parts.append(
                 f"## Code Graph\n\n"
                 f"Default project ID: `{self._project_id}`\n\n"
-                "You have access to code-graph tools (`query_code_graph`, "
+                "You have access to code-graph tools (`nl_query`, "
                 "`ask_knowledge_graph`, `search_codebase`, `list_code_projects`) "
                 "to answer questions about the indexed codebase.\n"
-                "Use `query_code_graph` for structural/relational questions "
+                "Use `nl_query` for structural/relational questions "
                 "(call graphs, imports, inheritance). "
                 "Use `ask_knowledge_graph` for semantic/behaviour questions." + status_note
             )
@@ -287,7 +287,7 @@ class CodeGraphToolset(FunctionToolset[Any]):
                 "## Code Graph\n\n"
                 "You have access to code-graph tools. Use `list_code_projects` "
                 "to discover available project IDs, then pass the relevant ID "
-                "to `query_code_graph`, `ask_knowledge_graph`, or `search_codebase`."
+                "to `nl_query`, `ask_knowledge_graph`, or `search_codebase`."
             )
 
         return parts if parts else None

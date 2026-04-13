@@ -38,7 +38,7 @@ class TestCodeGraphToolsetInit:
         ts = CodeGraphToolset(backend=b)
         assert "list_code_projects" in ts.tools
         assert "search_codebase" in ts.tools
-        assert "query_code_graph" in ts.tools
+        assert "nl_query" in ts.tools
         assert "ask_knowledge_graph" in ts.tools
 
     def test_default_project_id_none(self) -> None:
@@ -99,7 +99,7 @@ class TestQueryCodeGraph:
         b = _make_backend(nl_result={"cypher_used": "MATCH...", "results": [], "count": 0})
         ts = CodeGraphToolset(backend=b, project_id="p1")
         ctx = _make_ctx()
-        result = await ts.tools["query_code_graph"].function(ctx, question="what calls foo?")
+        result = await ts.tools["nl_query"].function(ctx, question="what calls foo?")
         data = json.loads(result)
         assert "cypher_used" in data
 
@@ -107,7 +107,7 @@ class TestQueryCodeGraph:
         b = _make_backend()
         ts = CodeGraphToolset(backend=b)
         ctx = _make_ctx()
-        result = await ts.tools["query_code_graph"].function(ctx, question="foo?")
+        result = await ts.tools["nl_query"].function(ctx, question="foo?")
         assert "no project_id" in result
 
 
