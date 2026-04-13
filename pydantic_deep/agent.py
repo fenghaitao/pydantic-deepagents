@@ -963,6 +963,10 @@ def create_deep_agent(  # noqa: C901
     if capabilities:
         all_capabilities.extend(capabilities)
 
+    # Add user-provided tools
+    if tools:
+        agent_create_kwargs["tools"] = tools
+
     if all_capabilities:
         agent_create_kwargs["capabilities"] = all_capabilities
 
@@ -1022,14 +1026,6 @@ def create_deep_agent(  # noqa: C901
             parts.append("\n".join(web_lines))
 
         return "\n\n".join(parts) if parts else ""
-
-    # Add user-provided tools
-    if tools:
-        for tool in tools:
-            if isinstance(tool, Tool):
-                agent.tool(tool.function)  # pragma: no cover
-            else:
-                agent.tool(tool)
 
     # Expose context middleware for CLI /compact and /context commands
     agent._context_middleware = context_mw  # type: ignore[attr-defined]
