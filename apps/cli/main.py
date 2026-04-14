@@ -59,6 +59,72 @@ def _version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
+def _setup_phoenix(endpoint: str) -> None:
+    """Configure OpenTelemetry tracing to send spans to an Arize Phoenix server."""
+    try:
+        import socket
+        from urllib.parse import urlparse
+
+        parsed = urlparse(endpoint)
+        host = parsed.hostname or "localhost"
+        port = parsed.port or 80
+        try:
+            with socket.create_connection((host, port), timeout=3):
+                pass
+        except OSError:
+            print(
+                f"Phoenix server not reachable at {endpoint}. "
+                "Start it with: PHOENIX_PORT=<port> phoenix serve",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
+
+        # Verify it's actually a Phoenix server, not some other app on that port
+        import urllib.request
+        import urllib.error
+        healthz_url = endpoint.rstrip("/") + "/healthz"
+        try:
+            with urllib.request.urlopen(healthz_url, timeout=3) as resp:
+                if resp.status != 200:
+                    raise ValueError(f"status {resp.status}")
+        except Exception as e:
+            print(
+                f"Port {port} is in use but does not appear to be a Phoenix server "
+                f"({healthz_url} failed: {e}). "
+                "Start Phoenix with: PHOENIX_PORT=<port> phoenix serve",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
+
+        from opentelemetry import trace
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+        from opentelemetry.sdk.resources import Resource
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+        from pydantic_ai.agent import Agent, InstrumentationSettings
+
+        otlp_endpoint = endpoint.rstrip("/") + "/v1/traces"
+        exporter = OTLPSpanExporter(endpoint=otlp_endpoint)
+        resource = Resource(attributes={"service.name": "pydantic-deep"})
+        provider = TracerProvider(resource=resource)
+        provider.add_span_processor(SimpleSpanProcessor(exporter))
+        trace.set_tracer_provider(provider)
+
+        # Pass provider explicitly so pydantic-ai uses it; include_content=True
+        # ensures user prompts and completions are captured as span attributes.
+        Agent.instrument_all(InstrumentationSettings(
+            tracer_provider=provider,
+            include_content=True,
+        ))
+    except ImportError as e:
+        print(
+            f"Phoenix tracing dependencies not installed ({e}). "
+            "Run: pip install opentelemetry-exporter-otlp-proto-http",
+            file=sys.stderr,
+        )
+        raise SystemExit(2) from None
+
+
 def _setup_logfire() -> None:
     """Configure Logfire tracing for all pydantic-ai agents.
 
@@ -108,6 +174,10 @@ def _main_callback(
         bool,
         typer.Option("--logfire/--no-logfire", help="Enable Logfire tracing"),
     ] = False,
+    phoenix_enabled: Annotated[
+        bool,
+        typer.Option("--phoenix/--no-phoenix", help="Send traces to Arize Phoenix (reads PHOENIX_PORT from .env, defaults to 6006)"),
+    ] = False,
 ) -> None:
     """Deep Agent CLI — AI coding assistant powered by pydantic-ai."""
     try:
@@ -130,6 +200,10 @@ def _main_callback(
 
     if logfire_enabled:
         _setup_logfire()
+
+    if phoenix_enabled:
+        phoenix_port = os.environ.get("PHOENIX_PORT", "6006")
+        _setup_phoenix(f"http://localhost:{phoenix_port}")
 
 
 def _build_model_settings(
