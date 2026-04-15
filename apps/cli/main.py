@@ -754,6 +754,48 @@ def traces_view(
     render_traces(match.name, match / "traces.jsonl")
 
 
+@traces_app.command("upload")
+def traces_upload(
+    session_id: Annotated[str, typer.Argument(help="Session ID (or prefix)")],
+    directory: Annotated[
+        str | None,
+        typer.Option("--dir", "-d", help="Sessions directory"),
+    ] = None,
+    phoenix_port: Annotated[
+        str | None,
+        typer.Option("--phoenix-port", "-p", help="Phoenix server port (default: PHOENIX_PORT env or 6006)"),
+    ] = None,
+) -> None:
+    """Upload a local session trace to the Phoenix tracing server."""
+    from apps.cli.config import get_sessions_dir
+    from apps.cli.traces_upload import upload_traces
+
+    sessions_dir = Path(directory) if directory else get_sessions_dir()
+
+    match = None
+    if sessions_dir.exists():
+        for d in sessions_dir.iterdir():
+            if d.is_dir() and d.name.startswith(session_id):
+                match = d
+                break
+
+    if match is None:
+        typer.echo(f"Session '{session_id}' not found in {sessions_dir}", err=True)
+        raise typer.Exit(1)
+
+    port = phoenix_port or os.environ.get("PHOENIX_PORT", "6006")
+    endpoint = f"http://localhost:{port}"
+
+    typer.echo(f"Uploading traces for session {match.name} to {endpoint} ...")
+    try:
+        count = upload_traces(match / "traces.jsonl", endpoint)
+    except FileNotFoundError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+
+    typer.echo(f"Uploaded {count} span(s). Open Phoenix at {endpoint} to view.")
+
+
 @threads_app.command("list")
 def threads_list(
     directory: Annotated[
