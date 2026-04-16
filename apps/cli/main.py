@@ -150,6 +150,14 @@ def _setup_logfire() -> None:
         logfire.configure(**kwargs)
         logfire.instrument_pydantic_ai()
         _tracer._logfire_enabled = True
+
+        log_level_str = os.environ.get("PYDANTIC_DEEP_LOG_LEVEL", "").upper()
+        if log_level_str:
+            import logging as _logging
+            _level = getattr(_logging, log_level_str, None)
+            if _level is not None:
+                _logging.getLogger("logfire").setLevel(_level)
+                _logging.getLogger("opentelemetry").setLevel(_level)
     except ImportError:
         print(
             "Logfire not installed. Run: pip install pydantic-deep[logfire]",

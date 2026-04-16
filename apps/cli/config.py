@@ -160,6 +160,10 @@ def _apply_env_overrides(config: CliConfig) -> None:
     if env_potpie_project_id:
         config.kg.project_id = env_potpie_project_id
 
+    env_logfire = os.environ.get("PYDANTIC_DEEP_LOGFIRE")
+    if env_logfire:
+        config.logfire = env_logfire.lower() in ("true", "1", "yes")
+
 
 def validate_config(config: CliConfig) -> list[str]:
     """Validate config values, returning a list of warning messages."""
