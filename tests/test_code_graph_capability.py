@@ -12,7 +12,7 @@ Validates:
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from hypothesis import given, settings
@@ -67,61 +67,33 @@ class TestCodeGraphCapabilityConstruction:
 
 
 class TestCodeGraphCapabilityGetToolset:
-    """Tests for get_toolset() before and after for_run()."""
+    """Tests for get_toolset() — always None until set externally by build_kg_capability."""
 
-    def test_get_toolset_returns_none_before_for_run(self) -> None:
+    def test_get_toolset_returns_none_before_external_setup(self) -> None:
         cap = CodeGraphCapability(runtime=_make_runtime())
         assert cap.get_toolset() is None
 
-    @pytest.mark.asyncio
-    async def test_get_toolset_returns_toolset_after_for_run(self) -> None:
-        backend = _make_runtime()
-        cap = CodeGraphCapability(runtime=backend, project_id="proj-1")
-        ctx = _make_run_ctx()
-
+    def test_get_toolset_returns_toolset_after_external_set(self) -> None:
+        cap = CodeGraphCapability(runtime=_make_runtime(), project_id="proj-1")
         mock_toolset = MagicMock()
-        with patch.object(
-            CodeGraphCapability,
-            "for_run",
-            new_callable=lambda: lambda self: _patched_for_run(self),
-        ):
-            pass
-
-        # Use a real patch on CodeGraphToolset.from_runtime
-        with patch(
-            "pydantic_deep.capabilities.code_graph.CodeGraphToolset.from_runtime",
-            new_callable=AsyncMock,
-            return_value=mock_toolset,
-        ):
-            new_cap = await cap.for_run(ctx)
-
-        assert new_cap.get_toolset() is mock_toolset
+        object.__setattr__(cap, "_toolset", mock_toolset)
+        assert cap.get_toolset() is mock_toolset
 
 
 class TestCodeGraphCapabilitySubagents:
-    """Tests for subagents property."""
+    """Tests for subagents property — set externally by build_kg_capability."""
 
-    def test_subagents_none_before_for_run(self) -> None:
+    def test_subagents_none_before_external_setup(self) -> None:
         cap = CodeGraphCapability(runtime=_make_runtime())
         assert cap.subagents is None
 
-    @pytest.mark.asyncio
-    async def test_subagents_set_after_for_run(self) -> None:
-        backend = _make_runtime()
-        cap = CodeGraphCapability(runtime=backend, project_id="proj-1")
-        ctx = _make_run_ctx()
-
-        mock_toolset = MagicMock()
-        with patch(
-            "pydantic_deep.capabilities.code_graph.CodeGraphToolset.from_runtime",
-            new_callable=AsyncMock,
-            return_value=mock_toolset,
-        ):
-            new_cap = await cap.for_run(ctx)
-
-        assert new_cap.subagents is not None
-        assert len(new_cap.subagents) == 2
-        names = [s["name"] for s in new_cap.subagents]
+    def test_subagents_returned_after_external_set(self) -> None:
+        cap = CodeGraphCapability(runtime=_make_runtime(), project_id="proj-1")
+        subagents = [{"name": "codebase_qna"}, {"name": "blast_radius"}]
+        object.__setattr__(cap, "_subagents", subagents)
+        assert cap.subagents is not None
+        assert len(cap.subagents) == 2
+        names = [s["name"] for s in cap.subagents]
         assert "codebase_qna" in names
         assert "blast_radius" in names
 
@@ -219,60 +191,27 @@ class TestCodeGraphCapabilityGetInstructions:
         assert "PARSING" in result
 
 
-class TestCodeGraphCapabilityForRun:
-    """Tests for for_run() returning new instance with toolset/subagents set."""
+class TestCodeGraphCapabilityExternalSetup:
+    """Tests that toolset and subagents are set externally (by build_kg_capability)
+    and that the original capability is not mutated by before_run."""
+
+    def test_toolset_and_subagents_set_via_object_setattr(self) -> None:
+        cap = CodeGraphCapability(runtime=_make_runtime(), project_id="proj-1")
+        mock_toolset = MagicMock()
+        subagents = [{"name": "codebase_qna"}, {"name": "blast_radius"}]
+        object.__setattr__(cap, "_toolset", mock_toolset)
+        object.__setattr__(cap, "_subagents", subagents)
+        assert cap.get_toolset() is mock_toolset
+        assert cap.subagents == subagents
 
     @pytest.mark.asyncio
-    async def test_for_run_returns_new_instance(self) -> None:
-        backend = _make_runtime()
-        cap = CodeGraphCapability(runtime=backend, project_id="proj-1")
-        ctx = _make_run_ctx()
-
+    async def test_before_run_does_not_clear_toolset(self) -> None:
+        cap = CodeGraphCapability(runtime=_make_runtime(), project_id="proj-1")
         mock_toolset = MagicMock()
-        with patch(
-            "pydantic_deep.capabilities.code_graph.CodeGraphToolset.from_runtime",
-            new_callable=AsyncMock,
-            return_value=mock_toolset,
-        ):
-            new_cap = await cap.for_run(ctx)
-
-        assert new_cap is not cap
-
-    @pytest.mark.asyncio
-    async def test_for_run_original_unchanged(self) -> None:
-        backend = _make_runtime()
-        cap = CodeGraphCapability(runtime=backend, project_id="proj-1")
+        object.__setattr__(cap, "_toolset", mock_toolset)
         ctx = _make_run_ctx()
-
-        mock_toolset = MagicMock()
-        with patch(
-            "pydantic_deep.capabilities.code_graph.CodeGraphToolset.from_runtime",
-            new_callable=AsyncMock,
-            return_value=mock_toolset,
-        ):
-            await cap.for_run(ctx)
-
-        # Original must remain unchanged
-        assert cap.get_toolset() is None
-        assert cap.subagents is None
-
-    @pytest.mark.asyncio
-    async def test_for_run_new_instance_has_toolset_and_subagents(self) -> None:
-        backend = _make_runtime()
-        cap = CodeGraphCapability(runtime=backend, project_id="proj-1")
-        ctx = _make_run_ctx()
-
-        mock_toolset = MagicMock()
-        with patch(
-            "pydantic_deep.capabilities.code_graph.CodeGraphToolset.from_runtime",
-            new_callable=AsyncMock,
-            return_value=mock_toolset,
-        ):
-            new_cap = await cap.for_run(ctx)
-
-        assert new_cap.get_toolset() is not None
-        assert new_cap.subagents is not None
-        assert len(new_cap.subagents) > 0
+        await cap.before_run(ctx)
+        assert cap.get_toolset() is mock_toolset
 
 
 # ---------------------------------------------------------------------------

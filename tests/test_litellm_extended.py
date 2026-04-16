@@ -63,8 +63,8 @@ class TestMapMessages:
         part = RetryPromptPart(content="bad args", tool_name="my_tool", tool_call_id="tc2")
         msgs = [ModelRequest(parts=[part])]
         result = _map_messages(msgs)
-        assert result[0]["role"] == "tool"
-        assert result[0]["tool_call_id"] == "tc2"
+        assert result[0]["role"] == "user"
+        assert "tool_call_id" not in result[0]
 
     def test_model_response_text(self) -> None:
         msgs = [ModelResponse(parts=[TextPart(content="Hi there")])]
