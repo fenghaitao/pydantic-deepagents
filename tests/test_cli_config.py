@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import fields
 from pathlib import Path
 
 import pytest
 
 from apps.cli.config import (
     CliConfig,
+    KgConfig,
     _apply_env_overrides,
     _coerce_value,
     _parse_config,
@@ -325,3 +327,35 @@ class TestEnvVarOverrides:
         monkeypatch.setenv("PYDANTIC_DEEP_MODEL", "anthropic:claude-sonnet")
         config = load_config(config_file)
         assert config.model == "anthropic:claude-sonnet"
+
+
+class TestKgConfig:
+    """Tests for KgConfig dataclass and CliConfig kg integration."""
+
+    def test_kg_config_defaults(self) -> None:
+        kg = KgConfig()
+        assert kg.project_id is None
+
+    def test_cli_config_has_kg_field(self) -> None:
+        config = CliConfig()
+        assert hasattr(config, "kg")
+        assert isinstance(config.kg, KgConfig)
+
+    def test_cli_config_no_potpie_flat_fields(self) -> None:
+        config = CliConfig()
+        assert not hasattr(config, "potpie_url")
+        assert not hasattr(config, "potpie_api_key")
+        assert not hasattr(config, "potpie_project_id")
+        assert not hasattr(config, "potpie_mode")
+
+    def test_kg_toml_section_parsing(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "config.toml"
+        config_file.write_text('[kg]\nproject_id = "abc-123"\n')
+        config = load_config(config_file)
+        assert config.kg.project_id == "abc-123"
+
+    def test_env_var_overrides_kg_project_id(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        config = CliConfig()
+        monkeypatch.setenv("POTPIE_PROJECT_ID", "proj-abc-123")
+        _apply_env_overrides(config)
+        assert config.kg.project_id == "proj-abc-123"

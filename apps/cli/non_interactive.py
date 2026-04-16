@@ -156,7 +156,6 @@ async def run_non_interactive(  # noqa: C901
                     err_console.print(line)
 
     sandbox_instance: Any = None
-    _potpie_backend: Any = None
 
     try:
         backend = None
@@ -168,21 +167,21 @@ async def run_non_interactive(  # noqa: C901
             sandbox_instance = backend
 
         # Potpie KG toolset — injected when --project-id is provided or auto-discovered
+        cap = None
         try:
             from pathlib import Path as _Path
 
-            from apps.cli.potpie_setup import build_potpie_resources
+            from apps.cli.potpie_setup import build_kg_capability
 
             _root = _Path(working_dir) if working_dir else _Path.cwd()
-            _res = await build_potpie_resources(
+            cap = await build_kg_capability(
                 project_id,
                 user_id,
                 root=_root,
                 on_status=None if effective_quiet else lambda msg: err_console.print(f"[dim]{msg}[/dim]"),
             )
-            _potpie_backend = _res.backend
-            if _res.project_id:
-                project_id = _res.project_id
+            if cap is not None and cap.context is not None and cap.context.project_id:
+                project_id = cap.context.project_id
         except Exception as e:
             err_console.print(f"[yellow]Warning: could not load Potpie KG tools: {e}[/yellow]")
 
@@ -196,9 +195,7 @@ async def run_non_interactive(  # noqa: C901
             lean=lean,
             model_settings=model_settings,
             session_id=session_id,
-            extra_toolsets=[_res.toolset] if _res.toolset else None,
-            potpie_context=_res.context,
-            potpie_subagents=_res.subagents or None,
+            kg_capability=cap,
         )
 
         show_tools = not effective_quiet or verbose
@@ -248,9 +245,9 @@ async def run_non_interactive(  # noqa: C901
     finally:
         if sandbox_instance is not None:
             _stop_sandbox(sandbox_instance, err_console)
-        if _potpie_backend is not None:
+        if cap is not None:
             with contextlib.suppress(Exception):
-                await _potpie_backend.close()
+                await cap.runtime.close()
         try:
             from apps.cli.logfire_tracer import end_session_span
             end_session_span(session_id)

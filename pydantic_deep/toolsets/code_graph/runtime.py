@@ -5,7 +5,7 @@ only the DB credentials (NEO4J_URI, POSTGRES_SERVER, etc.) in the environment.
 
 The runtime is initialized lazily on the first call and reused for the
 lifetime of the backend instance.  Call ``close()`` when done (or use
-``async with RuntimeBackend() as b:``).
+``async with CodeGraphRuntime() as b:``).
 
 Requires:
   - ``potpie`` Python package installed (in the same environment)
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 _DEFAULT_USER_ID = "defaultuser"
 
 
-class RuntimeBackend:
+class CodeGraphRuntime:
     """PotpieBackend implementation that calls PotpieRuntime directly.
 
     Instantiation is cheap; the runtime is initialized on the first call.
@@ -46,7 +46,7 @@ class RuntimeBackend:
 
             self._runtime = _RT.from_env()
             await self._runtime.initialize()
-            logger.debug("RuntimeBackend: PotpieRuntime initialized")
+            logger.debug("CodeGraphRuntime: PotpieRuntime initialized")
         return self._runtime
 
     async def close(self) -> None:
@@ -54,7 +54,7 @@ class RuntimeBackend:
             await self._runtime.close()
             self._runtime = None
 
-    async def __aenter__(self) -> RuntimeBackend:
+    async def __aenter__(self) -> CodeGraphRuntime:
         return self
 
     async def __aexit__(self, *_: Any) -> None:
@@ -294,4 +294,4 @@ class RuntimeBackend:
             session.close()
 
 
-__all__ = ["RuntimeBackend"]
+__all__ = ["CodeGraphRuntime"]

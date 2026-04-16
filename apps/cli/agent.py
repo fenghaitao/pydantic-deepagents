@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic_ai_backends import LocalBackend
 
@@ -11,6 +11,9 @@ from apps.cli.prompts import build_cli_instructions
 from pydantic_deep.agent import create_deep_agent
 from pydantic_deep.capabilities.hooks import Hook, HookEvent, HookInput, HookResult
 from pydantic_deep.deps import DeepAgentDeps
+
+if TYPE_CHECKING:
+    from pydantic_deep.capabilities.code_graph import CodeGraphCapability
 
 
 def _make_shell_allow_list_hook(allow_list: list[str]) -> Hook:
@@ -77,8 +80,7 @@ def create_cli_agent(  # noqa: C901
     extra_instructions: str | None = None,
     extra_toolsets: list[Any] | None = None,
     extra_capabilities: list[Any] | None = None,
-    potpie_context: Any | None = None,
-    potpie_subagents: list[Any] | None = None,
+    kg_capability: CodeGraphCapability | None = None,
 ) -> tuple[Any, DeepAgentDeps]:
     """Create a CLI-configured agent with all pydantic-deep capabilities.
 
@@ -173,6 +175,8 @@ def create_cli_agent(  # noqa: C901
 
     # Caller-supplied extra capabilities (preferred over extra_toolsets)
     extra_caps: list[Any] = list(extra_capabilities) if extra_capabilities else []
+    if kg_capability:
+        extra_caps.append(kg_capability)
 
     # Skills directories — searched in order, all matching dirs included:
     # 1. Bundled skills (shipped with CLI package)
@@ -216,8 +220,8 @@ def create_cli_agent(  # noqa: C901
     effective_memory = include_memory and not non_interactive
     effective_skills = include_skills if not lean else False  # Lean: no skills noise
     effective_plan = include_plan and not non_interactive
-    # Keep subagents enabled when potpie subagents are provided — they're the whole point
-    effective_subagents = include_subagents if (not lean or potpie_subagents) else False
+    # Keep subagents enabled when kg_capability subagents are provided — they're the whole point
+    effective_subagents = include_subagents if (not lean or kg_capability) else False
     effective_todo = include_todo if not lean else False  # Lean: no todo overhead
 
     # Model settings — non-interactive defaults, then config, then explicit overrides
@@ -259,7 +263,7 @@ def create_cli_agent(  # noqa: C901
         skill_directories=skill_dirs if effective_skills else None,
         interrupt_on=interrupt_on,
         model_settings=effective_model_settings or None,
-        subagents=potpie_subagents or None,
+        subagents=kg_capability.subagents if kg_capability else None,
         # Filesystem & execution
         include_execute=True,
         include_filesystem=True,
@@ -321,7 +325,6 @@ def create_cli_agent(  # noqa: C901
     deps = DeepAgentDeps(
         backend=effective_backend,
         context_middleware=context_mw,
-        potpie=potpie_context,
     )
     deps._task_manager = task_mgr  # type: ignore[attr-defined]
     return agent, deps

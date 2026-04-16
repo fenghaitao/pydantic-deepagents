@@ -1,4 +1,4 @@
-"""Tests for pydantic_deep.toolsets.code_graph.runtime_backend.RuntimeBackend."""
+"""Tests for pydantic_deep.toolsets.code_graph.runtime.CodeGraphRuntime."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from pydantic_deep.toolsets.code_graph.runtime_backend import RuntimeBackend
+from pydantic_deep.toolsets.code_graph.runtime import CodeGraphRuntime
 
 
 def _make_runtime() -> MagicMock:
@@ -31,13 +31,13 @@ def _potpie_modules(mock_rt: MagicMock) -> dict:
     return {"potpie": mock_potpie}
 
 
-class TestRuntimeBackendLifecycle:
+class TestCodeGraphRuntimeLifecycle:
     async def test_close_when_no_runtime(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         await b.close()  # should not raise
 
     async def test_close_calls_runtime_close(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
         with patch.dict("sys.modules", _potpie_modules(mock_rt)):
             await b._get_runtime()  # pyright: ignore[reportPrivateUsage]
@@ -48,13 +48,13 @@ class TestRuntimeBackendLifecycle:
     async def test_context_manager(self) -> None:
         mock_rt = _make_runtime()
         with patch.dict("sys.modules", _potpie_modules(mock_rt)):
-            async with RuntimeBackend() as b:
+            async with CodeGraphRuntime() as b:
                 # Trigger runtime initialization
                 await b._get_runtime()  # pyright: ignore[reportPrivateUsage]
             mock_rt.close.assert_called_once()
 
     async def test_get_runtime_reuses_instance(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
         with patch.dict("sys.modules", _potpie_modules(mock_rt)):
             rt1 = await b._get_runtime()  # pyright: ignore[reportPrivateUsage]
@@ -62,17 +62,17 @@ class TestRuntimeBackendLifecycle:
         assert rt1 is rt2
 
     def test_default_user_id(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         assert b._user_id == "defaultuser"  # pyright: ignore[reportPrivateUsage]
 
     def test_custom_user_id(self) -> None:
-        b = RuntimeBackend(user_id="alice")
+        b = CodeGraphRuntime(user_id="alice")
         assert b._user_id == "alice"  # pyright: ignore[reportPrivateUsage]
 
 
-class TestRuntimeBackendTools:
+class TestCodeGraphRuntimeTools:
     async def test_get_tools(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
         mock_svc = MagicMock()
         mock_svc.get_tools.return_value = ["tool_a"]
@@ -87,7 +87,7 @@ class TestRuntimeBackendTools:
         assert result == ["tool_a"]
 
     async def test_get_tools_exclude_embedding(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
         mock_svc = MagicMock()
         mock_svc.get_tools.return_value = []
@@ -102,9 +102,9 @@ class TestRuntimeBackendTools:
         mock_svc.get_tools.assert_called_once_with(["tool_a"], exclude_embedding_tools=True)
 
 
-class TestRuntimeBackendProjects:
+class TestCodeGraphRuntimeProjects:
     async def test_list_projects(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
         proj = MagicMock()
         proj.id = "p1"
@@ -122,7 +122,7 @@ class TestRuntimeBackendProjects:
         assert result[0]["repo_name"] == "myrepo"
 
     async def test_list_projects_no_repo_path(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
         proj = MagicMock(spec=["id", "repo_name", "branch_name", "status"])
         proj.id = "p2"
@@ -137,7 +137,7 @@ class TestRuntimeBackendProjects:
         assert result[0]["repo_path"] == ""
 
     async def test_delete_project(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
 
         with patch.dict("sys.modules", _potpie_modules(mock_rt)):
@@ -147,7 +147,7 @@ class TestRuntimeBackendProjects:
         mock_rt.projects.delete.assert_called_once_with("p1")
 
     async def test_delete_all_projects(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
         p1 = MagicMock(id="p1")
         p2 = MagicMock(id="p2")
@@ -159,7 +159,7 @@ class TestRuntimeBackendProjects:
         assert result["deleted"] == 2
 
     async def test_delete_all_projects_with_error(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
         p1 = MagicMock(id="p1")
         mock_rt.projects.list = AsyncMock(return_value=[p1])
@@ -172,9 +172,9 @@ class TestRuntimeBackendProjects:
         assert "errors" in result
 
 
-class TestRuntimeBackendParsing:
+class TestCodeGraphRuntimeParsing:
     async def test_parsing_status(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
 
         with patch.dict("sys.modules", _potpie_modules(mock_rt)):
@@ -183,7 +183,7 @@ class TestRuntimeBackendParsing:
         assert result == {"project_id": "p1", "status": "READY"}
 
     async def test_parse_success(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
 
         with patch.dict("sys.modules", _potpie_modules(mock_rt)):
@@ -193,7 +193,7 @@ class TestRuntimeBackendParsing:
         assert result["status"] == "READY"
 
     async def test_parse_failure(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
         mock_rt.parsing.parse_project = AsyncMock(
             return_value=MagicMock(success=False, error_message="failed")
@@ -206,7 +206,7 @@ class TestRuntimeBackendParsing:
         assert result["message"] == "failed"
 
     async def test_parse_no_repo_path_or_name_raises(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
 
         with patch.dict("sys.modules", _potpie_modules(mock_rt)):
@@ -214,7 +214,7 @@ class TestRuntimeBackendParsing:
                 await b.parse(None, None, "main")
 
     async def test_parse_auto_detects_commit(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
         mock_repo = MagicMock()
         mock_repo.head.commit.hexsha = "abc123"
@@ -232,9 +232,9 @@ class TestRuntimeBackendParsing:
         assert call_kwargs["commit_id"] == "abc123"
 
 
-class TestRuntimeBackendQuery:
+class TestCodeGraphRuntimeQuery:
     async def test_nl_query(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
         mock_tool = AsyncMock()
         mock_tool.arun = AsyncMock(return_value={"result": "ok"})
@@ -249,7 +249,7 @@ class TestRuntimeBackendQuery:
         assert result == {"result": "ok"}
 
     async def test_kg_search_list(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
         mock_tool = AsyncMock()
         mock_tool.arun = AsyncMock(return_value=[{"node": "A"}])
@@ -264,7 +264,7 @@ class TestRuntimeBackendQuery:
         assert result == [{"node": "A"}]
 
     async def test_kg_search_dict(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
         mock_tool = AsyncMock()
         mock_tool.arun = AsyncMock(return_value={"a": 1, "b": 2})
@@ -279,7 +279,7 @@ class TestRuntimeBackendQuery:
         assert isinstance(result, list)
 
     async def test_search(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
         mock_svc = AsyncMock()
         mock_svc.search_codebase = AsyncMock(return_value=[{"file": "foo.py"}])
@@ -294,7 +294,7 @@ class TestRuntimeBackendQuery:
         assert result == [{"file": "foo.py"}]
 
     async def test_search_non_list_returns_empty(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
         mock_svc = AsyncMock()
         mock_svc.search_codebase = AsyncMock(return_value=None)
@@ -309,9 +309,9 @@ class TestRuntimeBackendQuery:
         assert result == []
 
 
-class TestRuntimeBackendAgents:
+class TestCodeGraphRuntimeAgents:
     async def test_list_agents(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
         agent = MagicMock()
         agent.id = "a1"
@@ -327,9 +327,9 @@ class TestRuntimeBackendAgents:
         assert result[0]["description"] == "Answers questions"
 
 
-class TestRuntimeBackendCache:
+class TestCodeGraphRuntimeCache:
     async def test_cache_stats(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
         mock_inference_svc = MagicMock()
         mock_inference_svc.get_cache_stats.return_value = {"entries": 10}
@@ -350,7 +350,7 @@ class TestRuntimeBackendCache:
         assert result == {"entries": 10, "expired": 2}
 
     async def test_cache_clean_all(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
         mock_svc = MagicMock()
         mock_svc.clear_all_entries.return_value = 5
@@ -366,7 +366,7 @@ class TestRuntimeBackendCache:
         assert result == {"all": 5}
 
     async def test_cache_clean_project(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
         mock_svc = MagicMock()
         mock_svc.clear_entries_for_project.return_value = 3
@@ -382,7 +382,7 @@ class TestRuntimeBackendCache:
         assert result == {"project": 3}
 
     async def test_cache_clean_expired(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
         mock_svc = MagicMock()
         mock_svc.cleanup_expired_entries.return_value = 7
@@ -398,7 +398,7 @@ class TestRuntimeBackendCache:
         assert result == {"expired": 7}
 
     async def test_cache_clean_trim(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
         mock_svc = MagicMock()
         mock_svc.cleanup_least_accessed.return_value = 4
@@ -414,7 +414,7 @@ class TestRuntimeBackendCache:
         assert result == {"trimmed": 4}
 
     async def test_cache_clean_trim_none_result(self) -> None:
-        b = RuntimeBackend()
+        b = CodeGraphRuntime()
         mock_rt = _make_runtime()
         mock_svc = MagicMock()
         mock_svc.cleanup_least_accessed.return_value = None

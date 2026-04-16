@@ -280,10 +280,13 @@ def _map_messages(messages: list[ModelMessage]) -> list[dict[str, Any]]:  # noqa
                     if part.tool_name is None:
                         result.append({"role": "user", "content": part.model_response()})
                     else:
+                        # Emit as 'user' rather than 'tool' — strict APIs like GitHub
+                        # Copilot reject a second role='tool' message for the same
+                        # tool_call_id (e.g. when a ModelRetry fires after the original
+                        # tool response was already recorded).
                         result.append(
                             {
-                                "role": "tool",
-                                "tool_call_id": part.tool_call_id,
+                                "role": "user",
                                 "content": part.model_response(),
                             }
                         )

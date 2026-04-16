@@ -214,10 +214,10 @@ class TestInjectProjectId:
     def _make_ctx(self, project_id: str | None = "proj-1") -> Any:
         ctx = MagicMock()
         if project_id:
-            ctx.deps.potpie.project_id = project_id
-            ctx.deps.potpie.parsing_status = "READY"
+            ctx.deps.kg_context.project_id = project_id
+            ctx.deps.kg_context.parsing_status = "READY"
         else:
-            ctx.deps.potpie = None
+            ctx.deps.kg_context = None
         return ctx
 
     def test_returns_tool_unchanged_when_no_project_id_in_schema(self) -> None:
@@ -251,8 +251,8 @@ class TestInjectProjectId:
         tool = Tool(function=fn, name="ask_knowledge_graph_queries", description="test")
         wrapped = _inject_project_id(tool)
         ctx = MagicMock()
-        ctx.deps.potpie.project_id = "p1"
-        ctx.deps.potpie.parsing_status = "INFERRING"
+        ctx.deps.kg_context.project_id = "p1"
+        ctx.deps.kg_context.parsing_status = "INFERRING"
         result = await wrapped.function(ctx, queries=[])
         assert "INFERRING" in result
 
@@ -272,8 +272,8 @@ class TestInjectProjectId:
         tool = Tool(function=fn, name="ask_knowledge_graph_queries", description="test")
         wrapped = _inject_project_id(tool)
         ctx = MagicMock()
-        ctx.deps.potpie.project_id = "p1"
-        ctx.deps.potpie.parsing_status = "INFERRING"
+        ctx.deps.kg_context.project_id = "p1"
+        ctx.deps.kg_context.parsing_status = "INFERRING"
         result = wrapped.function(ctx, queries=[])
         assert "INFERRING" in result
 
@@ -286,10 +286,10 @@ class TestInjectProjectId:
 
     @pytest.mark.asyncio
     async def test_async_tool_no_potpie_context(self) -> None:
-        """Covers async ctx_wrapper when potpie is None (no project_id injected)."""
+        """Covers async ctx_wrapper when kg_context is None (no project_id injected)."""
         tool = self._make_tool_with_project_id(is_async=True)
         wrapped = _inject_project_id(tool)
-        ctx = self._make_ctx(project_id=None)  # potpie is None
+        ctx = self._make_ctx(project_id=None)  # kg_context is None
         # project_id won't be injected — call will fail with missing arg, catch TypeError
         try:
             await wrapped.function(ctx, query="hello")
@@ -297,7 +297,7 @@ class TestInjectProjectId:
             pass  # expected — project_id not injected, original func requires it
 
     def test_sync_tool_no_potpie_context(self) -> None:
-        """Covers sync ctx_wrapper when potpie is None (no project_id injected)."""
+        """Covers sync ctx_wrapper when kg_context is None (no project_id injected)."""
         tool = self._make_tool_with_project_id(is_async=False)
         wrapped = _inject_project_id(tool)
         ctx = self._make_ctx(project_id=None)
@@ -317,8 +317,8 @@ class TestInjectProjectId:
         tool = Tool(function=fn, name="fetch_file", description="test")
         wrapped = _inject_project_id(tool)
         ctx = MagicMock()
-        ctx.deps.potpie.project_id = "p1"
-        ctx.deps.potpie.parsing_status = "INFERRING"
+        ctx.deps.kg_context.project_id = "p1"
+        ctx.deps.kg_context.parsing_status = "INFERRING"
         result = await wrapped.function(ctx, query="x")
         assert result == "ok"
 
@@ -332,8 +332,8 @@ class TestInjectProjectId:
         tool = Tool(function=fn, name="fetch_file", description="test")
         wrapped = _inject_project_id(tool)
         ctx = MagicMock()
-        ctx.deps.potpie.project_id = "p1"
-        ctx.deps.potpie.parsing_status = "INFERRING"
+        ctx.deps.kg_context.project_id = "p1"
+        ctx.deps.kg_context.parsing_status = "INFERRING"
         result = wrapped.function(ctx, query="x")
         assert result == "ok"
 
@@ -358,7 +358,7 @@ class TestInjectProjectId:
 
     @pytest.mark.asyncio
     async def test_async_embedding_tool_no_potpie_no_block(self) -> None:
-        """Covers async ctx_wrapper: embedding tool but potpie is None (no INFERRING check)."""
+        """Covers async ctx_wrapper: embedding tool but kg_context is None (no INFERRING check)."""
         from pydantic_ai import Tool
 
         async def fn(project_id: str, queries: list) -> str:
@@ -367,7 +367,7 @@ class TestInjectProjectId:
         tool = Tool(function=fn, name="ask_knowledge_graph_queries", description="test")
         wrapped = _inject_project_id(tool)
         ctx = MagicMock()
-        ctx.deps.potpie = None  # no potpie context
+        ctx.deps.kg_context = None  # no kg_context
         # project_id won't be injected, original func will get missing arg
         try:
             await wrapped.function(ctx, queries=[])
@@ -375,7 +375,7 @@ class TestInjectProjectId:
             pass  # expected — no project_id
 
     def test_sync_embedding_tool_no_potpie_no_block(self) -> None:
-        """Covers sync ctx_wrapper: embedding tool but potpie is None (no INFERRING check)."""
+        """Covers sync ctx_wrapper: embedding tool but kg_context is None (no INFERRING check)."""
         from pydantic_ai import Tool
 
         def fn(project_id: str, queries: list) -> str:  # type: ignore[misc]
@@ -384,7 +384,7 @@ class TestInjectProjectId:
         tool = Tool(function=fn, name="ask_knowledge_graph_queries", description="test")
         wrapped = _inject_project_id(tool)
         ctx = MagicMock()
-        ctx.deps.potpie = None
+        ctx.deps.kg_context = None
         try:
             wrapped.function(ctx, queries=[])
         except TypeError:

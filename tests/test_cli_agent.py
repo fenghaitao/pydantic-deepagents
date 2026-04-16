@@ -255,3 +255,38 @@ class TestBuildCliInstructions:
         interactive = build_cli_instructions()
         non_interactive = build_cli_instructions(non_interactive=True)
         assert len(non_interactive) > len(interactive)
+
+
+class TestCreateCliAgentKgCapability:
+    """Tests for create_cli_agent() kg_capability parameter."""
+
+    def test_kg_capability_none_creates_agent(self, tmp_path: Path) -> None:
+        """kg_capability=None should create agent without KG tools."""
+        agent, deps = create_cli_agent(
+            model=TEST_MODEL,
+            working_dir=str(tmp_path),
+            kg_capability=None,
+        )
+        assert agent is not None
+        assert deps is not None
+
+    def test_kg_capability_wires_into_agent(self, tmp_path: Path) -> None:
+        """kg_capability is appended to extra_capabilities and subagents are wired."""
+        from unittest.mock import MagicMock, patch
+
+        mock_cap = MagicMock()
+        mock_cap.subagents = None  # before for_run()
+
+        with patch("apps.cli.agent.create_deep_agent") as mock_create:
+            mock_create.return_value = MagicMock()
+            create_cli_agent(
+                model=TEST_MODEL,
+                working_dir=str(tmp_path),
+                kg_capability=mock_cap,
+            )
+            call_kwargs = mock_create.call_args.kwargs
+            # kg_capability should be in middleware (extra_caps)
+            middleware = call_kwargs.get("middleware") or []
+            assert mock_cap in middleware
+            # subagents should come from kg_capability.subagents
+            assert call_kwargs.get("subagents") == mock_cap.subagents

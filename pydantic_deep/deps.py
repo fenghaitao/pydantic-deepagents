@@ -24,6 +24,7 @@ class DeepAgentDeps:
         files: In-memory file cache (used with StateBackend)
         todos: Task list for planning
         subagents: Pre-configured subagents available for delegation
+        kg_context: holds the `PotpieContext | None` for the current KG session (generic name, not potpie-specific)
     """
 
     backend: BackendProtocol = field(default_factory=StateBackend)
@@ -34,7 +35,7 @@ class DeepAgentDeps:
     ask_user: Any = field(default=None, repr=False)  # Callback for interactive questions
     context_middleware: Any = field(default=None, repr=False)  # ContextManagerCapability | None
     share_todos: bool = False  # When True, subagents share parent's todo list
-    potpie: Any = field(default=None, repr=False)  # PotpieContext | None
+    kg_context: Any = field(default=None, repr=False)  # PotpieContext | None
 
     def __post_init__(self) -> None:
         """Initialize backend with files if using StateBackend."""
@@ -227,7 +228,7 @@ class DeepAgentDeps:
             uploads=self.uploads,  # Shared reference
             ask_user=self.ask_user,  # Propagate to subagents
             share_todos=self.share_todos,  # Propagate to subagents
-            potpie=self.potpie,  # Propagate project context to subagents
+            kg_context=self.kg_context,  # Propagate project context to subagents
         )
 
 

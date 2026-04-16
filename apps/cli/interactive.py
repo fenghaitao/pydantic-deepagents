@@ -2413,7 +2413,7 @@ async def run_interactive(  # noqa: C901
             _show_compression_start(context_pct, context_current, context_max)
 
     _auto_approve_state["active"] = auto_approve
-    _res: Any = None  # PotpieResources — closed in finally
+    cap: Any = None  # CodeGraphCapability — closed in finally
 
     try:
         backend = None
@@ -2453,10 +2453,10 @@ async def run_interactive(  # noqa: C901
                 return
 
         # Auto-discover potpie project and build KG resources in one step,
-        # sharing a single RuntimeBackend to avoid double PotpieRuntime init.
+        # sharing a single CodeGraphRuntime to avoid double PotpieRuntime init.
         _root = Path(working_dir) if working_dir else Path.cwd()
-        from apps.cli.potpie_setup import build_potpie_resources
-        _res = await build_potpie_resources(
+        from apps.cli.potpie_setup import build_kg_capability
+        cap = await build_kg_capability(
             project_id,
             user_id,
             root=_root,
@@ -2473,9 +2473,7 @@ async def run_interactive(  # noqa: C901
             backend=backend,
             model_settings=model_settings,
             session_id=session_id,
-            potpie_context=_res.context,
-            extra_toolsets=[_res.toolset] if _res.toolset else None,
-            potpie_subagents=_res.subagents or None,
+            kg_capability=cap,
             lean=lean,
         )
         if result[0] is None:
@@ -2513,10 +2511,10 @@ async def run_interactive(  # noqa: C901
         _save_readline_history()
         if sandbox_instance is not None:
             _stop_sandbox(sandbox_instance)
-        if _res is not None and _res.backend is not None:
+        if cap is not None:
             import contextlib
             with contextlib.suppress(Exception):
-                await _res.backend.close()
+                await cap.runtime.close()
         try:
             from apps.cli.logfire_tracer import end_session_span
             end_session_span(session_id)

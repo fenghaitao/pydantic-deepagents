@@ -71,16 +71,20 @@ _STR_FIELDS = frozenset(
         "charset",
         "reasoning_effort",
         "thinking_effort",
-        "potpie_url",
-        "potpie_api_key",
-        "potpie_project_id",
-        "potpie_mode",
     }
 )
 
 _INT_FIELDS = frozenset({"max_history", "thinking_budget"})
 
 _FLOAT_FIELDS = frozenset({"temperature"})
+
+
+@dataclass
+class KgConfig:
+    """Configuration for the code-graph / KG backend."""
+
+    project_id: str | None = None
+    """Default project UUID injected into agent system prompt."""
 
 
 @dataclass
@@ -111,17 +115,9 @@ class CliConfig:
     temperature: float | None = None
     reasoning_effort: str | None = None
     logfire: bool = False
-    # ── Potpie code-graph integration ──────────────────────────────────────
-    potpie_url: str | None = None
-    """Potpie API base URL (e.g. ``http://localhost:8001``).
-    Auto-discovered from singularity if not set."""
-    potpie_api_key: str | None = None
-    """API key sent as ``X-API-Key`` header (REST mode only)."""
-    potpie_project_id: str | None = None
-    """Default project UUID injected into agent system prompt."""
-    potpie_mode: str = "local"
-    """Backend mode: ``"local"`` (default, direct PotpieRuntime) or
-    ``"rest"`` (HTTP to potpie API)."""
+    # ── Code-graph / KG integration ────────────────────────────────────────
+    kg: KgConfig = field(default_factory=KgConfig)
+    """Nested KG/potpie connection parameters."""
 
 
 def load_config(path: Path | None = None) -> CliConfig:
@@ -159,22 +155,10 @@ def _apply_env_overrides(config: CliConfig) -> None:
     if env_charset:
         config.charset = env_charset
 
-    # Potpie integration overrides
-    env_potpie_url = os.environ.get("POTPIE_URL")
-    if env_potpie_url:
-        config.potpie_url = env_potpie_url
-
-    env_potpie_api_key = os.environ.get("POTPIE_API_KEY")
-    if env_potpie_api_key:
-        config.potpie_api_key = env_potpie_api_key
-
+    # Potpie / KG integration overrides
     env_potpie_project_id = os.environ.get("POTPIE_PROJECT_ID")
     if env_potpie_project_id:
-        config.potpie_project_id = env_potpie_project_id
-
-    env_potpie_mode = os.environ.get("POTPIE_MODE")
-    if env_potpie_mode:
-        config.potpie_mode = env_potpie_mode
+        config.kg.project_id = env_potpie_project_id
 
 
 def validate_config(config: CliConfig) -> list[str]:
@@ -207,7 +191,14 @@ def validate_config(config: CliConfig) -> list[str]:
 def _parse_config(data: dict[str, Any]) -> CliConfig:
     """Parse TOML dict into CliConfig, ignoring unknown keys."""
     valid_fields = {f.name for f in fields(CliConfig)}
-    filtered = {k: v for k, v in data.items() if k in valid_fields}
+    filtered: dict[str, Any] = {}
+    for k, v in data.items():
+        if k == "kg" and isinstance(v, dict):
+            kg_fields = {f.name for f in fields(KgConfig)}
+            kg_data = {fk: fv for fk, fv in v.items() if fk in kg_fields}
+            filtered["kg"] = KgConfig(**kg_data)
+        elif k in valid_fields:
+            filtered[k] = v
     return CliConfig(**filtered)
 
 
@@ -227,11 +218,23 @@ def set_config_value(path: Path, key: str, value: str) -> None:
     """Set a config value in the TOML file.
 
     Creates the file and parent directories if they don't exist.
+    Supports nested keys using dot notation (e.g. ``kg.url``).
     """
-    valid_fields = {f.name for f in fields(CliConfig)}
-    if key not in valid_fields:
-        msg = f"Unknown config key: {key}. Valid keys: {', '.join(sorted(valid_fields))}"
-        raise KeyError(msg)
+    # Handle nested kg.* keys
+    if "." in key:
+        section, subkey = key.split(".", 1)
+        if section != "kg":
+            msg = f"Unknown config section: {section}. Only 'kg' is supported."
+            raise KeyError(msg)
+        kg_fields = {f.name for f in fields(KgConfig)}
+        if subkey not in kg_fields:
+            msg = f"Unknown kg config key: {subkey}. Valid keys: {', '.join(sorted(kg_fields))}"
+            raise KeyError(msg)
+    else:
+        valid_fields = {f.name for f in fields(CliConfig)}
+        if key not in valid_fields:
+            msg = f"Unknown config key: {key}. Valid keys: {', '.join(sorted(valid_fields))}"
+            raise KeyError(msg)
 
     if path.exists():
         with open(path, "rb") as f:
@@ -240,7 +243,13 @@ def set_config_value(path: Path, key: str, value: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         data = {}
 
-    data[key] = _coerce_value(key, value)
+    if "." in key:
+        section, subkey = key.split(".", 1)
+        if section not in data or not isinstance(data[section], dict):
+            data[section] = {}
+        data[section][subkey] = _coerce_value(subkey, value)
+    else:
+        data[key] = _coerce_value(key, value)
     _write_toml(path, data)
 
 
@@ -260,10 +269,15 @@ def _coerce_value(key: str, value: str) -> Any:
 
 
 def _write_toml(path: Path, data: dict[str, Any]) -> None:
-    """Write a flat key-value dict as TOML."""
+    """Write a flat key-value dict as TOML, with support for one level of nested sections."""
     lines: list[str] = []
+    nested: dict[str, dict[str, Any]] = {}
+
     for key in sorted(data):
         value = data[key]
+        if isinstance(value, dict):
+            nested[key] = value
+            continue
         if value is None:
             continue
         if isinstance(value, bool):
@@ -275,6 +289,27 @@ def _write_toml(path: Path, data: dict[str, Any]) -> None:
             lines.append(f"{key} = [{items}]")
         else:
             lines.append(f'{key} = "{value}"')
+
+    for section in sorted(nested):
+        section_data = nested[section]
+        section_lines: list[str] = []
+        for k in sorted(section_data):
+            v = section_data[k]
+            if v is None:
+                continue
+            if isinstance(v, bool):
+                section_lines.append(f"{k} = {'true' if v else 'false'}")
+            elif isinstance(v, (float, int)):
+                section_lines.append(f"{k} = {v}")
+            elif isinstance(v, list):
+                items = ", ".join(f'"{i}"' for i in v)
+                section_lines.append(f"{k} = [{items}]")
+            else:
+                section_lines.append(f'{k} = "{v}"')
+        if section_lines:
+            lines.append(f"\n[{section}]")
+            lines.extend(section_lines)
+
     path.write_text("\n".join(lines) + "\n")
 
 
@@ -283,12 +318,18 @@ def format_config(config: CliConfig) -> str:
     lines: list[str] = []
     for f in fields(config):
         value = getattr(config, f.name)
-        lines.append(f"  {f.name} = {value!r}")
+        if f.name == "kg" and isinstance(value, KgConfig):
+            lines.append("  [kg]")
+            for kf in fields(value):
+                lines.append(f"    {kf.name} = {getattr(value, kf.name)!r}")
+        else:
+            lines.append(f"  {f.name} = {value!r}")
     return "\n".join(lines)
 
 
 __all__ = [
     "CliConfig",
+    "KgConfig",
     "DEFAULT_CONFIG_DIR",
     "DEFAULT_CONFIG_PATH",
     "DEFAULT_THREADS_DIR",

@@ -1,51 +1,38 @@
-"""Potpie resource setup for CLI agents.
+"""Code-graph resource setup for CLI agents.
 
-Shared by interactive and non-interactive modes. Builds all potpie
-resources (CodeGraphToolset, subagents, PotpieContext) from a single
-RuntimeBackend, with optional git-based project auto-discovery.
+Shared by interactive and non-interactive modes. Builds a
+CodeGraphCapability from a single CodeGraphRuntime, with optional
+git-based project auto-discovery.
 """
 
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pydantic_deep.capabilities.code_graph import CodeGraphCapability
 
 
-@dataclass
-class PotpieResources:
-    """All potpie resources needed by a CLI agent session.
-
-    Attributes:
-        toolset: CodeGraphToolset for the main agent, or None if unavailable.
-        subagents: SubAgentConfig list for potpie subagents.
-        context: PotpieContext to set on deps.potpie, or None.
-        backend: The RuntimeBackend — caller MUST close in a finally block.
-        project_id: The resolved project UUID, or None if not found.
-    """
-
-    toolset: Any = None
-    subagents: list[Any] = field(default_factory=list)
-    context: Any = None
-    backend: Any = None
-    project_id: str | None = None
-
-
-async def build_potpie_resources(
+async def build_kg_capability(
     project_id: str | None,
     user_id: str,
     root: Path | None = None,
     on_status: Any | None = None,
-) -> PotpieResources:
-    """Build all potpie resources sharing one RuntimeBackend.
+) -> CodeGraphCapability | None:
+    """Build a CodeGraphCapability sharing one CodeGraphRuntime.
 
     When *project_id* is ``None`` and *root* is provided, auto-discovers
-    the project from the git repo using the already-created backend,
+    the project from the git repo using the already-created runtime,
     avoiding a second PotpieRuntime initialization.
 
-    The caller is responsible for closing ``result.backend`` in a finally
-    block after the agent run completes.
+    Eagerly builds subagent toolsets so that ``cap.subagents`` is populated
+    before ``create_cli_agent`` is called (subagents must be wired at agent
+    construction time, not lazily in ``for_run``).
+
+    The caller is responsible for closing ``result.runtime.close()`` in a
+    finally block after the agent run completes.
 
     Args:
         project_id: Explicit project UUID, or None to auto-discover.
@@ -55,21 +42,15 @@ async def build_potpie_resources(
             messages (e.g. auto-discovery notice, loaded notice).
 
     Returns:
-        PotpieResources with all fields populated on success, or a
-        PotpieResources with all-None fields on failure (warning printed
+        CodeGraphCapability on success, or None on failure (warning printed
         to stderr).
     """
     try:
-        from apps.cli.config import load_config
+        from pydantic_deep.capabilities.code_graph import CodeGraphCapability
         from pydantic_deep.toolsets.code_graph.context import PotpieContext
-        from pydantic_deep.subagents_potpie import make_potpie_subagents
-        from pydantic_deep.toolsets.code_graph import CodeGraphToolset, make_backend
+        from pydantic_deep.toolsets.code_graph.runtime import CodeGraphRuntime
 
-        cfg = load_config()
-        if cfg.potpie_mode != "local":
-            return PotpieResources()
-
-        backend = make_backend(cfg)
+        runtime = CodeGraphRuntime(user_id=user_id)
 
         try:
             # Auto-discover project from git if not explicitly provided.
@@ -80,40 +61,87 @@ async def build_potpie_resources(
                 identity = parse_git_identity(root)
                 if identity:
                     repo_name, branch = identity
-                    for p in await backend.list_projects():
+                    for p in await runtime.list_projects():
                         if p["repo_name"] == repo_name and p["branch_name"] == branch:
                             project_id = p["id"]
                             resolved_by_discovery = True
                             break
 
             if not project_id:
-                await backend.close()
-                return PotpieResources()
+                await runtime.close()
+                return None
 
-            toolset = CodeGraphToolset(backend=backend, project_id=project_id)
             context = PotpieContext(project_id=project_id, user_id=user_id)
-            subagents = await make_potpie_subagents(backend=backend, user_id=user_id)
+            cap = CodeGraphCapability(
+                runtime=runtime, project_id=project_id, context=context
+            )
 
             if on_status:
                 if resolved_by_discovery:
-                    on_status(f"Auto-discovered Potpie project: {project_id}")
+                    on_status(f"Auto-discovered KG project: {project_id}")
                 else:
-                    on_status(f"Potpie KG tools loaded for project {project_id}")
+                    on_status(f"KG tools loaded for project {project_id}")
 
-            return PotpieResources(
-                toolset=toolset,
-                subagents=subagents,
-                context=context,
-                backend=backend,
-                project_id=project_id,
+            # Build toolset and subagent configs here (async context) and inject
+            # directly — no build methods on the capability class needed.
+            from pydantic_deep.toolsets.code_graph.toolset import (
+                KG_TOOL_NAMES,
+                CodeGraphToolset,
             )
+            from pydantic_deep.capabilities.code_graph import (
+                _BLAST_RADIUS_INSTRUCTIONS,
+                _BLAST_RADIUS_TOOL_NAMES,
+                _QNA_INSTRUCTIONS,
+                _QNA_TOOL_NAMES,
+            )
+
+            ts = await CodeGraphToolset.from_runtime(
+                runtime=runtime, tool_names=KG_TOOL_NAMES, toolset_id="potpie-kg"
+            )
+            object.__setattr__(cap, "_toolset", ts)
+
+            qna_ts = await CodeGraphToolset.from_runtime(
+                runtime=runtime, tool_names=_QNA_TOOL_NAMES, toolset_id="potpie-qna"
+            )
+            blast_ts = await CodeGraphToolset.from_runtime(
+                runtime=runtime, tool_names=_BLAST_RADIUS_TOOL_NAMES, toolset_id="potpie-blast-radius"
+            )
+            object.__setattr__(cap, "_subagents", [
+                {
+                    "name": "codebase_qna",
+                    "description": (
+                        "Answer questions about the codebase using the knowledge graph. "
+                        "Use for: 'What does X do?', 'How is Y implemented?', "
+                        "'Where is Z defined?', 'Which files import A?'"
+                    ),
+                    "instructions": _QNA_INSTRUCTIONS,
+                    "toolsets": [qna_ts],
+                    "include_filesystem": False,
+                    "preferred_mode": "async",
+                },
+                {
+                    "name": "blast_radius",
+                    "description": (
+                        "Analyse the blast radius of code changes — which functions, APIs, "
+                        "and consumers are affected by changes in the current branch. "
+                        "Use for: 'What is the impact of my changes?', "
+                        "'Which tests might break?', 'What depends on X?'"
+                    ),
+                    "instructions": _BLAST_RADIUS_INSTRUCTIONS,
+                    "toolsets": [blast_ts],
+                    "include_filesystem": True,
+                    "preferred_mode": "async",
+                },
+            ])
+
+            return cap
         except Exception:
-            await backend.close()
+            await runtime.close()
             raise
 
     except Exception as e:
-        print(f"[potpie] Warning: could not load KG tools/subagents: {e}", file=sys.stderr)
-        return PotpieResources()
+        print(f"[kg] Warning: could not load KG tools: {e}", file=sys.stderr)
+        return None
 
 
-__all__ = ["PotpieResources", "build_potpie_resources"]
+__all__ = ["build_kg_capability"]

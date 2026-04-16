@@ -588,10 +588,10 @@ class TestResolveBackend:
     async def test_uses_runtime_deps_backend(self):
         """Processor uses ctx.deps.backend (runtime) not self.backend (creation)."""
         creation_backend = StateBackend()
-        runtime_backend = StateBackend()
+        runtime = StateBackend()
 
         processor = EvictionProcessor(backend=creation_backend, token_limit=10)
-        ctx = _make_ctx(runtime_backend)
+        ctx = _make_ctx(runtime)
 
         large_content = "x" * 500
         messages: list[ModelMessage] = [
@@ -601,7 +601,7 @@ class TestResolveBackend:
         await processor(ctx, messages)
 
         # File should be in RUNTIME backend, not creation backend
-        evicted = runtime_backend._read_bytes("/large_tool_results/call_rt")
+        evicted = runtime._read_bytes("/large_tool_results/call_rt")
         assert evicted == large_content.encode()
 
         # Creation backend should NOT have the file

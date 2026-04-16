@@ -313,7 +313,7 @@ def run(
     ensure_initialized()
 
     config = load_config()
-    effective_project_id = project_id or config.potpie_project_id
+    effective_project_id = project_id or config.kg.project_id
 
     settings = _build_model_settings(
         model_settings_json, temperature, reasoning_effort, thinking, thinking_budget
@@ -433,7 +433,7 @@ def chat(
     effective_resume = "" if sessions else resume
 
     config = load_config()
-    effective_project_id = project_id or config.potpie_project_id
+    effective_project_id = project_id or config.kg.project_id
 
     asyncio.run(
         run_interactive(
@@ -936,15 +936,11 @@ def threads_export(
 # ── Potpie code-graph sub-apps ────────────────────────────────────────────────
 
 
-def _make_potpie_backend(local: bool):
-    """Load CLI config, optionally override mode to 'local', return a PotpieBackend."""
-    from apps.cli.config import load_config
-    from pydantic_deep.toolsets.code_graph import make_backend
+def _make_code_graph_runtime():
+    """Return a CodeGraphRuntime instance."""
+    from pydantic_deep.toolsets.code_graph import make_runtime
 
-    config = load_config()
-    if local:
-        config.potpie_mode = "local"
-    return make_backend(config)
+    return make_runtime()
 
 
 # ── parse sub-app ─────────────────────────────────────────────────────────────
@@ -979,15 +975,15 @@ def parse_repo(
     """Parse a repository and build its code knowledge graph.
 
     After parsing, the returned project_id can be set as the default:\n
-        pydantic-deep config set potpie_project_id <project_id>
+        pydantic-deep config set kg.project_id <project_id>
     """
 
     console = Console()
 
     async def _run() -> None:
-        backend = _make_potpie_backend(local)
+        runtime = _make_code_graph_runtime()
         with console.status(f"[bold blue]Parsing {path} ({branch})…"):
-            result = await backend.parse(
+            result = await runtime.parse(
                 repo_path=path,
                 repo_name=repo_name,
                 branch=branch,
@@ -1008,7 +1004,7 @@ def parse_repo(
             max_polls = 120
             for _ in range(max_polls):
                 await asyncio.sleep(5)
-                st = await backend.parsing_status(project_id)
+                st = await runtime.parsing_status(project_id)
                 current = st.get("status", "UNKNOWN")
                 console.print(f"  status: {current}")
                 if current in ("READY", "ERROR", "DONE"):
@@ -1019,7 +1015,7 @@ def parse_repo(
             console.print("\n[green]Parsing complete.[/green]")
             console.print(
                 "[dim]Set as default: pydantic-deep config set"
-                f" potpie_project_id {project_id}[/dim]"
+                f" kg.project_id {project_id}[/dim]"
             )
         elif status == "ERROR":
             console.print("\n[red]Parsing failed.[/red]")
@@ -1040,8 +1036,8 @@ def parse_status(
     console = Console()
 
     async def _run() -> None:
-        backend = _make_potpie_backend(local)
-        result = await backend.parsing_status(project_id)
+        runtime = _make_code_graph_runtime()
+        result = await runtime.parsing_status(project_id)
         status = result.get("status", "UNKNOWN")
         style = "green" if status == "READY" else ("red" if status == "ERROR" else "yellow")
         console.print(f"[bold]Project:[/bold] {project_id}")
@@ -1068,8 +1064,8 @@ def projects_list(
     console = Console()
 
     async def _run() -> None:
-        backend = _make_potpie_backend(local)
-        projects = await backend.list_projects()
+        runtime = _make_code_graph_runtime()
+        projects = await runtime.list_projects()
 
         if output_json:
             typer.echo(json.dumps(projects, indent=2, default=str))
@@ -1114,8 +1110,8 @@ def projects_delete(
         typer.confirm(f"Delete project {project_id}?", abort=True)
 
     async def _run() -> None:
-        backend = _make_potpie_backend(local)
-        result = await backend.delete_project(project_id)
+        runtime = _make_code_graph_runtime()
+        result = await runtime.delete_project(project_id)
         typer.echo(f"Deleted: {result.get('deleted', project_id)}")
 
     asyncio.run(_run())
@@ -1136,8 +1132,8 @@ def projects_delete_all(
     console = Console()
 
     async def _run() -> None:
-        backend = _make_potpie_backend(local)
-        result = await backend.delete_all_projects()
+        runtime = _make_code_graph_runtime()
+        result = await runtime.delete_all_projects()
         console.print(f"[green]Deleted {result.get('deleted', 0)} project(s).[/green]")
         if result.get("errors"):
             for err in result["errors"]:
@@ -1167,8 +1163,8 @@ def cache_stats(
     console = Console()
 
     async def _run() -> None:
-        backend = _make_potpie_backend(local)
-        stats = await backend.cache_stats(project_id=project_id)
+        runtime = _make_code_graph_runtime()
+        stats = await runtime.cache_stats(project_id=project_id)
 
         table = Table(show_header=False, show_lines=False, box=None)
         table.add_column("Key", style="cyan")
@@ -1231,8 +1227,8 @@ def cache_clean(
     console = Console()
 
     async def _run() -> None:
-        backend = _make_potpie_backend(local)
-        result = await backend.cache_clean(
+        runtime = _make_code_graph_runtime()
+        result = await runtime.cache_clean(
             all=all_entries,
             project_id=project_id,
             expired=expired,
@@ -1262,8 +1258,8 @@ def agents_list(
     console = Console()
 
     async def _run() -> None:
-        backend = _make_potpie_backend(local)
-        agents = await backend.list_agents()
+        runtime = _make_code_graph_runtime()
+        agents = await runtime.list_agents()
 
         if output_json:
             typer.echo(json.dumps(agents, indent=2, default=str))

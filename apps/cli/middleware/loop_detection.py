@@ -25,6 +25,10 @@ def _hash_args(args: dict[str, Any]) -> str:
     return hashlib.md5(serialized.encode()).hexdigest()
 
 
+# Tools that are legitimately called repeatedly with the same arguments
+# (e.g. polling patterns) and should never trigger loop detection.
+_POLLING_TOOLS: frozenset[str] = frozenset({"check_task"})
+
 @dataclass
 class LoopDetectionMiddleware(AbstractCapability[DeepAgentDeps]):
     """Capability that detects repeated tool calls with identical arguments.
@@ -32,6 +36,9 @@ class LoopDetectionMiddleware(AbstractCapability[DeepAgentDeps]):
     When the same tool is called with the same arguments more than
     ``max_repeats`` times within the recent history window, the call
     is denied with a ModelRetry asking the agent to try a different approach.
+
+    Polling tools (``check_task``) are exempt because they are intentionally
+    called repeatedly with the same arguments while waiting for a subagent to complete.
 
     Args:
         max_repeats: Number of identical calls before blocking. Default 3.
@@ -51,6 +58,9 @@ class LoopDetectionMiddleware(AbstractCapability[DeepAgentDeps]):
         args: dict[str, Any],
     ) -> dict[str, Any]:
         """Check for repeated tool calls and deny if loop detected."""
+        if call.tool_name in _POLLING_TOOLS:
+            return args
+
         key = (call.tool_name, _hash_args(args))
         recent = self._call_history[-self.window_size :]
         repeat_count = sum(1 for k in recent if k == key)

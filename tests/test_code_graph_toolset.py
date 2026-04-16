@@ -25,10 +25,10 @@ def _make_backend(
     return b
 
 
-def _make_ctx(potpie=None) -> RunContext:
+def _make_ctx(kg_context=None) -> RunContext:
     ctx = MagicMock(spec=RunContext)
     ctx.deps = MagicMock()
-    ctx.deps.potpie = potpie
+    ctx.deps.kg_context = kg_context
     return ctx
 
 
@@ -141,10 +141,10 @@ class TestAskKnowledgeGraph:
     async def test_blocked_during_inferring(self) -> None:
         b = _make_backend()
         ts = CodeGraphToolset(backend=b, project_id="p1")
-        potpie = MagicMock()
-        potpie.parsing_status = "INFERRING"
-        potpie.project_id = "p1"
-        ctx = _make_ctx(potpie=potpie)
+        kg_context = MagicMock()
+        kg_context.parsing_status = "INFERRING"
+        kg_context.project_id = "p1"
+        ctx = _make_ctx(kg_context=kg_context)
         result = await ts.tools["ask_knowledge_graph"].function(
             ctx, questions=["find auth"]
         )
@@ -181,9 +181,9 @@ class TestGetInstructions:
     async def test_inferring_status_note(self) -> None:
         b = _make_backend()
         ts = CodeGraphToolset(backend=b, project_id="proj-1")
-        potpie = MagicMock()
-        potpie.parsing_status = "INFERRING"
-        ctx = _make_ctx(potpie=potpie)
+        kg_context = MagicMock()
+        kg_context.parsing_status = "INFERRING"
+        ctx = _make_ctx(kg_context=kg_context)
         parts = await ts.get_instructions(ctx)
         assert parts is not None
         assert "INFERRING" in parts[0]
@@ -191,9 +191,9 @@ class TestGetInstructions:
     async def test_parsing_status_note(self) -> None:
         b = _make_backend()
         ts = CodeGraphToolset(backend=b, project_id="proj-1")
-        potpie = MagicMock()
-        potpie.parsing_status = "PARSING"
-        ctx = _make_ctx(potpie=potpie)
+        kg_context = MagicMock()
+        kg_context.parsing_status = "PARSING"
+        ctx = _make_ctx(kg_context=kg_context)
         parts = await ts.get_instructions(ctx)
         assert parts is not None
         assert "PARSING" in parts[0]
@@ -201,6 +201,6 @@ class TestGetInstructions:
     async def test_no_potpie_context(self) -> None:
         b = _make_backend()
         ts = CodeGraphToolset(backend=b, project_id="proj-1")
-        ctx = _make_ctx(potpie=None)
+        ctx = _make_ctx(kg_context=None)
         parts = await ts.get_instructions(ctx)
         assert parts is not None

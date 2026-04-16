@@ -1,7 +1,7 @@
 """CodeGraphToolset — pydantic-ai FunctionToolset that exposes potpie code-graph tools.
 
-The toolset is backend-agnostic: it accepts any PotpieBackend implementation
-(RestBackend or RuntimeBackend) and exposes four agent-callable tools:
+The toolset is backend-agnostic: it accepts a CodeGraphRuntime instance
+and exposes four agent-callable tools:
 
   list_code_projects   — enumerate indexed repositories
   search_codebase      — fast keyword search (SQL index)
@@ -9,7 +9,7 @@ The toolset is backend-agnostic: it accepts any PotpieBackend implementation
   ask_knowledge_graph  — semantic / docstring similarity search
 
 For subagent use, ``CodeGraphToolset.from_runtime()`` fetches the full set of
-low-level KG tools from a RuntimeBackend and wraps them with project_id injection.
+low-level KG tools from a CodeGraphRuntime and wraps them with project_id injection.
 
 ``get_instructions()`` injects the list of available project IDs into the
 system prompt so the agent can reference them without a round-trip.
@@ -24,7 +24,7 @@ from typing import Any
 from pydantic_ai import RunContext, Tool
 from pydantic_ai.toolsets import FunctionToolset
 
-from pydantic_deep.toolsets.code_graph.backend import PotpieBackend
+from pydantic_deep.toolsets.code_graph.runtime import CodeGraphRuntime
 
 # ── Tool descriptions ─────────────────────────────────────────────────────────
 
@@ -70,7 +70,7 @@ Returns a ranked list of nodes with docstrings, file paths, and similarity score
 :param questions: One or more natural-language questions (list of strings).
 :param node_ids: Optional list of node IDs to narrow the search scope."""
 
-# ── Low-level KG tool names (RuntimeBackend only) ────────────────────────────
+# ── Low-level KG tool names (CodeGraphRuntime only) ────────────────────────────
 
 KG_TOOL_NAMES: list[str] = [
     "ask_knowledge_graph_queries",
@@ -88,11 +88,11 @@ _EMBEDDING_DEPENDENT_TOOLS: frozenset[str] = frozenset({"ask_knowledge_graph_que
 
 
 def _inject_project_id(tool: Tool) -> Tool:
-    """Wrap a tool to inject project_id from ctx.deps.potpie, removing it from the schema.
+    """Wrap a tool to inject project_id from ctx.deps.kg_context, removing it from the schema.
 
     If the tool's JSON schema has a 'project_id' property, wraps the function
     to accept RunContext as the first argument and fills project_id from
-    ctx.deps.potpie.project_id, so the LLM never needs to supply it.
+    ctx.deps.kg_context.project_id, so the LLM never needs to supply it.
     """
     schema = getattr(tool, "parameters_json_schema", None)
     if schema is None:
@@ -108,12 +108,12 @@ def _inject_project_id(tool: Tool) -> Tool:
 
     if _is_async:
         async def ctx_wrapper(ctx: RunContext[Any], **kwargs: Any) -> Any:
-            potpie = ctx.deps.potpie if ctx.deps.potpie is not None else None
-            project_id = getattr(potpie, "project_id", None) if potpie else None
+            kg_context = ctx.deps.kg_context if ctx.deps.kg_context is not None else None
+            project_id = getattr(kg_context, "project_id", None) if kg_context else None
             if project_id:
                 kwargs["project_id"] = project_id
             if tool.name in _EMBEDDING_DEPENDENT_TOOLS:
-                status = getattr(potpie, "parsing_status", None) if potpie else None
+                status = getattr(kg_context, "parsing_status", None) if kg_context else None
                 if status == "INFERRING":
                     return (
                         f"Tool '{tool.name}' is unavailable while the project is being indexed "
@@ -122,12 +122,12 @@ def _inject_project_id(tool: Tool) -> Tool:
             return await original_func(**kwargs)
     else:
         def ctx_wrapper(ctx: RunContext[Any], **kwargs: Any) -> Any:  # type: ignore[misc]
-            potpie = ctx.deps.potpie if ctx.deps.potpie is not None else None
-            project_id = getattr(potpie, "project_id", None) if potpie else None
+            kg_context = ctx.deps.kg_context if ctx.deps.kg_context is not None else None
+            project_id = getattr(kg_context, "project_id", None) if kg_context else None
             if project_id:
                 kwargs["project_id"] = project_id
             if tool.name in _EMBEDDING_DEPENDENT_TOOLS:
-                status = getattr(potpie, "parsing_status", None) if potpie else None
+                status = getattr(kg_context, "parsing_status", None) if kg_context else None
                 if status == "INFERRING":
                     return (
                         f"Tool '{tool.name}' is unavailable while the project is being indexed "
@@ -156,7 +156,7 @@ def _inject_project_id(tool: Tool) -> Tool:
 class CodeGraphToolset(FunctionToolset[Any]):
     """Agent toolset for potpie code-graph operations.
 
-    Constructed with a backend (RestBackend or RuntimeBackend) and an optional
+    Constructed with a runtime (CodeGraphRuntime) and an optional
     default project_id that is injected into the system prompt.
 
     Tools:
@@ -169,16 +169,16 @@ class CodeGraphToolset(FunctionToolset[Any]):
     def __init__(
         self,
         *,
-        backend: PotpieBackend,
+        runtime: CodeGraphRuntime,
         project_id: str | None = None,
     ) -> None:
         super().__init__(id="potpie-code-graph")
-        self._backend = backend
+        self._runtime = runtime
         self._project_id = project_id
 
         @self.tool(description=_LIST_PROJECTS_DESC)
         async def list_code_projects(ctx: RunContext[Any]) -> str:
-            projects = await self._backend.list_projects()
+            projects = await self._runtime.list_projects()
             if not projects:
                 return (
                     "No projects indexed yet. Use 'pydantic-deep parse repo' to index a repository."
@@ -195,11 +195,11 @@ class CodeGraphToolset(FunctionToolset[Any]):
             Args:
                 query: Search term.
             """
-            potpie = getattr(ctx.deps, "potpie", None)
-            project_id = (getattr(potpie, "project_id", None) if potpie else None) or self._project_id
+            kg_context = getattr(ctx.deps, "kg_context", None)
+            project_id = (getattr(kg_context, "project_id", None) if kg_context else None) or self._project_id
             if not project_id:
                 return "Error: no project_id available. Use list_code_projects to find one."
-            results = await self._backend.search(project_id, query)
+            results = await self._runtime.search(project_id, query)
             if not results:
                 return f"No results for '{query}' in project {project_id}."
             return json.dumps(results, default=str)
@@ -214,11 +214,11 @@ class CodeGraphToolset(FunctionToolset[Any]):
             Args:
                 question: Natural language structural question.
             """
-            potpie = getattr(ctx.deps, "potpie", None)
-            project_id = (getattr(potpie, "project_id", None) if potpie else None) or self._project_id
+            kg_context = getattr(ctx.deps, "kg_context", None)
+            project_id = (getattr(kg_context, "project_id", None) if kg_context else None) or self._project_id
             if not project_id:
                 return "Error: no project_id available. Use list_code_projects to find one."
-            result = await self._backend.nl_query(project_id, question)
+            result = await self._runtime.nl_query(project_id, question)
             return json.dumps(result, default=str)
 
         @self.tool(description=_KG_SEARCH_DESC)
@@ -233,18 +233,18 @@ class CodeGraphToolset(FunctionToolset[Any]):
                 questions: List of natural language questions.
                 node_ids: Optional list of node IDs to restrict the search.
             """
-            potpie = getattr(ctx.deps, "potpie", None)
-            project_id = (getattr(potpie, "project_id", None) if potpie else None) or self._project_id
+            kg_context = getattr(ctx.deps, "kg_context", None)
+            project_id = (getattr(kg_context, "project_id", None) if kg_context else None) or self._project_id
             if not project_id:
                 return "Error: no project_id available. Use list_code_projects to find one."
             # Guard: embeddings are not available during INFERRING state
-            if potpie is not None and getattr(potpie, "parsing_status", None) == "INFERRING":
+            if kg_context is not None and getattr(kg_context, "parsing_status", None) == "INFERRING":
                 return (
                     "Semantic search is unavailable while the project is being indexed "
                     "(status: INFERRING). Embeddings are not ready yet. "
                     "Use `nl_query` for structural questions instead."
                 )
-            results = await self._backend.kg_search(project_id, questions, node_ids or [])
+            results = await self._runtime.kg_search(project_id, questions, node_ids or [])
             if not results:
                 return "No results found for the given questions."
             return json.dumps(results, default=str)
@@ -254,8 +254,8 @@ class CodeGraphToolset(FunctionToolset[Any]):
         parts: list[str] = []
 
         # Check parsing status from PotpieContext if available
-        potpie = getattr(ctx.deps, "potpie", None)
-        parsing_status = getattr(potpie, "parsing_status", None) if potpie else None
+        kg_context = getattr(ctx.deps, "kg_context", None)
+        parsing_status = getattr(kg_context, "parsing_status", None) if kg_context else None
         is_inferring = parsing_status == "INFERRING"
         is_parsing = parsing_status in ("PARSING", "SUBMITTED")
 
@@ -295,20 +295,20 @@ class CodeGraphToolset(FunctionToolset[Any]):
     @classmethod
     async def from_runtime(
         cls,
-        backend: PotpieBackend,
+        runtime: CodeGraphRuntime,
         tool_names: list[str] | None = None,
         toolset_id: str = "potpie-kg",
         exclude_embedding_tools: bool = False,
     ) -> FunctionToolset[Any]:
-        """Create a FunctionToolset of low-level KG tools from a RuntimeBackend.
+        """Create a FunctionToolset of low-level KG tools from a CodeGraphRuntime.
 
         Fetches StructuredTool instances via backend.get_tools(), wraps them
         with project_id injection, and returns a FunctionToolset for subagent use.
 
-        Requires RuntimeBackend — RestBackend raises NotImplementedError for get_tools().
+        Requires CodeGraphRuntime — only CodeGraphRuntime supports get_tools().
 
         Args:
-            backend: An initialised RuntimeBackend.
+            runtime: An initialised CodeGraphRuntime.
             tool_names: Tool names to retrieve. Defaults to KG_TOOL_NAMES.
             toolset_id: FunctionToolset identifier.
             exclude_embedding_tools: Skip embedding-dependent tools.
@@ -322,7 +322,7 @@ class CodeGraphToolset(FunctionToolset[Any]):
         )
 
         names = tool_names if tool_names is not None else KG_TOOL_NAMES
-        langchain_tools = await backend.get_tools(
+        langchain_tools = await runtime.get_tools(
             names, exclude_embedding_tools=exclude_embedding_tools
         )
         pydantic_tools = [_inject_project_id(t) for t in wrap_structured_tools(langchain_tools)]
