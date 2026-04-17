@@ -166,8 +166,9 @@ def _setup_logfire() -> None:
         raise SystemExit(2) from None
 
 
-@app.callback()
+@app.callback(invoke_without_command=True)
 def _main_callback(
+    ctx: typer.Context,
     version: Annotated[
         bool | None,
         typer.Option(
@@ -216,6 +217,14 @@ def _main_callback(
         phoenix_port = os.environ.get("PHOENIX_PORT", "6006")
         _setup_phoenix(f"http://localhost:{phoenix_port}")
 
+    # Default: launch TUI when no subcommand is given
+    if ctx.invoked_subcommand is None:
+        from apps.cli.init import ensure_initialized
+        from apps.cli.tui import run_tui
+
+        ensure_initialized()
+        run_tui(working_dir=os.getcwd())
+
 
 def _build_model_settings(
     model_settings_json: str | None,
@@ -254,6 +263,49 @@ def init(
 
     root = Path(directory) if directory else Path.cwd()
     init_project(root)
+
+
+@app.command()
+def tui(
+    model: Annotated[
+        str | None,
+        typer.Option("--model", "-m", help="Model to use (default: from config)"),
+    ] = None,
+    working_dir: Annotated[
+        str | None,
+        typer.Option("--working-dir", "-w", help="Working directory"),
+    ] = None,
+    sandbox: Annotated[
+        str | None,
+        typer.Option("--sandbox", "-s", help="Sandbox backend: local or docker (from config)"),
+    ] = None,
+    workspace: Annotated[
+        str | None,
+        typer.Option(
+            "--workspace",
+            help=(
+                "Named Docker workspace shared across threads. "
+                "Packages and state persist between sessions. "
+                "Implies --sandbox docker."
+            ),
+        ),
+    ] = None,
+) -> None:
+    """Launch the Textual-based TUI (rich interactive interface)."""
+    from apps.cli.init import ensure_initialized
+    from apps.cli.tui import run_tui
+
+    # --workspace implies --sandbox docker
+    if workspace and not sandbox:
+        sandbox = "docker"
+
+    ensure_initialized()
+    run_tui(
+        model=model,
+        working_dir=working_dir or os.getcwd(),
+        sandbox=sandbox,
+        workspace=workspace,
+    )
 
 
 @app.command()
