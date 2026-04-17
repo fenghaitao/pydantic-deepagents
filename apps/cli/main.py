@@ -179,9 +179,9 @@ def _main_callback(
         ),
     ] = None,
     logfire_enabled: Annotated[
-        bool,
-        typer.Option("--logfire/--no-logfire", help="Enable Logfire tracing"),
-    ] = False,
+        bool | None,
+        typer.Option("--logfire/--no-logfire", help="Enable Logfire tracing (overrides PYDANTIC_DEEP_LOGFIRE env var)"),
+    ] = None,
     phoenix_enabled: Annotated[
         bool,
         typer.Option("--phoenix/--no-phoenix", help="Send traces to Arize Phoenix (reads PHOENIX_PORT from .env, defaults to 6006)"),
@@ -200,11 +200,14 @@ def _main_callback(
     except ImportError:  # pragma: no cover
         pass
 
-    if not logfire_enabled:
+    if logfire_enabled is None:
+        # Flag not explicitly passed — fall back to config/env var.
         from apps.cli.config import load_config
 
         config = load_config()
         logfire_enabled = config.logfire
+    # If --logfire or --no-logfire was explicitly passed it takes full precedence
+    # over the PYDANTIC_DEEP_LOGFIRE env var.
 
     if logfire_enabled:
         _setup_logfire()
