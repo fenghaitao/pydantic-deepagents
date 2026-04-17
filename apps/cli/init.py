@@ -9,7 +9,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-_AGENT_MD_TEMPLATE = """\
+_AGENTS_MD_TEMPLATE = """\
 
 Describe your project here. This file is read by pydantic-deep at startup
 to understand the project context.
@@ -72,10 +72,10 @@ def init_project(root: Path | None = None, *, quiet: bool = False) -> Path:
         if not quiet:
             _log(f"Created {memory_file.relative_to(root)}")
 
-    # Create AGENT.md in project root (if doesn't exist)
-    agent_md = root / "AGENT.md"
+    # Create AGENTS.md in project root (if doesn't exist)
+    agent_md = root / "AGENTS.md"
     if not agent_md.exists():
-        agent_md.write_text(_AGENT_MD_TEMPLATE)
+        agent_md.write_text(_AGENTS_MD_TEMPLATE)
         if not quiet:
             _log(f"Created {agent_md.name}")
 
@@ -118,19 +118,16 @@ def _copy_builtin_skills(target_dir: Path, *, quiet: bool = False) -> None:
 
 
 def ensure_initialized(root: Path | None = None) -> Path:
-    """Ensure ``.pydantic-deep/`` exists, creating it if needed.
+    """Ensure ``.pydantic-deep/`` exists with all scaffolding.
 
-    Lightweight wrapper — only runs ``init_project`` if the directory
-    doesn't exist yet.
+    Idempotent — calls ``init_project`` which only creates missing
+    files and directories, never overwrites existing ones.
 
     Returns:
         Path to the ``.pydantic-deep/`` directory.
     """
     root = root or Path.cwd()
-    pd_dir = root / ".pydantic-deep"
-    if not pd_dir.exists():
-        return init_project(root)
-    return pd_dir
+    return init_project(root, quiet=True)
 
 
 def _log(msg: str) -> None:

@@ -1,21 +1,22 @@
 """CLI entry point for pydantic-deep.
 
 Usage:
-    pydantic-deep run "Create a Python script that..." [-m model] [-w dir] [-q]
-    pydantic-deep chat [-m model] [-w dir]
-    pydantic-deep skills list
-    pydantic-deep config show
-    pydantic-deep threads list
+    pydantic-deep                           # Launch TUI (default)
+    pydantic-deep tui [-m model] [-w dir]   # Launch TUI
+    pydantic-deep run "task description"    # Headless non-interactive run
+    pydantic-deep init                      # Initialize project
+    pydantic-deep config show               # Show configuration
+    pydantic-deep skills list               # List available skills
+    pydantic-deep threads list              # List saved threads
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 from dataclasses import fields
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
 import typer
 from rich.console import Console
@@ -25,7 +26,7 @@ from rich.text import Text
 app = typer.Typer(
     name="pydantic-deep",
     help="Deep Agent CLI — AI coding assistant powered by pydantic-ai.",
-    no_args_is_help=True,
+    invoke_without_command=True,
     rich_markup_mode="rich",
 )
 
@@ -58,8 +59,9 @@ def _setup_logfire() -> None:
         raise SystemExit(2) from None
 
 
-@app.callback()
+@app.callback(invoke_without_command=True)
 def _main_callback(
+    ctx: typer.Context,
     version: Annotated[
         bool | None,
         typer.Option(
@@ -77,14 +79,11 @@ def _main_callback(
 ) -> None:
     """Deep Agent CLI — AI coding assistant powered by pydantic-ai."""
     try:
-        from pathlib import Path
-
         from dotenv import load_dotenv
 
-        # Load .env files: user-level, project-level, CWD (later overrides)
         load_dotenv(Path.home() / ".pydantic-deep" / ".env", override=False)
         load_dotenv(Path.cwd() / ".pydantic-deep" / ".env", override=True)
-        load_dotenv()  # CWD .env
+        load_dotenv()
     except ImportError:  # pragma: no cover
         pass
 
@@ -97,30 +96,250 @@ def _main_callback(
     if logfire_enabled:
         _setup_logfire()
 
+    # Non-blocking update notification (uses 24-hour file cache)
+    from apps.cli.update import check_for_update
 
-def _build_model_settings(
-    model_settings_json: str | None,
-    temperature: float | None,
-    reasoning_effort: str | None,
-    thinking: bool,
-    thinking_budget: int | None,
-) -> dict[str, Any] | None:
-    """Build model settings dict from CLI flags."""
-    settings: dict[str, Any] = {}
-    if model_settings_json:
-        settings = json.loads(model_settings_json)
-    if temperature is not None:
-        settings["temperature"] = temperature
-    if reasoning_effort:
-        settings["openai_reasoning_effort"] = reasoning_effort
-    if thinking:
-        if thinking_budget:
-            settings["anthropic_thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
-        else:
-            settings["anthropic_thinking"] = {"type": "adaptive"}
-    elif thinking_budget:
-        settings["anthropic_thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
-    return settings if settings else None
+    _upd = check_for_update()
+    if _upd:
+        Console().print(
+            f"[yellow]Update available:[/yellow] "
+            f"v{_upd.current} → [bold]v{_upd.latest}[/bold]  "
+            f"Run: [cyan]pydantic-deep update[/cyan]"
+        )
+
+    # Default: launch TUI when no subcommand is given
+    if ctx.invoked_subcommand is None:
+        from apps.cli.init import ensure_initialized
+        from apps.cli.tui import run_tui
+
+        ensure_initialized()
+        run_tui(working_dir=os.getcwd())
+
+
+@app.command()
+def tui(
+    model: Annotated[
+        str | None,
+        typer.Option("--model", "-m", help="Model to use (default: from config)"),
+    ] = None,
+    working_dir: Annotated[
+        str | None,
+        typer.Option("--working-dir", "-w", help="Working directory"),
+    ] = None,
+    sandbox: Annotated[
+        str | None,
+        typer.Option("--sandbox", "-s", help="Sandbox backend: local or docker (from config)"),
+    ] = None,
+    workspace: Annotated[
+        str | None,
+        typer.Option(
+            "--workspace",
+            help=(
+                "Named Docker workspace shared across threads. "
+                "Packages and state persist between sessions. "
+                "Implies --sandbox docker."
+            ),
+        ),
+    ] = None,
+) -> None:
+    """Launch the Textual-based TUI (rich interactive interface)."""
+    from apps.cli.init import ensure_initialized
+    from apps.cli.tui import run_tui
+
+    # --workspace implies --sandbox docker
+    if workspace and not sandbox:
+        sandbox = "docker"
+
+    ensure_initialized()
+    run_tui(
+        model=model,
+        working_dir=working_dir or os.getcwd(),
+        sandbox=sandbox,
+        workspace=workspace,
+    )
+
+
+@app.command()
+def run(
+    task: Annotated[
+        str | None,
+        typer.Argument(help="Task description (or use --task-file)"),
+    ] = None,
+    task_file: Annotated[
+        Path | None,
+        typer.Option("--task-file", "-f", help="Read task from file"),
+    ] = None,
+    working_dir: Annotated[
+        str | None,
+        typer.Option("--working-dir", "-w", help="Working directory"),
+    ] = None,
+    model: Annotated[
+        str | None,
+        typer.Option("--model", "-m", help="Model to use (default: from config)"),
+    ] = None,
+    output_json: Annotated[
+        bool,
+        typer.Option("--json", help="Output result as JSON"),
+    ] = False,
+    max_turns: Annotated[
+        int | None,
+        typer.Option("--max-turns", help="Maximum number of agent turns"),
+    ] = None,
+    timeout: Annotated[
+        int | None,
+        typer.Option("--timeout", help="Timeout in seconds"),
+    ] = None,
+    # Feature flags — None means "use config.toml default" (same as TUI)
+    web_search: Annotated[
+        bool | None,
+        typer.Option("--web-search/--no-web-search", help="Enable web search (from config)"),
+    ] = None,
+    web_fetch: Annotated[
+        bool | None,
+        typer.Option("--web-fetch/--no-web-fetch", help="Enable web fetch (default: from config)"),
+    ] = None,
+    thinking: Annotated[
+        str | None,
+        typer.Option("--thinking", help="Thinking effort: minimal/low/medium/high/xhigh or false"),
+    ] = None,
+    include_todo: Annotated[
+        bool | None,
+        typer.Option("--todo/--no-todo", help="Enable task planning (default: from config)"),
+    ] = None,
+    include_subagents: Annotated[
+        bool | None,
+        typer.Option(
+            "--subagents/--no-subagents", help="Enable subagent delegation (default: from config)"
+        ),
+    ] = None,
+    include_skills: Annotated[
+        bool | None,
+        typer.Option("--skills/--no-skills", help="Enable skills (default: from config)"),
+    ] = None,
+    include_plan: Annotated[
+        bool | None,
+        typer.Option("--plan/--no-plan", help="Enable plan mode (default: from config)"),
+    ] = None,
+    include_memory: Annotated[
+        bool | None,
+        typer.Option("--memory/--no-memory", help="Enable persistent memory (from config)"),
+    ] = None,
+    include_teams: Annotated[
+        bool | None,
+        typer.Option("--teams/--no-teams", help="Enable agent teams (from config)"),
+    ] = None,
+    context_discovery: Annotated[
+        bool | None,
+        typer.Option("--context/--no-context", help="Auto-discover AGENTS.md (from config)"),
+    ] = None,
+    temperature: Annotated[
+        float | None,
+        typer.Option("--temperature", help="Sampling temperature (default: 0.0)"),
+    ] = None,
+    sandbox: Annotated[
+        str | None,
+        typer.Option("--sandbox", "-s", help="Sandbox backend: local or docker (from config)"),
+    ] = None,
+    workspace: Annotated[
+        str | None,
+        typer.Option(
+            "--workspace",
+            help=(
+                "Named Docker workspace shared across threads. "
+                "Packages and state persist between sessions. "
+                "Implies --sandbox docker."
+            ),
+        ),
+    ] = None,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Stream progress to stderr"),
+    ] = False,
+    include_browser: Annotated[
+        bool | None,
+        typer.Option(
+            "--browser/--no-browser",
+            help="Enable Playwright browser automation (requires pydantic-deep[browser])",
+        ),
+    ] = None,
+    browser_headless: Annotated[
+        bool | None,
+        typer.Option(
+            "--browser-headless/--browser-headed",
+            help="Browser window mode: headless (hidden) or headed (visible, default)",
+        ),
+    ] = None,
+) -> None:
+    """Run a task non-interactively (headless mode).
+
+    Executes a single task and prints the result to stdout.
+    Designed for benchmarks, CI/CD pipelines, and scripted automation.
+
+    All feature flags default to the same values as the TUI (from
+    .pydantic-deep/config.toml). Use --no-web-search, --no-thinking,
+    etc. to override specific features.
+
+    Examples:
+        pydantic-deep run "Fix the failing test in test_auth.py"
+        pydantic-deep run --task-file task.md --json
+        pydantic-deep run "Refactor utils.py" --max-turns 50 --timeout 300
+        pydantic-deep run "Research X" --web-search --web-fetch
+        pydantic-deep run "Fix bug" --no-web-search --no-web-fetch --thinking false
+        pydantic-deep run "Analyze data" --sandbox docker
+        pydantic-deep run "Train model" --workspace ml-env
+    """
+    from apps.cli.run import execute_headless
+
+    # --workspace implies --sandbox docker
+    if workspace and not sandbox:
+        sandbox = "docker"
+
+    if task is None and task_file is None:
+        typer.echo("Error: provide a task argument or --task-file", err=True)
+        raise typer.Exit(1)
+
+    if task_file is not None:
+        if not task_file.exists():
+            typer.echo(f"Error: task file not found: {task_file}", err=True)
+            raise typer.Exit(1)
+        task_text = task_file.read_text().strip()
+    else:
+        assert task is not None
+        task_text = task
+
+    if not task_text:
+        typer.echo("Error: task is empty", err=True)
+        raise typer.Exit(1)
+
+    import asyncio
+
+    result = asyncio.run(
+        execute_headless(
+            task=task_text,
+            working_dir=working_dir or os.getcwd(),
+            model=model,
+            output_json=output_json,
+            max_turns=max_turns,
+            timeout=timeout,
+            web_search=web_search,
+            web_fetch=web_fetch,
+            thinking=thinking,
+            include_todo=include_todo,
+            include_subagents=include_subagents,
+            include_skills=include_skills,
+            include_plan=include_plan,
+            include_memory=include_memory,
+            include_teams=include_teams,
+            context_discovery=context_discovery,
+            temperature=temperature,
+            sandbox=sandbox,
+            workspace=workspace,
+            verbose=verbose,
+            include_browser=include_browser,
+            browser_headless=browser_headless,
+        )
+    )
+    raise typer.Exit(result)
 
 
 @app.command()
@@ -137,164 +356,7 @@ def init(
     init_project(root)
 
 
-@app.command()
-def run(
-    prompt: Annotated[str, typer.Argument(help="Task to execute")],
-    model: Annotated[
-        str | None,
-        typer.Option("--model", "-m", help="Model to use (default: from config)"),
-    ] = None,
-    working_dir: Annotated[
-        str | None,
-        typer.Option("--working-dir", "-w", help="Working directory"),
-    ] = None,
-    shell_allow_list: Annotated[
-        list[str] | None,
-        typer.Option("--shell-allow-list", help="Allowed shell commands"),
-    ] = None,
-    quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Suppress diagnostics")] = False,
-    no_stream: Annotated[
-        bool, typer.Option("--no-stream", help="Buffer output instead of streaming")
-    ] = False,
-    sandbox: Annotated[bool, typer.Option("--sandbox", help="Run in Docker sandbox")] = False,
-    runtime: Annotated[
-        str, typer.Option("--runtime", help="Sandbox runtime (e.g. python-minimal)")
-    ] = "python-minimal",
-    output_format: Annotated[
-        str, typer.Option("--output-format", "-f", help="Output format: text, json, markdown")
-    ] = "text",
-    verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Enable verbose output")] = False,
-    temperature: Annotated[
-        float | None,
-        typer.Option("--temperature", "-t", help="Model temperature (0.0 = deterministic)"),
-    ] = None,
-    reasoning_effort: Annotated[
-        str | None,
-        typer.Option("--reasoning-effort", help="Reasoning effort: low, medium, high"),
-    ] = None,
-    thinking: Annotated[
-        bool,
-        typer.Option("--thinking/--no-thinking", help="Enable extended thinking (Anthropic)"),
-    ] = False,
-    thinking_budget: Annotated[
-        int | None,
-        typer.Option("--thinking-budget", help="Thinking budget in tokens (Anthropic)"),
-    ] = None,
-    model_settings_json: Annotated[
-        str | None,
-        typer.Option("--model-settings", help="Model settings as JSON"),
-    ] = None,
-    lean: Annotated[
-        bool,
-        typer.Option("--lean", help="Use minimal system prompt (less noise for benchmarks)"),
-    ] = False,
-) -> None:
-    """Run a task non-interactively (benchmark mode)."""
-    from apps.cli.init import ensure_initialized
-    from apps.cli.non_interactive import run_non_interactive
-
-    ensure_initialized()
-
-    settings = _build_model_settings(
-        model_settings_json, temperature, reasoning_effort, thinking, thinking_budget
-    )
-
-    exit_code = asyncio.run(
-        run_non_interactive(
-            message=prompt,
-            model=model,
-            working_dir=working_dir,
-            shell_allow_list=shell_allow_list,
-            quiet=quiet,
-            stream=not no_stream,
-            sandbox=sandbox,
-            runtime=runtime,
-            output_format=output_format,
-            verbose=verbose,
-            model_settings=settings,
-            lean=lean,
-        )
-    )
-    raise typer.Exit(exit_code)
-
-
-@app.command()
-def chat(
-    model: Annotated[
-        str | None,
-        typer.Option("--model", "-m", help="Model to use (default: from config)"),
-    ] = None,
-    working_dir: Annotated[
-        str | None,
-        typer.Option("--working-dir", "-w", help="Working directory"),
-    ] = None,
-    sandbox: Annotated[bool, typer.Option("--sandbox", help="Run in Docker sandbox")] = False,
-    runtime: Annotated[
-        str, typer.Option("--runtime", help="Sandbox runtime (e.g. python-minimal)")
-    ] = "python-minimal",
-    resume: Annotated[
-        str | None,
-        typer.Option("--resume", "-r", help="Resume a session by ID"),
-    ] = None,
-    sessions: Annotated[
-        bool,
-        typer.Option("--sessions", "-s", help="Pick a previous session to resume"),
-    ] = False,
-    auto_approve: Annotated[
-        bool,
-        typer.Option("--auto-approve", help="Auto-approve all tool calls (skip HITL)"),
-    ] = False,
-    temperature: Annotated[
-        float | None,
-        typer.Option("--temperature", "-t", help="Model temperature (0.0 = deterministic)"),
-    ] = None,
-    reasoning_effort: Annotated[
-        str | None,
-        typer.Option("--reasoning-effort", help="Reasoning effort: low, medium, high"),
-    ] = None,
-    thinking: Annotated[
-        bool,
-        typer.Option("--thinking/--no-thinking", help="Enable extended thinking (Anthropic)"),
-    ] = False,
-    thinking_budget: Annotated[
-        int | None,
-        typer.Option("--thinking-budget", help="Thinking budget in tokens (Anthropic)"),
-    ] = None,
-    model_settings_json: Annotated[
-        str | None,
-        typer.Option("--model-settings", help="Model settings as JSON"),
-    ] = None,
-    fork: Annotated[
-        bool,
-        typer.Option("--fork", help="Fork from a resumed session (new session, same history)"),
-    ] = False,
-) -> None:
-    """Start an interactive chat session."""
-    from apps.cli.init import ensure_initialized
-    from apps.cli.interactive import run_interactive
-
-    ensure_initialized()
-
-    settings = _build_model_settings(
-        model_settings_json, temperature, reasoning_effort, thinking, thinking_budget
-    )
-
-    # --sessions flag triggers interactive picker (resume="")
-    effective_resume = "" if sessions else resume
-
-    asyncio.run(
-        run_interactive(
-            model=model,
-            working_dir=working_dir,
-            sandbox=sandbox,
-            runtime=runtime,
-            resume=effective_resume,
-            auto_approve=auto_approve,
-            model_settings=settings,
-            fork_session=fork,
-        )
-    )
-
+# ── Config subcommands ──────────────────────────────────────────
 
 config_app = typer.Typer(name="config", help="Manage configuration.", no_args_is_help=True)
 app.add_typer(config_app)
@@ -340,24 +402,137 @@ def config_set(
     typer.echo(f"Set {key} = {value}")
 
 
+# ── Sandbox subcommands ────────────────────────────────────────
+
+sandbox_app = typer.Typer(
+    name="sandbox", help="Manage Docker sandbox workspaces.", no_args_is_help=True
+)
+app.add_typer(sandbox_app)
+
+
+def _get_project_container_prefix() -> str:
+    """Return the Docker container name prefix for the current project."""
+    import hashlib
+
+    dir_hash = hashlib.md5(str(Path.cwd().resolve()).encode()).hexdigest()[:8]
+    return f"pydantic-deep-{dir_hash}-"
+
+
+@sandbox_app.command("list")
+def sandbox_list() -> None:
+    """List Docker sandbox workspaces for this project."""
+    try:
+        import docker
+    except ImportError:
+        typer.echo(
+            "Docker package not installed. Install with: pip install pydantic-ai-backend[docker]",
+            err=True,
+        )
+        raise typer.Exit(1) from None
+
+    prefix = _get_project_container_prefix()
+    client = docker.from_env()
+
+    containers = [c for c in client.containers.list(all=True) if c.name.startswith(prefix)]
+
+    if not containers:
+        typer.echo("No sandbox workspaces found for this project.")
+        return
+
+    console = Console()
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Workspace", style="cyan")
+    table.add_column("Status")
+    table.add_column("Image", style="dim")
+    table.add_column("Created", style="dim")
+
+    for c in sorted(containers, key=lambda x: x.name):
+        # Strip project prefix to show short workspace name
+        workspace_name = c.name[len(prefix) :]
+        status_style = "green" if c.status == "running" else "yellow"
+        table.add_row(
+            workspace_name,
+            Text(c.status, style=status_style),
+            c.image.tags[0] if c.image.tags else str(c.image.short_id),
+            c.attrs.get("Created", "")[:19],
+        )
+
+    console.print(table)
+    typer.echo(f"\nProject: {Path.cwd()}")
+    typer.echo(f"Prefix:  {prefix}*")
+
+
+@sandbox_app.command("stop")
+def sandbox_stop(
+    name: Annotated[
+        str | None,
+        typer.Argument(help="Workspace name to stop (or 'all')"),
+    ] = None,
+    remove: Annotated[
+        bool,
+        typer.Option("--rm", help="Remove workspace container after stopping"),
+    ] = False,
+) -> None:
+    """Stop sandbox workspaces for this project.
+
+    Examples:
+        pydantic-deep sandbox stop ml-env     # Stop one workspace
+        pydantic-deep sandbox stop all        # Stop all for this project
+        pydantic-deep sandbox stop all --rm   # Stop and remove all
+    """
+    try:
+        import docker
+    except ImportError:
+        typer.echo(
+            "Docker package not installed. Install with: pip install pydantic-ai-backend[docker]",
+            err=True,
+        )
+        raise typer.Exit(1) from None
+
+    if name is None:
+        typer.echo("Provide a workspace name or 'all'.", err=True)
+        raise typer.Exit(1)
+
+    prefix = _get_project_container_prefix()
+    client = docker.from_env()
+
+    if name == "all":
+        targets = [c for c in client.containers.list(all=True) if c.name.startswith(prefix)]
+    else:
+        full_name = f"{prefix}{name}"
+        try:
+            targets = [client.containers.get(full_name)]
+        except docker.errors.NotFound:
+            typer.echo(f"Workspace '{name}' not found.", err=True)
+            raise typer.Exit(1) from None
+
+    for c in targets:
+        short = c.name[len(prefix) :]
+        if c.status == "running":
+            c.stop()
+            typer.echo(f"Stopped: {short}")
+        if remove:
+            c.remove()
+            typer.echo(f"Removed: {short}")
+        elif c.status != "running":
+            typer.echo(f"Already stopped: {short}")
+
+    if not targets:
+        typer.echo("No containers to stop.")
+
+
+# ── Skills subcommands ──────────────────────────────────────────
+
 skills_app = typer.Typer(name="skills", help="Manage skills.", no_args_is_help=True)
 app.add_typer(skills_app)
 
 
 def _get_builtin_skills_dir() -> Path:
-    """Return the path to the built-in skills directory."""
     return Path(__file__).parent / "skills"
 
 
 def _discover_all_skills(user_dir: str | None = None) -> list[dict[str, str]]:
-    """Discover all skills from all sources.
-
-    Discovery order (later sources override earlier by name):
-    1. Built-in skills (shipped with CLI)
-    2. User-level skills (~/.pydantic-deep/skills/)
-    3. Project-level skills (.pydantic-deep/skills/)
-    4. Explicit directory (--dir flag)
-    """
+    """Discover all skills from all sources."""
     seen_names: set[str] = set()
     skills: list[dict[str, str]] = []
 
@@ -369,34 +544,24 @@ def _discover_all_skills(user_dir: str | None = None) -> list[dict[str, str]]:
             if skill_file.is_file():
                 name, desc = _parse_skill_frontmatter(skill_file)
                 if name in seen_names:
-                    # Later source overrides earlier
                     skills[:] = [s for s in skills if s["name"] != name]
                 seen_names.add(name)
                 skills.append(
-                    {
-                        "name": name,
-                        "description": desc,
-                        "path": str(skill_file),
-                        "source": source,
-                    }
+                    {"name": name, "description": desc, "path": str(skill_file), "source": source}
                 )
 
     _scan_dir(_get_builtin_skills_dir(), "built-in")
     _scan_dir(Path.home() / ".pydantic-deep" / "skills", "user")
     _scan_dir(Path.cwd() / ".pydantic-deep" / "skills", "project")
-
     if user_dir:
         _scan_dir(Path(user_dir), "custom")
-
     return skills
 
 
 def _parse_skill_frontmatter(path: Path) -> tuple[str, str]:
-    """Parse name and description from SKILL.md YAML frontmatter."""
     content = path.read_text()
     name = path.parent.name
     description = ""
-
     if content.startswith("---"):
         parts = content.split("---", 2)
         if len(parts) >= 3:
@@ -406,40 +571,28 @@ def _parse_skill_frontmatter(path: Path) -> tuple[str, str]:
                     name = line.split(":", 1)[1].strip().strip('"').strip("'")
                 elif line.startswith("description:"):
                     description = line.split(":", 1)[1].strip().strip('"').strip("'")
-
     return name, description
 
 
 @skills_app.command("list")
-def skills_list(
-    directory: Annotated[
-        str | None,
-        typer.Option("--dir", "-d", help="Additional skills directory"),
-    ] = None,
-) -> None:
+def skills_list(directory: Annotated[str | None, typer.Option("--dir", "-d")] = None) -> None:
     """List available skills (built-in + user)."""
     skills = _discover_all_skills(directory)
-
     if not skills:
         typer.echo("No skills found.")
         return
-
     console = Console()
     table = Table(show_header=True, header_style="bold")
     table.add_column("Name", style="cyan")
     table.add_column("Description")
     table.add_column("Source", style="dim")
-
     for s in skills:
         table.add_row(s["name"], s["description"], s["source"])
-
     console.print(table)
 
 
 @skills_app.command("info")
-def skills_info(
-    name: Annotated[str, typer.Argument(help="Skill name")],
-) -> None:
+def skills_info(name: Annotated[str, typer.Argument(help="Skill name")]) -> None:
     """Show details for a specific skill."""
     from rich.markdown import Markdown
     from rich.panel import Panel
@@ -447,37 +600,34 @@ def skills_info(
     skills = _discover_all_skills()
     for s in skills:
         if s["name"] == name:
-            info_console = Console()
+            console = Console()
             content = Path(s["path"]).read_text()
-
             body_text = content
             if content.startswith("---"):
                 fm_parts = content.split("---", 2)
                 if len(fm_parts) >= 3:
                     body_text = fm_parts[2].strip()
-
             header = (
                 f"[dim]Description:[/dim] {s['description']}\n"
                 f"[dim]Source:[/dim]      {s['source']}\n"
                 f"[dim]Path:[/dim]        {s['path']}"
             )
-            info_console.print()
-            info_console.print(
+            console.print()
+            console.print(
                 Panel(header, title=f"[bold cyan]{s['name']}[/bold cyan]", padding=(0, 1))
             )
             if body_text:
-                info_console.print()
-                info_console.print(Markdown(body_text))
+                console.print()
+                console.print(Markdown(body_text))
             return
-
     typer.echo(f"Skill '{name}' not found.", err=True)
     raise typer.Exit(1)
 
 
 @skills_app.command("create")
 def skills_create(
-    name: Annotated[str, typer.Argument(help="Skill name (lowercase, hyphens)")],
-    directory: Annotated[str, typer.Option("--dir", "-d", help="Output directory")] = "./skills",
+    name: Annotated[str, typer.Argument(help="Skill name")],
+    directory: Annotated[str, typer.Option("--dir", "-d")] = "./skills",
 ) -> None:
     """Create a new skill scaffold."""
     skill_dir = Path(directory) / name
@@ -485,91 +635,24 @@ def skills_create(
     if skill_file.exists():
         typer.echo(f"Skill already exists at {skill_file}", err=True)
         raise typer.Exit(1)
-
     skill_dir.mkdir(parents=True, exist_ok=True)
-    template = f"""---
-name: {name}
-description: ""
----
-
-# {name}
-
-Instructions for this skill go here.
-"""
-    skill_file.write_text(template)
+    skill_file.write_text(
+        f"---\nname: {name}\n"
+        f'description: ""\n'
+        f"---\n\n# {name}\n\n"
+        f"Instructions for this skill go here.\n"
+    )
     typer.echo(f"Created skill scaffold at {skill_dir}/")
 
 
-providers_app = typer.Typer(
-    name="providers", help="Model provider information.", no_args_is_help=True
-)
-app.add_typer(providers_app)
-
-
-@providers_app.command("list")
-def providers_list() -> None:
-    """List all supported model providers."""
-    from apps.cli.providers import PROVIDERS, validate_provider_env
-
-    console = Console()
-    table = Table(show_header=True, header_style="bold", show_lines=False)
-    table.add_column("Provider", style="cyan")
-    table.add_column("Name")
-    table.add_column("Description")
-    table.add_column("Env Var(s)")
-    table.add_column("Status")
-
-    for prefix, info in sorted(PROVIDERS.items()):
-        missing = validate_provider_env(prefix)
-        if not info.env_vars:
-            status = Text("ready", style="green")
-        elif missing:
-            status = Text("missing key", style="red")
-        else:
-            status = Text("ready", style="green")
-
-        env_str = ", ".join(info.env_vars) if info.env_vars else "-"
-        table.add_row(prefix, info.name, info.description, env_str, status)
-
-    console.print(table)
-    console.print(
-        '\n[dim]Usage: pydantic-deep run "task" --model provider:model-name[/dim]',
-    )
-    console.print(
-        "[dim]Example: pydantic-deep chat --model openrouter:openai/gpt-5.2-codex[/dim]",
-    )
-
-
-@providers_app.command("check")
-def providers_check(
-    model: Annotated[
-        str, typer.Argument(help="Model string to check (e.g. openrouter:openai/gpt-5)")
-    ],
-) -> None:
-    """Check if a model provider is properly configured."""
-    from apps.cli.providers import format_provider_error, parse_model_string
-
-    error = format_provider_error(model)
-    console = Console()
-    if error:
-        console.print(f"[red]{error}[/red]")
-        raise typer.Exit(1)
-
-    provider, model_name = parse_model_string(model)
-    console.print(f"[green]Provider '{provider}' is ready.[/green] Model: {model_name}")
-
+# ── Threads subcommands ─────────────────────────────────────────
 
 threads_app = typer.Typer(name="threads", help="Manage conversation threads.", no_args_is_help=True)
 app.add_typer(threads_app)
 
 
 @threads_app.command("list")
-def threads_list(
-    directory: Annotated[
-        str | None,
-        typer.Option("--dir", "-d", help="Threads directory"),
-    ] = None,
-) -> None:
+def threads_list(directory: Annotated[str | None, typer.Option("--dir", "-d")] = None) -> None:
     """List saved conversation threads."""
     from pydantic_ai.messages import ModelMessagesTypeAdapter
 
@@ -579,44 +662,36 @@ def threads_list(
     if not store_path.exists():
         typer.echo("No threads found.")
         return
-
-    # Each session is a subdirectory with messages.json
     sessions: list[tuple[str, int]] = []
     for session_dir in sorted(store_path.iterdir()):
         if not session_dir.is_dir():
             continue
-        messages_file = session_dir / "messages.json"
-        if messages_file.exists():
+        mf = session_dir / "messages.json"
+        if mf.exists():
             try:
-                raw = messages_file.read_bytes()
+                raw = mf.read_bytes()
                 if raw:
-                    messages = ModelMessagesTypeAdapter.validate_json(raw)
-                    sessions.append((session_dir.name, len(messages)))
+                    sessions.append(
+                        (session_dir.name, len(ModelMessagesTypeAdapter.validate_json(raw)))
+                    )
             except Exception:
                 pass
-
     if not sessions:
         typer.echo("No threads found.")
         return
-
     console = Console()
     table = Table(show_header=True, header_style="bold")
     table.add_column("Session ID", style="cyan", width=14)
     table.add_column("Messages", justify="right")
-
-    for sid, msg_count in sessions:
-        table.add_row(sid, str(msg_count))
-
+    for sid, mc in sessions:
+        table.add_row(sid, str(mc))
     console.print(table)
 
 
 @threads_app.command("delete")
 def threads_delete(
     thread_id: Annotated[str, typer.Argument(help="Thread ID (or prefix)")],
-    directory: Annotated[
-        str | None,
-        typer.Option("--dir", "-d", help="Threads directory"),
-    ] = None,
+    directory: Annotated[str | None, typer.Option("--dir", "-d")] = None,
 ) -> None:
     """Delete a conversation thread."""
     import shutil
@@ -627,18 +702,14 @@ def threads_delete(
     if not store_path.exists():
         typer.echo("No threads found.", err=True)
         raise typer.Exit(1)
-
-    # Find session directory by prefix match
     match_dir = None
-    for session_dir in store_path.iterdir():
-        if session_dir.is_dir() and session_dir.name.startswith(thread_id):
-            match_dir = session_dir
+    for sd in store_path.iterdir():
+        if sd.is_dir() and sd.name.startswith(thread_id):
+            match_dir = sd
             break
-
     if match_dir is None:
         typer.echo(f"Thread '{thread_id}' not found.", err=True)
         raise typer.Exit(1)
-
     shutil.rmtree(match_dir)
     typer.echo(f"Deleted thread {match_dir.name}")
 
@@ -646,17 +717,10 @@ def threads_delete(
 @threads_app.command("export")
 def threads_export(
     thread_id: Annotated[str, typer.Argument(help="Thread ID (or prefix)")],
-    directory: Annotated[
-        str | None,
-        typer.Option("--dir", "-d", help="Threads directory"),
-    ] = None,
-    output_format: Annotated[
-        str, typer.Option("--format", "-f", help="Export format: json or markdown")
-    ] = "markdown",
+    directory: Annotated[str | None, typer.Option("--dir", "-d")] = None,
+    output_format: Annotated[str, typer.Option("--format", "-f")] = "markdown",
 ) -> None:
     """Export a conversation thread."""
-    import json
-
     from pydantic_ai.messages import ModelMessagesTypeAdapter
 
     from apps.cli.config import get_sessions_dir
@@ -665,39 +729,44 @@ def threads_export(
     if not store_path.exists():
         typer.echo("No threads found.", err=True)
         raise typer.Exit(1)
-
-    # Find session directory by prefix match
     session_dir = None
     for d in store_path.iterdir():
         if d.is_dir() and d.name.startswith(thread_id):
             session_dir = d
             break
-
     if session_dir is None:
         typer.echo(f"Thread '{thread_id}' not found.", err=True)
         raise typer.Exit(1)
-
-    messages_file = session_dir / "messages.json"
-    if not messages_file.exists():
+    mf = session_dir / "messages.json"
+    if not mf.exists():
         typer.echo("Thread has no history.", err=True)
         raise typer.Exit(1)
-
-    raw = messages_file.read_bytes()
-    messages = list(ModelMessagesTypeAdapter.validate_json(raw))
-
+    messages = list(ModelMessagesTypeAdapter.validate_json(mf.read_bytes()))
     if output_format == "json":
-        data = {
-            "id": session_dir.name,
-            "message_count": len(messages),
-            "messages": [str(m) for m in messages],
-        }
-        typer.echo(json.dumps(data, indent=2, default=str))
+        typer.echo(
+            json.dumps(
+                {
+                    "id": session_dir.name,
+                    "message_count": len(messages),
+                    "messages": [str(m) for m in messages],
+                },
+                indent=2,
+                default=str,
+            )
+        )
     else:
-        typer.echo(f"# Thread: {session_dir.name}")
-        typer.echo(f"\nMessages: {len(messages)}")
-        typer.echo()
+        typer.echo(f"# Thread: {session_dir.name}\n\nMessages: {len(messages)}\n")
         for msg in messages:
             typer.echo(f"---\n{msg}\n")
+
+
+@app.command()
+def update() -> None:
+    """Update pydantic-deep to the latest version."""
+    from apps.cli.update import run_update
+
+    Console().print("Updating pydantic-deep...")
+    raise typer.Exit(run_update())
 
 
 def main() -> None:

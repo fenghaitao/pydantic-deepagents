@@ -115,6 +115,8 @@ def create_deep_agent(
     max_checkpoints: int = 20,
     checkpoint_store: Any | None = None,
     include_teams: bool = False,
+    include_improve: bool = False,
+    stuck_loop_detection: bool = True,
     web_search: bool = True,
     web_fetch: bool = True,
     thinking: bool | str = "high",
@@ -181,6 +183,8 @@ def create_deep_agent(
     max_checkpoints: int = 20,
     checkpoint_store: Any | None = None,
     include_teams: bool = False,
+    include_improve: bool = False,
+    stuck_loop_detection: bool = True,
     web_search: bool = True,
     web_fetch: bool = True,
     thinking: bool | str = "high",
@@ -245,6 +249,8 @@ def create_deep_agent(  # noqa: C901
     max_checkpoints: int = 20,
     checkpoint_store: Any | None = None,
     include_teams: bool = False,
+    include_improve: bool = False,
+    stuck_loop_detection: bool = True,
     web_search: bool = True,
     web_fetch: bool = True,
     thinking: bool | str = "high",
@@ -391,6 +397,8 @@ def create_deep_agent(  # noqa: C901
             uses InMemoryCheckpointStore. Can also be set per-session
             via ``deps.checkpoint_store``.
         include_teams: Whether to include the team management toolset.
+        include_improve: Whether to include the self-improvement toolset
+            (``improve`` and ``get_improvement_status`` tools).
             When True, adds tools for spawning agent teams, assigning
             tasks via shared todo lists, messaging teammates, and
             dissolving teams. Defaults to False.
@@ -551,8 +559,10 @@ def create_deep_agent(  # noqa: C901
         _sub_context_discovery = context_discovery
         _sub_memory = include_memory
         _sub_memory_dir = memory_dir
+        _sub_web_search = web_search
+        _sub_web_fetch = web_fetch
 
-        def _default_deep_agent_factory(cfg: dict[str, Any]) -> Any:  # pragma: no cover
+        def _default_deep_agent_factory(cfg: dict[str, Any]) -> Any:
             """Create a deep agent for subagent execution."""
             return create_deep_agent(
                 model=cfg.get("model", _sub_model),
@@ -560,8 +570,8 @@ def create_deep_agent(  # noqa: C901
                 include_filesystem=True,
                 include_execute=True,
                 include_todo=True,
-                web_search=True,
-                web_fetch=True,
+                web_search=_sub_web_search,
+                web_fetch=_sub_web_fetch,
                 thinking=False,  # Save tokens on subagents
                 include_subagents=False,
                 include_skills=False,
@@ -746,6 +756,25 @@ def create_deep_agent(  # noqa: C901
     if instructions:
         base_instructions = base_instructions + "\n\n" + instructions
 
+    # Improve toolset (self-improvement from session analysis)
+    if include_improve:
+        from pathlib import Path as _Path
+
+        from pydantic_deep.toolsets.improve import ImproveToolset
+
+        _improve_sessions = _Path(".pydantic-deep/sessions")
+        if backend is not None:  # pragma: no branch
+            _wd = getattr(backend, "root_dir", None)
+            if _wd:  # pragma: no branch
+                _improve_sessions = _Path(str(_wd)) / ".pydantic-deep" / "sessions"
+
+        improve_toolset = ImproveToolset(
+            sessions_dir=_improve_sessions,
+            working_dir=_Path("."),
+            model=model if isinstance(model, str) else "openrouter:anthropic/claude-sonnet-4",
+        )
+        all_toolsets.append(improve_toolset)
+
     # Inject output style into instructions
     if output_style is not None:
         from pydantic_deep.styles import format_style_prompt, resolve_style
@@ -788,19 +817,14 @@ def create_deep_agent(  # noqa: C901
     # Build combined history processors list
     all_processors: list[Any] = list(history_processors or [])
 
-    if patch_tool_calls:
-        from pydantic_deep.processors.patch import patch_tool_calls_processor
+    # patch_tool_calls capability is added later (see capabilities section below).
+    _patch_tool_calls = patch_tool_calls
 
-        all_processors.insert(0, patch_tool_calls_processor)
-
-    if eviction_token_limit is not None:
-        from pydantic_deep.processors.eviction import EvictionProcessor
-
-        eviction = EvictionProcessor(
-            backend=backend, token_limit=eviction_token_limit, on_eviction=on_eviction
-        )
-        # Eviction runs FIRST (before summarization reduces context)
-        all_processors.insert(0, eviction)
+    # Eviction capability is added later (see capabilities section below).
+    # Previously this was a history processor; now it uses after_tool_execute
+    # to intercept large outputs before they enter message history.
+    _eviction_token_limit = eviction_token_limit
+    _on_eviction = on_eviction
 
     # Resolve history_messages_path to absolute for the middleware
     abs_messages_path: str | None = None
@@ -821,8 +845,9 @@ def create_deep_agent(  # noqa: C901
 
     # Context manager capability (token tracking + auto-compression)
     context_mw: Any | None = None
+    limit_warner: Any | None = None
     if context_manager:
-        from pydantic_ai_summarization import ContextManagerCapability
+        from pydantic_ai_summarization import ContextManagerCapability, LimitWarnerCapability
 
         _cm_kwargs: dict[str, Any] = {
             "on_usage_update": on_context_update,
@@ -836,6 +861,14 @@ def create_deep_agent(  # noqa: C901
             _cm_kwargs["on_after_compress"] = on_after_compress
         _cm_kwargs["include_compact_tool"] = True
         context_mw = ContextManagerCapability(**_cm_kwargs)
+
+        # Warn the model before context limits are hit.
+        # warning_threshold=0.7 means URGENT at 70%, well before
+        # auto-compression kicks in at compress_threshold (default 0.9).
+        limit_warner = LimitWarnerCapability(
+            max_context_tokens=context_mw._resolved_max_tokens,
+            warning_threshold=0.7,
+        )
 
     # Cost tracking capability
     cost_cap: Any | None = None
@@ -872,6 +905,22 @@ def create_deep_agent(  # noqa: C901
     # Build capabilities list
     all_capabilities: list[Any] = []
 
+    if _patch_tool_calls:
+        from pydantic_deep.processors.patch import PatchToolCallsCapability
+
+        all_capabilities.append(PatchToolCallsCapability())
+
+    if _eviction_token_limit is not None:
+        from pydantic_deep.processors.eviction import EvictionCapability
+
+        all_capabilities.append(
+            EvictionCapability(
+                backend=backend,
+                token_limit=_eviction_token_limit,
+                on_eviction=_on_eviction,
+            )
+        )
+
     if hooks is not None:
         from pydantic_deep.capabilities.hooks import HooksCapability
 
@@ -890,11 +939,19 @@ def create_deep_agent(  # noqa: C901
             )
         )
 
+    if stuck_loop_detection:
+        from pydantic_deep.capabilities.stuck_loop import StuckLoopDetection
+
+        all_capabilities.append(StuckLoopDetection())
+
     if middleware:
         all_capabilities.extend(middleware)
 
     if context_mw is not None:
         all_capabilities.append(context_mw)
+
+    if limit_warner is not None:
+        all_capabilities.append(limit_warner)
 
     if cost_cap is not None:
         all_capabilities.append(cost_cap)
@@ -918,6 +975,10 @@ def create_deep_agent(  # noqa: C901
     # Add user-provided capabilities
     if capabilities:
         all_capabilities.extend(capabilities)
+
+    # Add user-provided tools
+    if tools:
+        agent_create_kwargs["tools"] = tools
 
     if all_capabilities:
         agent_create_kwargs["capabilities"] = all_capabilities
@@ -963,15 +1024,21 @@ def create_deep_agent(  # noqa: C901
                 if subagent_prompt:
                     parts.append(subagent_prompt)
 
-        return "\n\n".join(parts) if parts else ""
+        if web_search or web_fetch:
+            web_lines = ["## Web Tools\n\nYou have access to the web:"]
+            if web_search:
+                web_lines.append(
+                    "- **web search** — search the internet for current information, news, docs"
+                )
+            if web_fetch:
+                web_lines.append("- **web fetch** — fetch and read any URL as Markdown")
+            web_lines.append(
+                "\nWhen the user asks you to look something up online, visit a website, "
+                "or check current information — use these tools. Do NOT refuse."
+            )
+            parts.append("\n".join(web_lines))
 
-    # Add user-provided tools
-    if tools:
-        for tool in tools:
-            if isinstance(tool, Tool):
-                agent.tool(tool.function)  # pragma: no cover
-            else:
-                agent.tool(tool)
+        return "\n\n".join(parts) if parts else ""
 
     # Expose context middleware for CLI /compact and /context commands
     agent._context_middleware = context_mw  # type: ignore[attr-defined]

@@ -220,7 +220,7 @@ class TestAgentMemoryToolset:
         result = await toolset.get_instructions(ctx)
 
         assert result is not None
-        joined = "\n\n".join(result)
+        joined = "\n\n".join(p.content for p in result)
         assert "## Agent Memory (main)" in joined
         assert "Important item" in joined
 
@@ -235,7 +235,7 @@ class TestAgentMemoryToolset:
         result = await toolset.get_instructions(ctx)
 
         assert result is not None
-        joined = "\n\n".join(result)
+        joined = "\n\n".join(p.content for p in result)
         assert "250 more lines in memory" in joined
 
 

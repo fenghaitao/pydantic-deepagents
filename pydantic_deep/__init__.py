@@ -89,10 +89,13 @@ from pydantic_ai_summarization import (
 
 from pydantic_deep.agent import create_deep_agent, create_default_deps, run_with_files
 from pydantic_deep.capabilities import (
+    BrowserCapability,
     ContextFilesCapability,
     MemoryCapability,
     PlanCapability,
     SkillsCapability,
+    StuckLoopDetection,
+    StuckLoopError,
     TeamCapability,
 )
 from pydantic_deep.capabilities.hooks import (
@@ -104,17 +107,23 @@ from pydantic_deep.capabilities.hooks import (
     HookResult,
     HooksCapability,
 )
+from pydantic_deep.deps import DEFAULT_USAGE_LIMITS as DEFAULT_USAGE_LIMITS
 from pydantic_deep.deps import DeepAgentDeps
 from pydantic_deep.processors.eviction import (
     DEFAULT_EVICTION_PATH,
     DEFAULT_TOKEN_LIMIT,
     EVICTION_MESSAGE_TEMPLATE,
     NUM_CHARS_PER_TOKEN,
+    EvictionCapability,
     EvictionProcessor,
     create_content_preview,
     create_eviction_processor,
 )
-from pydantic_deep.processors.patch import CANCELLED_MESSAGE, patch_tool_calls_processor
+from pydantic_deep.processors.patch import (
+    CANCELLED_MESSAGE,
+    PatchToolCallsCapability,
+    patch_tool_calls_processor,
+)
 from pydantic_deep.prompts import BASE_PROMPT
 from pydantic_deep.spec import DeepAgent, DeepAgentSpec
 from pydantic_deep.styles import (
@@ -126,6 +135,7 @@ from pydantic_deep.styles import (
     resolve_style,
 )
 from pydantic_deep.toolsets import SkillsToolset, SubAgentToolset, TodoToolset, create_plan_toolset
+from pydantic_deep.toolsets.browser import BrowserToolset
 from pydantic_deep.toolsets.checkpointing import (
     Checkpoint,
     CheckpointMiddleware,
@@ -188,6 +198,7 @@ from pydantic_deep.toolsets.teams import (
     create_team_toolset,
 )
 from pydantic_deep.types import (
+    BrowseResult,
     CompiledSubAgent,
     ResponseFormat,
     SubAgentConfig,
@@ -226,11 +237,14 @@ __all__ = [
     # Session Management
     "SessionManager",
     # Capabilities (pydantic-ai AbstractCapability)
+    "BrowserCapability",
     "SkillsCapability",
     "ContextFilesCapability",
     "MemoryCapability",
     "TeamCapability",
     "PlanCapability",
+    "StuckLoopDetection",
+    "StuckLoopError",
     "HooksCapability",
     "ContextManagerCapability",
     "SummarizationCapability",
@@ -238,6 +252,7 @@ __all__ = [
     "LimitWarnerCapability",
     "CostTracking",
     # Toolsets
+    "BrowserToolset",
     "TodoToolset",
     "create_console_toolset",
     "get_console_system_prompt",
@@ -286,7 +301,8 @@ __all__ = [
     "DEFAULT_MEMORY_DIR",
     "DEFAULT_MEMORY_FILENAME",
     "DEFAULT_MAX_MEMORY_LINES",
-    # Eviction processor
+    # Eviction
+    "EvictionCapability",
     "EvictionProcessor",
     "create_eviction_processor",
     "create_content_preview",
@@ -332,6 +348,7 @@ __all__ = [
     "discover_styles",
     "format_style_prompt",
     # Patch tool calls processor
+    "PatchToolCallsCapability",
     "patch_tool_calls_processor",
     "CANCELLED_MESSAGE",
     # Shields (from pydantic-ai-shields)
@@ -341,6 +358,7 @@ __all__ = [
     "ToolBlocked",
     "OutputBlocked",
     # Types
+    "BrowseResult",
     "FileData",
     "FileInfo",
     "WriteResult",

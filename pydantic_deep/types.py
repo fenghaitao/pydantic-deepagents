@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass as _dataclass
 from typing import TypedDict, TypeVar
 
 from pydantic_ai.output import OutputSpec
@@ -38,6 +39,30 @@ ResponseFormat = OutputSpec[object]
 
 # Type variable for output types
 OutputT = TypeVar("OutputT")
+
+
+@_dataclass
+class BrowseResult:
+    """Result of a browser navigation or interaction.
+
+    Returned by helper utilities that wrap ``BrowserToolset`` tool output
+    into a structured form. The toolset tools themselves return plain strings
+    for pydantic-ai compatibility; use this dataclass when you want typed
+    access to individual fields in your own code.
+
+    Attributes:
+        url: The page URL after the action.
+        title: The page title.
+        content: Page content as Markdown, truncated to ``max_content_tokens``.
+        screenshot: Base64-encoded PNG screenshot, or ``None`` if not captured.
+        error: Error message if the action failed, or ``None`` on success.
+    """
+
+    url: str
+    title: str
+    content: str
+    screenshot: str | None = None
+    error: str | None = None
 
 
 class UploadedFile(TypedDict):

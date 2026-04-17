@@ -109,11 +109,13 @@ plugins:
           - advanced/memory.md: Persistent agent memory
           - advanced/context-files.md: Project context file injection
           - advanced/eviction.md: Large output eviction
+          - advanced/stuck-loop-detection.md: Stuck loop detection
           - advanced/cost-tracking.md: Token and cost tracking
           - advanced/middleware.md: Capabilities system
           - advanced/agent-spec.md: Agent spec (YAML/JSON)
           - advanced/plan-mode.md: Plan mode subagent
           - advanced/web-tools.md: Web tools (built-in)
+          - advanced/browser.md: Browser automation via Playwright
           - advanced/mcp.md: MCP servers
           - advanced/acp.md: ACP editor integration (Zed)
           - advanced/multi-user.md: Multi-user isolation patterns
@@ -202,6 +204,7 @@ nav:
   - Pydantic Deep Agents: index.md
   - Installation: installation.md
   - Getting Help: getting-help.md
+  - Contributing: contributing.md
   - Core Concepts:
     - concepts/index.md
     - Agents: concepts/agents.md
@@ -221,10 +224,12 @@ nav:
     - advanced/memory.md
     - advanced/context-files.md
     - advanced/eviction.md
+    - advanced/stuck-loop-detection.md
     - advanced/cost-tracking.md
     - advanced/middleware.md
     - advanced/plan-mode.md
     - advanced/web-tools.md
+    - advanced/browser.md
     - advanced/mcp.md
     - advanced/acp.md
     - advanced/multi-user.md

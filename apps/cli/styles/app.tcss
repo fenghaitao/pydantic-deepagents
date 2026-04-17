@@ -1,0 +1,180 @@
+/* ── Main layout ─────────────────────────────────────── */
+
+Screen {
+    background: $background;
+}
+
+#main-layout {
+    height: 1fr;
+}
+
+#messages-pane {
+    height: 1fr;
+    width: 1fr;
+}
+
+/* ── Header ──────────────────────────────────────────── */
+
+DeepHeader {
+    dock: top;
+    height: 1;
+    background: $surface-lighten-1;
+    color: $text;
+    padding: 0 2;
+}
+
+/* ── Message area ────────────────────────────────────── */
+
+MessageList {
+    height: 1fr;
+    padding: 0 0;
+    scrollbar-size-vertical: 1;
+}
+
+UserMessage {
+    height: auto;
+    padding: 0 2;
+    margin: 1 0 0 0;
+    border-top: solid $surface-lighten-1;
+}
+
+UserMessage .user-label {
+    color: $accent;
+    text-style: bold;
+}
+
+UserMessage .user-text {
+    padding: 0 0 0 2;
+}
+
+AssistantMessage {
+    height: auto;
+    margin: 1 0 0 0;
+    border-top: solid $surface-lighten-1;
+}
+
+AssistantMessage .assistant-label {
+    color: $success-lighten-1;
+    padding: 0 2;
+}
+
+/* ── Tool calls ──────────────────────────────────────── */
+
+ToolCallWidget {
+    height: auto;
+    padding: 0 2;
+    margin: 0 0 0 1;
+    border-left: tall $surface-lighten-2;
+}
+
+ToolCallWidget .tool-header {
+    height: 1;
+}
+
+ToolCallWidget .tool-output {
+    padding: 0 0 0 3;
+    color: $text-disabled;
+    display: none;
+}
+
+ToolCallWidget .tool-output.visible {
+    display: block;
+}
+
+ToolCallWidget .tool-output-expanded {
+    padding: 0 0 0 3;
+    color: $text-disabled;
+    display: none;
+}
+
+ToolCallWidget .tool-output-expanded.visible {
+    display: block;
+}
+
+/* ── Side panel ──────────────────────────────────────── */
+
+SidePanel {
+    width: 32;
+    display: none;
+    padding: 0 1;
+    border-left: tall $surface-lighten-2;
+}
+
+SidePanel.visible {
+    display: block;
+}
+
+TodosWidget {
+    height: auto;
+    padding: 1;
+    border: round $surface-lighten-2;
+}
+
+SubagentsWidget {
+    height: auto;
+    padding: 1;
+    border: round $surface-lighten-2;
+    margin: 1 0 0 0;
+}
+
+/* ── Status bar ──────────────────────────────────────── */
+
+StatusBar {
+    dock: bottom;
+    height: 1;
+    background: $surface-lighten-1;
+    color: $text;
+    padding: 0 2;
+}
+
+/* ── Input area ──────────────────────────────────────── */
+
+InputArea {
+    dock: bottom;
+    height: auto;
+    max-height: 10;
+    background: $background;
+}
+
+PromptRow {
+    height: 1;
+    padding: 0 1;
+    background: $background;
+}
+
+PromptPrefix {
+    width: 2;
+    height: 1;
+    color: $accent;
+    text-style: bold;
+    padding: 0 0;
+}
+
+PromptInput {
+    margin: 0 0;
+    border: none;
+    padding: 0 0;
+    height: 1;
+    width: 1fr;
+    background: $background;
+}
+
+PromptInput:focus {
+    border: none;
+}
+
+HintsBar {
+    height: 1;
+    color: $text-disabled;
+    padding: 0 2;
+    background: $background;
+}
+
+MultilineInput {
+    height: auto;
+    max-height: 8;
+    min-height: 3;
+    margin: 0 2;
+    border: tall $accent;
+    padding: 0 1;
+}

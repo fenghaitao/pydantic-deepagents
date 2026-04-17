@@ -316,6 +316,7 @@ async def _save_and_prune(
 
 from dataclasses import dataclass  # noqa: E402
 from dataclasses import field as dataclass_field  # noqa: E402
+from dataclasses import replace as dataclass_replace  # noqa: E402
 
 from pydantic_ai.capabilities import AbstractCapability  # noqa: E402
 from pydantic_ai.messages import ToolCallPart  # noqa: E402
@@ -329,6 +330,9 @@ class CheckpointMiddleware(AbstractCapability[Any]):
     Uses ``before_model_request`` (for ``every_turn`` frequency) and
     ``after_tool_execute`` (for ``every_tool`` frequency) hooks to
     automatically snapshot the conversation.
+
+    Per-run state isolation via ``for_run()`` ensures concurrent
+    agent runs don't share turn counters or message snapshots.
 
     Args:
         store: Fallback checkpoint store (used if deps has no store).
@@ -346,6 +350,10 @@ class CheckpointMiddleware(AbstractCapability[Any]):
     _latest_messages: list[ModelMessage] = dataclass_field(
         default_factory=list, init=False, repr=False
     )
+
+    async def for_run(self, ctx: RunContext[Any]) -> CheckpointMiddleware:
+        """Return a fresh instance with isolated per-run state."""
+        return dataclass_replace(self)
 
     def _resolve_store(self, deps: Any) -> CheckpointStore | None:
         """Get checkpoint store from deps or fallback."""

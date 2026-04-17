@@ -24,7 +24,7 @@ class TestCliConfig:
 
     def test_default_model(self) -> None:
         config = CliConfig()
-        assert config.model == "anthropic:claude-sonnet-4-6"
+        assert config.model == "anthropic:claude-opus-4-6"
 
     def test_default_working_dir(self) -> None:
         config = CliConfig()
@@ -49,7 +49,7 @@ class TestLoadConfig:
 
     def test_returns_defaults_when_no_file(self, tmp_path: Path) -> None:
         config = load_config(tmp_path / "nonexistent.toml")
-        assert config.model == "anthropic:claude-sonnet-4-6"
+        assert config.model == "anthropic:claude-opus-4-6"
 
     def test_loads_from_file(self, tmp_path: Path) -> None:
         config_file = tmp_path / "config.toml"
@@ -64,7 +64,7 @@ class TestLoadConfig:
 
         config = load_config(config_file)
         assert config.include_skills is False
-        assert config.model == "anthropic:claude-sonnet-4-6"  # default preserved
+        assert config.model == "anthropic:claude-opus-4-6"  # default preserved
 
     def test_ignores_unknown_keys(self, tmp_path: Path) -> None:
         config_file = tmp_path / "config.toml"
@@ -80,7 +80,7 @@ class TestParseConfig:
 
     def test_empty_dict(self) -> None:
         config = _parse_config({})
-        assert config.model == "anthropic:claude-sonnet-4-6"
+        assert config.model == "anthropic:claude-opus-4-6"
 
     def test_full_dict(self) -> None:
         data = {
@@ -286,6 +286,39 @@ class TestNewConfigFields:
         assert _coerce_value("show_tokens", "true") is True
 
 
+class TestBrowserConfigFields:
+    """Tests for include_browser and browser_headless config fields."""
+
+    def test_include_browser_defaults_true(self) -> None:
+        config = CliConfig()
+        assert config.include_browser is True
+
+    def test_browser_headless_defaults_true(self) -> None:
+        """Browser should run headless (no visible window) by default."""
+        config = CliConfig()
+        assert config.browser_headless is True
+
+    def test_loads_include_browser_from_file(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "config.toml"
+        config_file.write_text("include_browser = true\n")
+        config = load_config(config_file)
+        assert config.include_browser is True
+
+    def test_loads_browser_headless_from_file(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "config.toml"
+        config_file.write_text("browser_headless = true\n")
+        config = load_config(config_file)
+        assert config.browser_headless is True
+
+    def test_coerce_include_browser(self) -> None:
+        assert _coerce_value("include_browser", "true") is True
+        assert _coerce_value("include_browser", "false") is False
+
+    def test_coerce_browser_headless(self) -> None:
+        assert _coerce_value("browser_headless", "true") is True
+        assert _coerce_value("browser_headless", "false") is False
+
+
 class TestEnvVarOverrides:
     """Tests for _apply_env_overrides() and env var precedence."""
 
@@ -313,7 +346,7 @@ class TestEnvVarOverrides:
         monkeypatch.delenv("PYDANTIC_DEEP_THEME", raising=False)
         config = CliConfig()
         _apply_env_overrides(config)
-        assert config.model == "anthropic:claude-sonnet-4-6"
+        assert config.model == "anthropic:claude-opus-4-6"
         assert config.working_dir is None
         assert config.theme == "default"
 

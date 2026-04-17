@@ -1,6 +1,6 @@
-# Eviction Processor
+# Eviction
 
-The eviction processor automatically saves large tool outputs to files and replaces them with a preview + file reference. This prevents context pollution from tools that return massive results (e.g., `grep` or `read_file` on large files).
+The eviction capability automatically saves large tool outputs to files and replaces them with a preview + file reference. This prevents context pollution from tools that return massive results (e.g., `grep` or `read_file` on large files).
 
 ## Quick Start
 
@@ -20,11 +20,16 @@ agent = create_deep_agent(eviction_token_limit=None)
 
 ## How It Works
 
-1. Before each model call, the processor scans `ToolReturnPart` messages
-2. If a tool output exceeds the token limit (chars / 4), it:
+The `EvictionCapability` uses the `after_tool_execute` hook to intercept large tool results **before** they enter the conversation history. This means the full output never bloats the message list in memory.
+
+1. After each tool call, `after_tool_execute` checks the result size
+2. If the result exceeds the token limit (chars / 4), it:
    - Saves the full output to a file in the backend (`/large_tool_results/{id}`)
-   - Replaces the message with a preview showing head/tail lines + file path
+   - Returns a preview showing head/tail lines + file path instead
 3. The agent can then use `read_file` with `offset`/`limit` to access the full output
+
+!!! tip "Why a capability hook instead of a history processor?"
+    The previous `EvictionProcessor` (history processor) ran **after** the large output was already stored in the message list — the full content sat in memory until the next model call. The `EvictionCapability` intercepts via `after_tool_execute`, so the large output never enters the history.
 
 ### Before Eviction
 
@@ -102,8 +107,9 @@ When used via `create_deep_agent()`, the processor resolves the backend from `ct
 
 | Component | Description |
 |-----------|-------------|
-| [`EvictionProcessor`][pydantic_deep.processors.eviction.EvictionProcessor] | History processor that evicts large outputs |
-| [`create_eviction_processor`][pydantic_deep.processors.eviction.create_eviction_processor] | Factory function |
+| [`EvictionCapability`][pydantic_deep.processors.eviction.EvictionCapability] | Capability that intercepts large outputs via `after_tool_execute` (default) |
+| [`EvictionProcessor`][pydantic_deep.processors.eviction.EvictionProcessor] | Legacy history processor (for standalone/backward-compatible use) |
+| [`create_eviction_processor`][pydantic_deep.processors.eviction.create_eviction_processor] | Factory function for the legacy processor |
 | [`create_content_preview`][pydantic_deep.processors.eviction.create_content_preview] | Create head/tail preview |
 | `DEFAULT_TOKEN_LIMIT` | Default threshold: 20,000 tokens |
 | `DEFAULT_EVICTION_PATH` | Default path: `/large_tool_results` |

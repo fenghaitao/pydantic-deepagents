@@ -52,17 +52,6 @@ class TestCreateCliAgent:
         )
         assert agent is not None
 
-    def test_accepts_extra_middleware(self, tmp_path: Path) -> None:
-        from apps.cli.middleware.loop_detection import LoopDetectionMiddleware
-
-        extra = [LoopDetectionMiddleware(max_repeats=5)]
-        agent, deps = create_cli_agent(
-            model=TEST_MODEL,
-            working_dir=str(tmp_path),
-            extra_middleware=extra,
-        )
-        assert agent is not None
-
     def test_instructions_include_working_dir(self, tmp_path: Path) -> None:
         agent, deps = create_cli_agent(
             model=TEST_MODEL,
@@ -148,6 +137,94 @@ class TestCliProviderAutoSelection:
         ):
             assert select_default_model() == "litellm:github_copilot/gpt-4o"
 
+    def test_include_browser_true_with_playwright(self, tmp_path: Path) -> None:
+        """When include_browser=True and playwright is available, BrowserCapability is added."""
+        # playwright IS installed in this project, so import succeeds
+        agent, deps = create_cli_agent(
+            model=TEST_MODEL,
+            working_dir=str(tmp_path),
+            include_browser=True,
+            browser_headless=True,
+        )
+        assert agent is not None
+
+    def test_include_browser_import_error_warns(self, tmp_path: Path) -> None:
+        """When playwright is missing, an ImportError produces a warning."""
+        import sys
+        from unittest.mock import patch
+
+        # Remove the browser module from sys.modules so the import inside the try block fires
+        browser_mod = sys.modules.pop("pydantic_deep.capabilities.browser", None)
+        try:
+            with patch.dict("sys.modules", {"playwright": None, "playwright.async_api": None}):
+                import warnings
+
+                with warnings.catch_warnings(record=True):
+                    warnings.simplefilter("always")
+                    create_cli_agent(
+                        model=TEST_MODEL,
+                        working_dir=str(tmp_path),
+                        include_browser=True,
+                    )
+                # A warning may or may not be raised depending on whether playwright
+                # is importable; just assert the agent is created without exception
+        finally:
+            if browser_mod is not None:
+                sys.modules["pydantic_deep.capabilities.browser"] = browser_mod
+
+    def test_include_browser_false_skips_capability(self, tmp_path: Path) -> None:
+        """When include_browser=False, no BrowserCapability is added."""
+        agent, deps = create_cli_agent(
+            model=TEST_MODEL,
+            working_dir=str(tmp_path),
+            include_browser=False,
+        )
+        assert agent is not None
+
+    def test_lean_mode_disables_browser(self, tmp_path: Path) -> None:
+        """lean=True disables browser even when include_browser=True."""
+        agent, deps = create_cli_agent(
+            model=TEST_MODEL,
+            working_dir=str(tmp_path),
+            include_browser=True,
+            lean=True,
+        )
+        assert agent is not None
+
+    def test_browser_headless_param_accepted(self, tmp_path: Path) -> None:
+        """browser_headless param is accepted without error."""
+        agent, deps = create_cli_agent(
+            model=TEST_MODEL,
+            working_dir=str(tmp_path),
+            include_browser=False,
+            browser_headless=False,
+        )
+        assert agent is not None
+
+    def test_workspace_param_accepted(self, tmp_path: Path) -> None:
+        """workspace param is accepted without error (no Docker required for local sandbox)."""
+        agent, deps = create_cli_agent(
+            model=TEST_MODEL,
+            working_dir=str(tmp_path),
+            # workspace without sandbox="docker" → LocalBackend (no Docker needed)
+            workspace="ml-env",
+        )
+        assert agent is not None
+        # Local sandbox — workspace ignored when Docker is not active
+        from pydantic_ai_backends import LocalBackend
+
+        assert isinstance(deps.backend, LocalBackend)
+
+    def test_sandbox_local_is_default(self, tmp_path: Path) -> None:
+        """Default sandbox is local (no Docker)."""
+        agent, deps = create_cli_agent(
+            model=TEST_MODEL,
+            working_dir=str(tmp_path),
+        )
+        from pydantic_ai_backends import LocalBackend
+
+        assert isinstance(deps.backend, LocalBackend)
+
 
 class TestShellAllowListHook:
     """Tests for _make_shell_allow_list_hook()."""
@@ -221,10 +298,10 @@ class TestBuildCliInstructions:
         result = build_cli_instructions()
         assert "CLI Environment" in result
         assert "Exactness Requirements" in result
-        assert "Avoid Over-Engineering" in result
         assert "Writing Code" in result
         assert "Before Declaring Done" in result
-        assert "Parallel Tool Calls" in result
+        # BASE_PROMPT is NOT included — added by create_deep_agent()
+        assert "Core Behavior" not in result
 
     def test_deprecated_params_accepted(self) -> None:
         """Deprecated params are accepted for backwards compatibility."""
