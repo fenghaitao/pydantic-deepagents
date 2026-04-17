@@ -24,6 +24,8 @@ WORKSPACES_DIR = APP_DIR / "workspaces"
 STATIC_DIR = APP_DIR / "static"
 
 
+
+
 def _resolve_model_name() -> str | Model:
     """Resolve the LLM from ``MODEL_NAME`` or the same provider priority as the CLI.
 
@@ -38,7 +40,10 @@ def _resolve_model_name() -> str | Model:
         select_default_model = None
 
     if raw is None:
-        selected = "openai:gpt-4.1" if select_default_model is None else select_default_model()
+        if select_default_model is None:
+            selected = "openai:gpt-4.1"
+        else:
+            selected = select_default_model()
         if isinstance(selected, str) and selected.startswith("litellm:"):
             return infer_litellm_model(selected)
         return selected

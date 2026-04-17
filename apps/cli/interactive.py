@@ -1660,8 +1660,29 @@ def _raw_line_edit() -> str:  # noqa: C901
 
             # --- Ctrl+V → clipboard image paste ---
             if key == "paste":
-                pass
+                from cli.clipboard import get_clipboard_image
 
+                theme = get_theme()
+                image = get_clipboard_image()
+                if image:
+                    _pending_images.append(image)
+                    n = len(_pending_images)
+                    tag = f"[image {n}]"
+                    buf = buf[:cursor] + tag + buf[cursor:]
+                    cursor += len(tag)
+                    size_kb = len(image.data) / 1024
+                    # Show tag inline + confirmation below
+                    sys.stdout.write("\n")
+                    console.print(
+                        f"[{theme.accent}]  \u2022 Image pasted from clipboard "
+                        f"({size_kb:.0f} KB)[/{theme.accent}]"
+                    )
+                    _redraw()
+                else:
+                    sys.stdout.write("\n")
+                    console.print(f"[{theme.muted}]  No image in clipboard.[/{theme.muted}]")
+                    _redraw()
+                continue
             # --- Enter → submit ---
             if key == "enter":
                 sys.stdout.write("\n")
