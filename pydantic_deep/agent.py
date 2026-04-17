@@ -802,7 +802,7 @@ def create_deep_agent(  # noqa: C901
     _require_web = interrupt_on.get("web_search", True) if interrupt_on else True
     has_interrupt_tools = any(interrupt_on.values()) or (
         include_filesystem and (_require_write or _require_execute)
-    ) or (include_web and _require_web)
+    ) or ((web_search or web_fetch) and _require_web)
 
     if output_type is not None:
         # If interrupt_on is used, combine output_type with DeferredToolRequests
