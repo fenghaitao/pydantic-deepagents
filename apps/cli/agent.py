@@ -268,12 +268,6 @@ def create_cli_agent(  # noqa: C901
     effective_subagents = include_subagents if (not lean or kg_capability) else False
     effective_todo = include_todo if not lean else False  # Lean: no todo overhead
 
-    effective_skills = _skills if not lean else False
-    effective_plan = _plan if not lean else False
-    effective_memory = _memory if not lean else False
-    effective_subagents = _subagents if not lean else False
-    effective_todo = _todo if not lean else False
-
     _browser = include_browser if include_browser is not None else config.include_browser
     effective_browser = _browser if not lean else False
 
@@ -353,7 +347,7 @@ def create_cli_agent(  # noqa: C901
         include_memory=effective_memory,
         memory_dir=".pydantic-deep",
         # Context files (auto-discover AGENTS.md, SOUL.md)
-        context_discovery=_context_disc if not lean else False,
+        context_discovery=context_discovery if not lean else False,
         # Teams
         include_teams=(include_teams if include_teams is not None else config.include_teams),
         # Self-improvement

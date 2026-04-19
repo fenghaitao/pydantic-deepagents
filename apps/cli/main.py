@@ -15,12 +15,13 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import sys
 from dataclasses import fields
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from rich.console import Console
@@ -219,15 +220,6 @@ def _main_callback(
 
     # Non-blocking update notification (uses 24-hour file cache)
     from apps.cli.update import check_for_update
-
-    # Default: launch TUI when no subcommand is given
-    if ctx.invoked_subcommand is None:
-        from apps.cli.init import ensure_initialized
-        from apps.cli.tui import run_tui
-
-        ensure_initialized()
-        run_tui(working_dir=os.getcwd())
-
     _upd = check_for_update()
     if _upd:
         Console().print(
@@ -469,6 +461,31 @@ def run(
         )
     )
     raise typer.Exit(result)
+
+
+def _build_model_settings(
+    model_settings_json: str | None,
+    temperature: float | None,
+    reasoning_effort: str | None,
+    thinking: bool,
+    thinking_budget: int | None,
+) -> dict[str, Any] | None:
+    """Build model settings dict from CLI flags."""
+    settings: dict[str, Any] = {}
+    if model_settings_json:
+        settings = json.loads(model_settings_json)
+    if temperature is not None:
+        settings["temperature"] = temperature
+    if reasoning_effort:
+        settings["openai_reasoning_effort"] = reasoning_effort
+    if thinking:
+        if thinking_budget:
+            settings["anthropic_thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
+        else:
+            settings["anthropic_thinking"] = {"type": "adaptive"}
+    elif thinking_budget:
+        settings["anthropic_thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
+    return settings if settings else None
 
 
 @app.command()
@@ -1385,6 +1402,8 @@ def update() -> None:
 
 
 def main() -> None:
+    """Entry point for the CLI."""
+    app()
 
 
 def _make_code_graph_runtime():
