@@ -22,9 +22,12 @@ from pydantic_ai.messages import (
 
 from pydantic_deep.processors.history_archive import (
     SEARCH_HISTORY_DESCRIPTION,
+    _bm25_rank,
+    _compute_idf,
     _format_message,
     _format_messages,
     _load_messages,
+    _tokenize,
     create_history_search_toolset,
 )
 
@@ -595,4 +598,137 @@ class TestConstants:
         """SEARCH_HISTORY_DESCRIPTION contains expected guidance."""
         assert "conversation history" in SEARCH_HISTORY_DESCRIPTION.lower()
         assert "When to use" in SEARCH_HISTORY_DESCRIPTION
+        assert "BM25" in SEARCH_HISTORY_DESCRIPTION
+
+
+class TestTokenize:
+    """Tests for BM25 tokenizer."""
+
+    def test_simple_words(self) -> None:
+        assert _tokenize("hello world") == ["hello", "world"]
+
+    def test_case_insensitive(self) -> None:
+        assert _tokenize("Hello WORLD") == ["hello", "world"]
+
+    def test_splits_on_underscores(self) -> None:
+        """Underscores split tokens (important for code identifiers)."""
+        assert _tokenize("user_searchable_content") == ["user", "searchable", "content"]
+
+    def test_splits_on_punctuation(self) -> None:
+        assert _tokenize("file.py:42") == ["file", "py", "42"]
+
+    def test_preserves_numbers(self) -> None:
+        assert _tokenize("version 3 release") == ["version", "3", "release"]
+
+    def test_empty_string(self) -> None:
+        assert _tokenize("") == []
+
+    def test_only_punctuation(self) -> None:
+        assert _tokenize("!@#$%") == []
+
+
+class TestComputeIdf:
+    """Tests for BM25 IDF computation."""
+
+    def test_rare_term_high_idf(self) -> None:
+        """A term in 1 of 10 docs has high IDF."""
+        docs = [["common"]] * 9 + [["rare"]]
+        idf = _compute_idf("rare", docs)
+        assert idf > 1.0
+
+    def test_common_term_low_idf(self) -> None:
+        """A term in all docs has low IDF."""
+        docs = [["common"]] * 10
+        idf = _compute_idf("common", docs)
+        assert idf < 0.5
+
+    def test_absent_term_zero_idf(self) -> None:
+        """A term in no docs has zero IDF."""
+        docs = [["hello"]]
+        assert _compute_idf("missing", docs) == 0.0
+
+
+class TestBm25Rank:
+    """Tests for BM25 ranking."""
+
+    def test_basic_ranking(self) -> None:
+        """Documents with query terms rank higher than those without."""
+        docs = [
+            "the cat sat on the mat",
+            "python authentication module",
+            "the dog ran in the park",
+        ]
+        results = _bm25_rank("python auth", docs)
+        assert len(results) == 1
+        assert results[0][0] == 1  # "python authentication module"
+
+    def test_multi_word_scoring(self) -> None:
+        """Document matching more query words scores higher."""
+        docs = [
+            "fix the auth error in login handler",
+            "error handling in the system",
+            "authentication and authorization",
+        ]
+        results = _bm25_rank("auth error", docs)
+        # First result should be the one with both "auth" and "error"
+        assert results[0][0] == 0
+
+    def test_rare_term_scores_higher(self) -> None:
+        """Rare terms contribute more to score than common ones."""
+        docs = [
+            "the the the rare_word",
+            "the the the common",
+            "common common common",
+        ]
+        results = _bm25_rank("rare_word", docs)
+        assert len(results) == 1
+        assert results[0][0] == 0  # only doc with "rare_word"
+
+    def test_empty_query_no_results(self) -> None:
+        assert _bm25_rank("", ["hello world"]) == []
+
+    def test_empty_docs_no_results(self) -> None:
+        assert _bm25_rank("hello", []) == []
+
+    def test_empty_string_doc_skipped(self) -> None:
+        """An empty string document gets a score of 0 (not included in results)."""
+        docs = ["", "hello world"]
+        results = _bm25_rank("hello", docs)
+        # Only doc 1 should match; doc 0 is empty → score 0 → excluded
+        assert len(results) == 1
+        assert results[0][0] == 1
+
+    def test_no_matching_docs(self) -> None:
+        docs = ["hello world", "foo bar"]
+        assert _bm25_rank("zzz_nonexistent", docs) == []
+
+    def test_results_sorted_by_score_descending(self) -> None:
+        """Results are returned in descending score order."""
+        docs = [
+            "unrelated text",
+            "python python python",  # high tf
+            "python is great",  # lower tf
+        ]
+        results = _bm25_rank("python", docs)
+        assert len(results) == 2
+        assert results[0][1] >= results[1][1]  # scores descending
+
+    @pytest.mark.anyio
+    async def test_search_shows_scores(self, tmp_path: Path) -> None:
+        """Search results include BM25 scores."""
+        messages: list[ModelMessage] = [
+            ModelRequest(
+                parts=[UserPromptPart(content="BackendProtocol implementation")],
+                timestamp=_TS,
+            ),
+        ]
+        path = tmp_path / "messages.json"
+        _write_messages(path, messages)
+
+        ts = create_history_search_toolset(str(path))
+        fn = ts.tools["search_conversation_history"].function
+        ctx = _mock_ctx()
+
+        result = await fn(ctx, "BackendProtocol")
+        assert "[score:" in result
         assert "When NOT to use" in SEARCH_HISTORY_DESCRIPTION

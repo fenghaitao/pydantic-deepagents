@@ -288,6 +288,39 @@ class TestNewConfigFields:
         assert _coerce_value("show_tokens", "true") is True
 
 
+class TestBrowserConfigFields:
+    """Tests for include_browser and browser_headless config fields."""
+
+    def test_include_browser_defaults_true(self) -> None:
+        config = CliConfig()
+        assert config.include_browser is True
+
+    def test_browser_headless_defaults_true(self) -> None:
+        """Browser should run headless (no visible window) by default."""
+        config = CliConfig()
+        assert config.browser_headless is True
+
+    def test_loads_include_browser_from_file(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "config.toml"
+        config_file.write_text("include_browser = true\n")
+        config = load_config(config_file)
+        assert config.include_browser is True
+
+    def test_loads_browser_headless_from_file(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "config.toml"
+        config_file.write_text("browser_headless = true\n")
+        config = load_config(config_file)
+        assert config.browser_headless is True
+
+    def test_coerce_include_browser(self) -> None:
+        assert _coerce_value("include_browser", "true") is True
+        assert _coerce_value("include_browser", "false") is False
+
+    def test_coerce_browser_headless(self) -> None:
+        assert _coerce_value("browser_headless", "true") is True
+        assert _coerce_value("browser_headless", "false") is False
+
+
 class TestEnvVarOverrides:
     """Tests for _apply_env_overrides() and env var precedence."""
 

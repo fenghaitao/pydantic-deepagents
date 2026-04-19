@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
@@ -11,9 +13,13 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.models.test import TestModel as _TestModel
+from pydantic_ai.tools import RunContext
+from pydantic_ai.usage import RunUsage
 
 from pydantic_deep import (
     CANCELLED_MESSAGE,
+    PatchToolCallsCapability,
     create_deep_agent,
     patch_tool_calls_processor,
 )
@@ -322,23 +328,25 @@ class TestPatchToolCallsProcessor:
 
 
 class TestCreateDeepAgentPatchToolCalls:
-    def test_patch_tool_calls_true(self):
-        """Agent with patch_tool_calls=True has the processor."""
-        agent = create_deep_agent(model=TEST_MODEL, patch_tool_calls=True, cost_tracking=False)
-        # The agent should have history_processors containing our processor
-        # We check indirectly via the agent's internal graph state
-        from pydantic_deep.processors.patch import patch_tool_calls_processor as ptp
+    def _has_patch_capability(self, agent: object) -> bool:
+        """Check if agent has PatchToolCallsCapability registered."""
+        root = getattr(agent, "_root_capability", None)
+        if root is None:
+            return False
+        for cap in getattr(root, "capabilities", []):
+            if isinstance(cap, PatchToolCallsCapability):
+                return True
+        return False
 
-        # Access the processors from the agent's graph
-        assert any(p is ptp for p in agent.history_processors)
+    def test_patch_tool_calls_true(self):
+        """Agent with patch_tool_calls=True has the capability."""
+        agent = create_deep_agent(model=TEST_MODEL, patch_tool_calls=True, cost_tracking=False)
+        assert self._has_patch_capability(agent)
 
     def test_patch_tool_calls_false(self):
-        """Agent with patch_tool_calls=False doesn't have the processor."""
+        """Agent with patch_tool_calls=False doesn't have the capability."""
         agent = create_deep_agent(model=TEST_MODEL, patch_tool_calls=False, cost_tracking=False)
-        from pydantic_deep.processors.patch import patch_tool_calls_processor as ptp
-
-        processors = agent.history_processors
-        assert all(p is not ptp for p in processors)
+        assert not self._has_patch_capability(agent)
 
     def test_patch_tool_calls_with_other_processors(self):
         """patch_tool_calls works alongside other history processors."""
@@ -354,16 +362,66 @@ class TestCreateDeepAgentPatchToolCalls:
             history_processors=[window],
             cost_tracking=False,
         )
-        from pydantic_deep.processors.patch import patch_tool_calls_processor as ptp
+        assert self._has_patch_capability(agent)
 
-        processors = agent.history_processors
-        # patch_tool_calls_processor should be present
-        assert any(p is ptp for p in processors)
+
+class TestPatchToolCallsCapability:
+    """Tests for PatchToolCallsCapability (before_model_request hook)."""
+
+    async def test_fixes_orphaned_calls(self):
+        """Capability patches orphaned tool calls via before_model_request."""
+        cap = PatchToolCallsCapability()
+        ctx = RunContext(deps=None, model=_TestModel(), usage=RunUsage())
+
+        messages = [
+            ModelRequest(parts=[UserPromptPart(content="do something")]),
+            ModelResponse(parts=[ToolCallPart(tool_name="t", args={}, tool_call_id="c1")]),
+            # No matching ToolReturnPart — orphan
+        ]
+
+        class FakeReqCtx:
+            def __init__(self, msgs: list[Any]) -> None:
+                self.messages = msgs
+
+        rc = FakeReqCtx(messages)
+        result = await cap.before_model_request(ctx, rc)
+
+        # Should have injected a synthetic ToolReturnPart
+        patched = result.messages
+        assert len(patched) == 3
+        last = patched[-1]
+        assert isinstance(last, ModelRequest)
+        tool_return = [p for p in last.parts if isinstance(p, ToolReturnPart)]
+        assert len(tool_return) == 1
+        assert tool_return[0].content == CANCELLED_MESSAGE
+
+    async def test_passes_through_clean_history(self):
+        """Clean history passes through unchanged."""
+        cap = PatchToolCallsCapability()
+        ctx = RunContext(deps=None, model=_TestModel(), usage=RunUsage())
+
+        messages = [
+            ModelRequest(parts=[UserPromptPart(content="hello")]),
+            ModelResponse(parts=[TextPart(content="hi")]),
+        ]
+
+        class FakeReqCtx:
+            def __init__(self, msgs: list[Any]) -> None:
+                self.messages = msgs
+
+        rc = FakeReqCtx(messages)
+        result = await cap.before_model_request(ctx, rc)
+        assert result.messages == messages
 
 
 class TestPatchExports:
     def test_importable_from_pydantic_deep(self):
-        from pydantic_deep import CANCELLED_MESSAGE, patch_tool_calls_processor
+        from pydantic_deep import (
+            CANCELLED_MESSAGE,
+            PatchToolCallsCapability,
+            patch_tool_calls_processor,
+        )
 
         assert patch_tool_calls_processor is not None
+        assert PatchToolCallsCapability is not None
         assert CANCELLED_MESSAGE == "Tool call was cancelled."

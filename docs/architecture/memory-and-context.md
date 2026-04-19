@@ -10,7 +10,10 @@ and session management work across the **summarization-pydantic-ai** and **pydan
 | Component | Library | Role |
 |-----------|---------|------|
 | **ContextManagerMiddleware** | summarization-pydantic-ai | Token tracking, auto-compression, continuous message persistence (`messages.json`) |
-| **EvictionProcessor** | pydantic-deep | Saves large tool outputs to files before they consume context |
+| **EvictionCapability** | pydantic-deep | Intercepts large tool outputs via `after_tool_execute` before they enter history |
+| **StuckLoopDetection** | pydantic-deep | Detects repetitive tool call patterns and breaks agent loops |
+| **LimitWarnerCapability** | summarization-pydantic-ai | Warns the model when context limits approach (70% URGENT, 100% CRITICAL) |
+| **PatchToolCallsCapability** | pydantic-deep | Fixes orphaned tool calls/results in conversation history |
 | **AgentMemoryToolset** | pydantic-deep | Persistent agent memory (`MEMORY.md`) across sessions |
 | **HistoryArchiveSearch** | pydantic-deep | Search tool for pre-compression history (reads `messages.json`) |
 | **CLI Commands** | cli | `/compact`, `/context`, `--resume`, `--fork` |
@@ -285,9 +288,9 @@ uncompressed history — even messages that were summarized away from context.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> NewSession: pydantic-deep chat
-    [*] --> ResumeSession: --resume SESSION_ID
-    [*] --> ForkSession: --resume SESSION_ID --fork
+    [*] --> NewSession: pydantic-deep
+    [*] --> ResumeSession: /load SESSION_ID
+    [*] --> ForkSession: /load SESSION_ID
 
     NewSession --> Running: Fresh session_id
 

@@ -49,6 +49,10 @@ typecheck: typecheck-pyright ## Run static type checking
 .PHONY: typecheck-both
 typecheck-both: typecheck-pyright typecheck-mypy ## Run static type checking with both Pyright and Mypy
 
+.PHONY: security
+security: ## Run Bandit security scanner on production code
+	uv run bandit -r pydantic_deep -x tests -ll
+
 .PHONY: test
 test: ## Run tests and collect coverage data
 	@# To test using a specific version of python, run 'make install-all-python' then set environment variable PYTEST_PYTHON=3.10 or similar
@@ -78,7 +82,7 @@ docs-serve: ## Build and serve the documentation
 	uv run mkdocs serve
 
 .PHONY: all
-all: format lint typecheck testcov ## Run code formatting, linting, static type checks, and tests with coverage report generation
+all: format lint typecheck security testcov ## Run code formatting, linting, static type checks, security scan, and tests with coverage report generation
 
 .PHONY: help
 help: ## Show this help (usage: make help)

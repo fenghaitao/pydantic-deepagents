@@ -87,6 +87,8 @@ from pydantic_ai.tools import (
 )
 from subagents_pydantic_ai import DynamicAgentRegistry, create_agent_factory_toolset
 
+from pydantic_ai_backends import LocalBackend
+
 from pydantic_deep import (
     BASE_PROMPT,
     DeepAgentDeps,
@@ -96,7 +98,6 @@ from pydantic_deep import (
     HookResult,
     InMemoryCheckpointStore,
     RewindRequested,
-    SessionManager,
     Skill,
     create_deep_agent,
     create_sliding_window_processor,
@@ -286,9 +287,8 @@ def create_ask_user_callback(websocket: WebSocket, session: UserSession) -> Any:
     return callback
 
 
-# Global state - shared agent (stateless) and session manager
+# Global state - shared agent (stateless) and per-session local backends
 agent: Agent[DeepAgentDeps, str] | None = None
-session_manager: SessionManager | None = None
 user_sessions: dict[str, UserSession] = {}  # session_id -> UserSession
 
 
@@ -465,7 +465,7 @@ MAIN_INSTRUCTIONS = f"""{BASE_PROMPT}
 5. **Code Review**: Delegate to the 'code-reviewer' subagent for code quality review
 6. **Entertainment**: Delegate to the 'joke-generator' subagent for humor
 7. **Quick Reference**: Load the 'quick-reference' skill for command shortcuts
-8. **Dynamic Agents**: Create new specialized agents at runtime with `create_agent(name, description, instructions)`, then delegate tasks to them. Use `list_agents()` to see created agents, `remove_agent(name)` to delete them. Allowed models: anthropic:claude-sonnet-4-6, anthropic:claude-haiku-4-5-20251001, anthropic:claude-haiku-4-5-20251001.
+8. **Dynamic Agents**: Create new specialized agents at runtime with `create_agent(name, description, instructions)`, then delegate tasks to them. Use `list_agents()` to see created agents, `remove_agent(name)` to delete them. Allowed models: litellm:github_copilot/gpt-4o.
 9. **Plan Mode**: For complex tasks, delegate to the 'planner' subagent which will \
 analyze the codebase, ask clarifying questions with options, and create a step-by-step \
 implementation plan. Trigger when the user says 'use plan mode' or for tasks requiring \
@@ -564,6 +564,11 @@ def create_agent() -> Agent[DeepAgentDeps, str]:
     - Skills (filesystem + programmatic)
     - Human-in-the-loop (execute approval)
     """
+    # Resolve the LiteLLM model so pydantic-ai gets a proper Model instance
+    from pydantic_deep.litellm import infer_litellm_model
+
+    model = infer_litellm_model("litellm:github_copilot/gpt-4o")
+
     # Custom GitHub toolset
     github_toolset = create_github_toolset(id="github")
 
@@ -572,11 +577,9 @@ def create_agent() -> Agent[DeepAgentDeps, str]:
     factory_toolset = create_agent_factory_toolset(
         registry=agent_registry,
         allowed_models=[
-            "anthropic:claude-sonnet-4-6",
-            "anthropic:claude-haiku-4-5-20251001",
-            "anthropic:claude-haiku-4-5-20251001",
+            "litellm:github_copilot/gpt-4o",
         ],
-        default_model="anthropic:claude-haiku-4-5-20251001",
+        default_model="litellm:github_copilot/gpt-4o",
         max_agents=5,
         id="agent-factory",
     )
@@ -587,25 +590,33 @@ def create_agent() -> Agent[DeepAgentDeps, str]:
         keep=("messages", 30),  # Keep last 30 messages
     )
 
+    # Skills toolset with both programmatic skills and directory-based skills
+    from pydantic_deep.toolsets.skills import SkillsToolset
+
+    skills_toolset = SkillsToolset(
+        id="deep-skills",
+        skills=PROGRAMMATIC_SKILLS,
+        directories=[str(SKILLS_DIR)],
+    )
+
     return create_deep_agent(
-        model="anthropic:claude-sonnet-4-6",
+        model=model,
         instructions=MAIN_INSTRUCTIONS,
         backend=None,  # Backend comes from deps at runtime (per-session Docker container)
         # --- Toolsets ---
         include_todo=True,
         include_filesystem=True,
         include_subagents=True,
-        include_skills=True,
+        include_skills=False,  # We provide our own SkillsToolset below
         include_execute=True,  # Force include - backend provided via deps at runtime
-        toolsets=[github_toolset, factory_toolset],
+        toolsets=[github_toolset, factory_toolset, skills_toolset],
         # --- Subagents (joke-generator + code-reviewer + general-purpose + dynamic) ---
         subagents=SUBAGENT_CONFIGS,
         include_builtin_subagents=True,
         max_nesting_depth=2,  # Subagents can spawn their own subagents (2 levels deep)
         subagent_registry=agent_registry,  # Share registry so task() can find dynamic agents
-        # --- Skills (filesystem directory + programmatic Skill instances) ---
-        skills=PROGRAMMATIC_SKILLS,
-        skill_directories=[{"path": str(SKILLS_DIR), "recursive": True}],
+        # --- Skills (directory-based loaded via skills_toolset above) ---
+        skill_directories=None,
         # --- Hooks (Claude Code-style lifecycle hooks) ---
         hooks=HOOKS,
         # --- Capabilities (audit + permission) ---
@@ -633,61 +644,54 @@ _DEEP_MD_PATH = APP_DIR / "workspace" / "DEEP.md"
 
 
 async def get_or_create_session(session_id: str) -> UserSession:
-    """Get existing session or create a new one with isolated Docker container."""
-    global session_manager, user_sessions
+    """Get existing session or create a new one with LocalBackend."""
+    global user_sessions
 
     if session_id in user_sessions:
         return user_sessions[session_id]
 
-    # Create new sandbox via SessionManager
-    assert session_manager is not None
-    sandbox = await session_manager.get_or_create(session_id)
+    # Create per-session workspace directory
+    session_workspace = WORKSPACES_DIR / session_id
+    session_workspace.mkdir(parents=True, exist_ok=True)
+
+    # Create LocalBackend rooted at the session workspace
+    backend = LocalBackend(root_dir=str(session_workspace))
 
     # Seed workspace with DEEP.md context file (demonstrates context_files feature)
     if _DEEP_MD_PATH.exists():
         deep_md_content = _DEEP_MD_PATH.read_text()
-        sandbox.write("/workspace/DEEP.md", deep_md_content)
+        workspace_dir = session_workspace / "workspace"
+        workspace_dir.mkdir(exist_ok=True)
+        (workspace_dir / "DEEP.md").write_text(deep_md_content)
 
     # Create per-session checkpoint store
     cp_store = InMemoryCheckpointStore()
 
-    # Create deps with the user's sandbox and checkpoint store
-    deps = DeepAgentDeps(backend=sandbox)
+    # Create deps with the LocalBackend
+    deps = DeepAgentDeps(backend=backend)
 
     # Create and store session
     session = UserSession(session_id=session_id, deps=deps, checkpoint_store=cp_store)
     user_sessions[session_id] = session
 
-    logger.info(f"Created new session: {session_id}")
+    logger.info(f"Created new session: {session_id} (workspace: {session_workspace})")
     return session
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize shared agent and session manager on startup."""
-    global agent, session_manager
+    """Initialize shared agent on startup."""
+    global agent
 
     # Create shared agent (stateless) with ALL features
     agent = create_agent()
 
-    # Create session manager for per-user Docker containers
-    # Uses python-datascience runtime (pre-installed: pandas, numpy, matplotlib, etc.)
-    # NOTE: Change to "python-datascience" for pre-installed pandas/numpy/matplotlib
-    # (first run will take a few minutes to build the Docker image)
-    session_manager = SessionManager(
-        default_runtime=None,  # Uses python:3.12-slim for fast startup
-        default_idle_timeout=3600,  # 1 hour idle timeout
-        workspace_root=WORKSPACES_DIR,  # Persistent storage for user files
-    )
-    session_manager.start_cleanup_loop(interval=300)  # Cleanup every 5 min
-
     print("=" * 60)
-    print("pydantic-deep Full Demo — ALL features enabled")
+    print("pydantic-deep Full Demo — ALL features enabled (LocalBackend)")
     print("=" * 60)
     print(f"  Skills directory : {SKILLS_DIR}")
     print(f"  Workspaces       : {WORKSPACES_DIR}")
-    rt = session_manager._default_runtime  # type: ignore[attr-defined]
-    print(f"  Runtime          : {rt or 'python:3.12-slim (default)'}")
+    print(f"  Backend          : LocalBackend (no Docker)")
     print(f"  Hooks            : {len(HOOKS)} (audit_logger, safety_gate)")
     print("  Capabilities     : AuditCapability, PermissionCapability")
     print("  Processors       : eviction(20K), sliding_window(50→30), patch_tool_calls")
@@ -701,9 +705,7 @@ async def lifespan(app: FastAPI):
     print("=" * 60)
     yield
 
-    # Shutdown all sessions
-    count = await session_manager.shutdown()
-    print(f"Shutdown complete. Stopped {count} sessions.")
+    print("Shutdown complete.")
 
 
 app = FastAPI(

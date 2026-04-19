@@ -51,6 +51,6 @@ class ContextFilesCapability(AbstractCapability[Any]):
             if toolset is None or not hasattr(ctx.deps, "backend"):
                 return None
             parts = await toolset.get_instructions(ctx)  # pragma: no cover
-            return "\n\n".join(parts) if parts else None  # pragma: no cover
+            return "\n\n".join(p.content for p in parts) if parts else None  # pragma: no cover
 
         return _instructions

@@ -157,6 +157,7 @@ print(result.output)
 
 ## Next Steps
 
+- [Browser Automation](browser.md) — Full browser control via Playwright (navigate, click, type, screenshot)
 - [Capabilities](middleware.md) -- Overview of the Capabilities API
 - [Toolsets](../concepts/toolsets.md) -- Overview of all available toolsets
 - [Cost Tracking](cost-tracking.md) -- Monitor token usage from web tool responses

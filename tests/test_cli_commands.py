@@ -5,11 +5,12 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from typer.testing import CliRunner
 
 from apps.cli.main import app
+from apps.cli.update import UpdateInfo
 
 runner = CliRunner()
 
@@ -215,33 +216,45 @@ class TestThreadsDelete:
         assert not session_dir.exists()
 
 
-class TestSandboxFlags:
-    """Tests for --sandbox and --runtime flags on run/chat."""
+class TestUpdateCommand:
+    """Tests for 'update' command."""
 
-    @patch("apps.cli.init.ensure_initialized", return_value=Path("/tmp"))
-    @patch("apps.cli.main.asyncio.run")
-    def test_run_with_sandbox(self, mock_asyncio_run: MagicMock, _: MagicMock) -> None:
-        mock_asyncio_run.return_value = 0
-        result = runner.invoke(app, ["run", "test", "--sandbox"])
+    def test_update_succeeds(self) -> None:
+        with patch("apps.cli.update.run_update", return_value=0):
+            result = runner.invoke(app, ["update"])
         assert result.exit_code == 0
+        assert "Updating" in result.output
 
-    @patch("apps.cli.init.ensure_initialized", return_value=Path("/tmp"))
-    @patch("apps.cli.main.asyncio.run")
-    def test_run_with_sandbox_and_runtime(self, mock_asyncio_run: MagicMock, _: MagicMock) -> None:
-        mock_asyncio_run.return_value = 0
-        result = runner.invoke(app, ["run", "test", "--sandbox", "--runtime", "python-datascience"])
-        assert result.exit_code == 0
+    def test_update_propagates_nonzero_exit_code(self) -> None:
+        with patch("apps.cli.update.run_update", return_value=1):
+            result = runner.invoke(app, ["update"])
+        assert result.exit_code == 1
 
-    @patch("apps.cli.init.ensure_initialized", return_value=Path("/tmp"))
-    @patch("apps.cli.main.asyncio.run")
-    def test_chat_with_sandbox(self, mock_asyncio_run: MagicMock, _: MagicMock) -> None:
-        mock_asyncio_run.return_value = None
-        result = runner.invoke(app, ["chat", "--sandbox"])
+    def test_update_help(self) -> None:
+        result = runner.invoke(app, ["update", "--help"])
         assert result.exit_code == 0
+        assert "latest" in result.output.lower()
 
-    @patch("apps.cli.init.ensure_initialized", return_value=Path("/tmp"))
-    @patch("apps.cli.main.asyncio.run")
-    def test_chat_with_runtime(self, mock_asyncio_run: MagicMock, _: MagicMock) -> None:
-        mock_asyncio_run.return_value = None
-        result = runner.invoke(app, ["chat", "--sandbox", "--runtime", "node-minimal"])
+
+class TestVersionNotification:
+    """Tests for the update notification shown at startup."""
+
+    def test_shows_notification_when_update_available(self) -> None:
+        upd = UpdateInfo(current="0.1.0", latest="1.0.0")
+        with (
+            patch("apps.cli.update.check_for_update", return_value=upd),
+            patch("apps.cli.config.DEFAULT_CONFIG_PATH", Path("/tmp/nonexistent/config.toml")),
+        ):
+            result = runner.invoke(app, ["config", "show"])
         assert result.exit_code == 0
+        assert "Update available" in result.output
+        assert "1.0.0" in result.output
+
+    def test_no_output_when_up_to_date(self) -> None:
+        with (
+            patch("apps.cli.update.check_for_update", return_value=None),
+            patch("apps.cli.config.DEFAULT_CONFIG_PATH", Path("/tmp/nonexistent/config.toml")),
+        ):
+            result = runner.invoke(app, ["config", "show"])
+        assert result.exit_code == 0
+        assert "Update available" not in result.output

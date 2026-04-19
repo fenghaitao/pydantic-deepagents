@@ -332,3 +332,94 @@ def create_eviction_processor(
         tail_lines=tail_lines,
         on_eviction=on_eviction,
     )
+
+
+# ---------------------------------------------------------------------------
+# Capability-based eviction (preferred — intercepts before history)
+# ---------------------------------------------------------------------------
+
+from pydantic_ai.capabilities import AbstractCapability  # noqa: E402
+from pydantic_ai.messages import ToolCallPart  # noqa: E402
+from pydantic_ai.tools import ToolDefinition  # noqa: E402
+
+
+@dataclass
+class EvictionCapability(AbstractCapability[Any]):
+    """Capability that intercepts large tool outputs via ``after_tool_execute``.
+
+    Unlike :class:`EvictionProcessor` (a history processor that runs after the
+    result is already in message history), this capability intercepts the tool
+    result **before** it enters the conversation — so the large output never
+    bloats the message list.
+
+    The evicted content is saved to a file via the backend, and the tool result
+    is replaced with a compact preview + file reference.
+
+    Args:
+        backend: Fallback backend for writing evicted files.
+        token_limit: Maximum estimated tokens before eviction (default: 20K).
+        eviction_path: Directory in the backend for evicted files.
+        head_lines: Lines from start in preview.
+        tail_lines: Lines from end in preview.
+        on_eviction: Optional callback ``(tool_name, file_path, original_chars, preview_chars)``.
+    """
+
+    backend: BackendProtocol | None = None
+    token_limit: int = DEFAULT_TOKEN_LIMIT
+    eviction_path: str = DEFAULT_EVICTION_PATH
+    head_lines: int = DEFAULT_HEAD_LINES
+    tail_lines: int = DEFAULT_TAIL_LINES
+    on_eviction: Callable[[str, str, int, int], Any] | None = None
+
+    def _resolve_backend(self, ctx: RunContext[Any]) -> BackendProtocol | None:
+        """Resolve backend from deps or fallback."""
+        deps_backend = getattr(ctx.deps, "backend", None)
+        if deps_backend is not None and isinstance(deps_backend, BackendProtocol):
+            return deps_backend
+        return self.backend
+
+    async def after_tool_execute(
+        self,
+        ctx: RunContext[Any],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: dict[str, Any],
+        result: Any,
+    ) -> Any:
+        """Intercept large tool results before they enter message history."""
+        content_str = _content_to_str(result)
+        char_limit = self.token_limit * NUM_CHARS_PER_TOKEN
+
+        if len(content_str) <= char_limit:
+            return result
+
+        backend = self._resolve_backend(ctx)
+        if backend is None:
+            return result
+
+        sanitized_id = _sanitize_id(call.tool_call_id)
+        file_path = f"{self.eviction_path}/{sanitized_id}"
+        write_result = backend.write(file_path, content_str)
+
+        if write_result.error:
+            return result  # Keep original on write failure
+
+        preview = create_content_preview(
+            content_str,
+            head_lines=self.head_lines,
+            tail_lines=self.tail_lines,
+        )
+        replacement = EVICTION_MESSAGE_TEMPLATE.format(
+            file_path=file_path,
+            content_sample=preview,
+        )
+
+        if self.on_eviction is not None:
+            _cb_result = self.on_eviction(
+                call.tool_name, file_path, len(content_str), len(replacement)
+            )
+            if inspect.isawaitable(_cb_result):
+                await _cb_result
+
+        return replacement

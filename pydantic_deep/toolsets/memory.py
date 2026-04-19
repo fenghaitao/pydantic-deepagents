@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from pydantic_ai import RunContext
+from pydantic_ai.messages import InstructionPart
 from pydantic_ai.toolsets import FunctionToolset
 from pydantic_ai_backends import BackendProtocol
 
@@ -214,7 +215,7 @@ class AgentMemoryToolset(FunctionToolset[Any]):
             line_count = len(updated.splitlines())
             return f"Memory updated ({line_count} lines total)."
 
-    async def get_instructions(self, ctx: RunContext[Any]) -> list[str] | None:
+    async def get_instructions(self, ctx: RunContext[Any]) -> list[InstructionPart] | None:
         """Load and inject memory into system prompt.
 
         Args:
@@ -228,4 +229,4 @@ class AgentMemoryToolset(FunctionToolset[Any]):
         if mem is None:
             return None
         result = format_memory_prompt(mem, self._max_lines)
-        return [result] if result else None
+        return [InstructionPart(content=result, dynamic=True)] if result else None

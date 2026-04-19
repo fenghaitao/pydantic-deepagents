@@ -14,7 +14,7 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.models.test import TestModel
-from pydantic_ai.tools import RunContext
+from pydantic_ai.tools import RunContext, ToolDefinition
 from pydantic_ai.usage import RunUsage
 from pydantic_ai_backends import StateBackend, WriteResult
 
@@ -24,6 +24,7 @@ from pydantic_deep import (
     EVICTION_MESSAGE_TEMPLATE,
     NUM_CHARS_PER_TOKEN,
     DeepAgentDeps,
+    EvictionCapability,
     EvictionProcessor,
     create_content_preview,
     create_deep_agent,
@@ -943,3 +944,187 @@ class TestEdgeCases:
 
         result = await processor(ctx, messages)
         assert result[0] is response
+
+
+# ---------------------------------------------------------------------------
+# EvictionCapability (after_tool_execute hook)
+# ---------------------------------------------------------------------------
+
+
+def _cap_call(name: str = "grep", call_id: str = "call_cap") -> ToolCallPart:
+    return ToolCallPart(tool_name=name, args={}, tool_call_id=call_id)
+
+
+def _cap_td(name: str = "grep") -> ToolDefinition:
+    return ToolDefinition(name=name, description="")
+
+
+class TestEvictionCapability:
+    """Tests for EvictionCapability (after_tool_execute hook)."""
+
+    @pytest.mark.anyio
+    async def test_small_result_unchanged(self):
+        """Results below threshold pass through unchanged."""
+        backend = StateBackend()
+        cap = EvictionCapability(backend=backend, token_limit=100)
+        ctx = _make_ctx(backend)
+
+        result = await cap.after_tool_execute(
+            ctx,
+            call=_cap_call(),
+            tool_def=_cap_td(),
+            args={},
+            result="small result",
+        )
+        assert result == "small result"
+
+    @pytest.mark.anyio
+    async def test_large_result_evicted(self):
+        """Results above threshold are saved to file and replaced with preview."""
+        backend = StateBackend()
+        cap = EvictionCapability(backend=backend, token_limit=10)  # 40 chars
+        ctx = _make_ctx(backend)
+
+        large = _make_large_content(20)
+        result = await cap.after_tool_execute(
+            ctx,
+            call=_cap_call(call_id="call_big"),
+            tool_def=_cap_td(),
+            args={},
+            result=large,
+        )
+
+        assert "Tool result too large" in result
+        assert "/large_tool_results/call_big" in result
+        # File was written
+        evicted = backend._read_bytes("/large_tool_results/call_big")
+        assert evicted == large.encode()
+
+    @pytest.mark.anyio
+    async def test_uses_deps_backend(self):
+        """Resolves backend from ctx.deps over fallback."""
+        fallback = StateBackend()
+        deps_backend = StateBackend()
+        cap = EvictionCapability(backend=fallback, token_limit=10)
+        ctx = _make_ctx(deps_backend)
+
+        large = "x" * 500
+        await cap.after_tool_execute(
+            ctx,
+            call=_cap_call(call_id="call_deps"),
+            tool_def=_cap_td(),
+            args={},
+            result=large,
+        )
+
+        # Written to deps_backend, not fallback
+        assert deps_backend._read_bytes("/large_tool_results/call_deps") not in (None, b"")
+        assert fallback._read_bytes("/large_tool_results/call_deps") in (None, b"")
+
+    @pytest.mark.anyio
+    async def test_no_backend_passes_through(self):
+        """No backend available — returns result unchanged."""
+        cap = EvictionCapability(backend=None, token_limit=10)
+        ctx = _make_ctx_no_backend()
+
+        large = "x" * 500
+        result = await cap.after_tool_execute(
+            ctx,
+            call=_cap_call(),
+            tool_def=_cap_td(),
+            args={},
+            result=large,
+        )
+        assert result == large
+
+    @pytest.mark.anyio
+    async def test_on_eviction_callback(self):
+        """on_eviction callback is invoked on eviction."""
+        backend = StateBackend()
+        callback = MagicMock()
+        cap = EvictionCapability(backend=backend, token_limit=10, on_eviction=callback)
+        ctx = _make_ctx(backend)
+
+        await cap.after_tool_execute(
+            ctx,
+            call=_cap_call("execute", "call_cb"),
+            tool_def=_cap_td("execute"),
+            args={},
+            result="x" * 500,
+        )
+
+        callback.assert_called_once()
+        args = callback.call_args[0]
+        assert args[0] == "execute"  # tool_name
+        assert "call_cb" in args[1]  # file_path
+
+    @pytest.mark.anyio
+    async def test_write_failure_returns_original(self):
+        """When backend write fails, original result is returned unchanged."""
+        backend = StateBackend()
+        # Monkey-patch write to return an error
+
+        def failing_write(path: str, content: str | bytes) -> WriteResult:
+            return WriteResult(path=path, error="disk full")
+
+        backend.write = failing_write
+        cap = EvictionCapability(backend=backend, token_limit=10)
+        ctx = _make_ctx(backend)
+
+        large = "x" * 500
+        result = await cap.after_tool_execute(
+            ctx,
+            call=_cap_call(call_id="call_fail"),
+            tool_def=_cap_td(),
+            args={},
+            result=large,
+        )
+        assert result == large
+
+    @pytest.mark.anyio
+    async def test_async_on_eviction_callback(self):
+        """Async on_eviction callback is awaited."""
+        backend = StateBackend()
+        called_with: list[tuple[str, str, int, int]] = []
+
+        async def async_cb(tool_name: str, file_path: str, orig: int, preview: int) -> None:
+            called_with.append((tool_name, file_path, orig, preview))
+
+        cap = EvictionCapability(backend=backend, token_limit=10, on_eviction=async_cb)
+        ctx = _make_ctx(backend)
+
+        await cap.after_tool_execute(
+            ctx,
+            call=_cap_call("mytool", "call_async"),
+            tool_def=_cap_td("mytool"),
+            args={},
+            result="x" * 500,
+        )
+
+        assert len(called_with) == 1
+        assert called_with[0][0] == "mytool"
+        assert "call_async" in called_with[0][1]
+
+    @pytest.mark.anyio
+    async def test_dict_result_evicted(self):
+        """Non-string results (dicts) are also evicted when large."""
+        backend = StateBackend()
+        cap = EvictionCapability(backend=backend, token_limit=10)
+        ctx = _make_ctx(backend)
+
+        large_dict = {"data": "x" * 500}
+        result = await cap.after_tool_execute(
+            ctx,
+            call=_cap_call(call_id="call_dict"),
+            tool_def=_cap_td(),
+            args={},
+            result=large_dict,
+        )
+
+        assert "Tool result too large" in result
+
+    def test_exportable(self):
+        """EvictionCapability is importable from pydantic_deep."""
+        from pydantic_deep import EvictionCapability as Imported
+
+        assert Imported is EvictionCapability

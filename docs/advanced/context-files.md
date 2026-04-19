@@ -4,13 +4,20 @@ Context files are project-level markdown files that are loaded from the backend 
 
 ## Supported Files
 
-pydantic-deep recognizes three special files:
+pydantic-deep auto-discovers these convention files:
 
 | File | Purpose | Shared with Subagents |
 |------|---------|----------------------|
 | `AGENTS.md` | Project instructions, conventions, architecture. Compatible with the [agents.md spec](https://agents.md/) | Yes |
+| `CLAUDE.md` | Claude Code project instructions | Yes |
 | `SOUL.md` | Agent personality, tone, style, user preferences | No (main agent only) |
+| `.cursorrules` | Cursor editor conventions | No (main agent only) |
+| `.github/copilot-instructions.md` | GitHub Copilot instructions | No (main agent only) |
+| `CONVENTIONS.md` | Project coding conventions | No (main agent only) |
+| `CODING_GUIDELINES.md` | Coding guidelines | No (main agent only) |
 | `MEMORY.md` | Persistent agent memory (read/write/update) | Per-agent (isolated) |
+
+Compatible with Claude Code, Cursor, GitHub Copilot, and other agent frameworks.
 
 !!! note "`MEMORY.md` uses a separate system"
     `MEMORY.md` is managed by the [memory system](memory.md) (`include_memory=True`), not by context discovery. It has dedicated tools (`read_memory`, `write_memory`, `update_memory`) and per-agent isolation.
@@ -22,7 +29,7 @@ pydantic-deep recognizes three special files:
     from pydantic_deep import create_deep_agent
 
     agent = create_deep_agent(context_discovery=True)
-    # Scans backend root for AGENTS.md, SOUL.md
+    # Scans backend root for AGENTS.md, CLAUDE.md, SOUL.md, .cursorrules, etc.
     ```
 
 === "Explicit Paths"
@@ -116,7 +123,7 @@ Files exceeding 20,000 characters are truncated with a head/tail split (70% head
 
 ### Subagent Filtering
 
-Subagents only receive `AGENTS.md`. `SOUL.md` is filtered out automatically — it contains personality and user preferences intended for the main agent only.
+Subagents receive `AGENTS.md` and `CLAUDE.md` (project instructions). All other files (`SOUL.md`, `.cursorrules`, `CONVENTIONS.md`, etc.) are filtered out — they contain personality, editor-specific, or user preferences intended for the main agent only.
 
 ## Per-Subagent Context Files
 
@@ -149,8 +156,8 @@ agent = create_deep_agent(
 | [`discover_context_files`][pydantic_deep.toolsets.context.discover_context_files] | Auto-discover context files in backend |
 | [`load_context_files`][pydantic_deep.toolsets.context.load_context_files] | Load context files from backend |
 | [`format_context_prompt`][pydantic_deep.toolsets.context.format_context_prompt] | Format files for system prompt |
-| `DEFAULT_CONTEXT_FILENAMES` | Default filenames: AGENTS.md, SOUL.md |
-| `SUBAGENT_CONTEXT_ALLOWLIST` | Files allowed for subagents: AGENTS.md |
+| `DEFAULT_CONTEXT_FILENAMES` | Default filenames: AGENTS.md, CLAUDE.md, SOUL.md, .cursorrules, .github/copilot-instructions.md, CONVENTIONS.md, CODING_GUIDELINES.md |
+| `SUBAGENT_CONTEXT_ALLOWLIST` | Files allowed for subagents: AGENTS.md, CLAUDE.md |
 
 ## Next Steps
 
