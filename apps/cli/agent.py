@@ -261,12 +261,13 @@ def create_cli_agent(  # noqa: C901
             {tool: True for tool in config.approve_tools} if config.approve_tools else None
         )
 
-    effective_memory = include_memory and not non_interactive
-    effective_skills = include_skills if not lean else False  # Lean: no skills noise
-    effective_plan = include_plan and not non_interactive
+    effective_memory = (include_memory if include_memory is not None else config.include_memory) and not non_interactive
+    effective_skills = (include_skills if include_skills is not None else config.include_skills) if not lean else False
+    effective_plan = (include_plan if include_plan is not None else config.include_plan) and not non_interactive
+    _include_subagents = include_subagents if include_subagents is not None else config.include_subagents
     # Keep subagents enabled when kg_capability subagents are provided — they're the whole point
-    effective_subagents = include_subagents if (not lean or kg_capability) else False
-    effective_todo = include_todo if not lean else False  # Lean: no todo overhead
+    effective_subagents = _include_subagents if (not lean or kg_capability) else False
+    effective_todo = (include_todo if include_todo is not None else config.include_todo) if not lean else False
 
     _browser = include_browser if include_browser is not None else config.include_browser
     effective_browser = _browser if not lean else False
