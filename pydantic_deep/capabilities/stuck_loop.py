@@ -94,6 +94,11 @@ class StuckLoopDetection(AbstractCapability[Any]):
     detect_repeated: bool = True
     detect_alternating: bool = True
     detect_noop: bool = True
+    exclude_tools: frozenset[str] = field(
+        default_factory=lambda: frozenset({"check_task", "list_active_tasks"}),
+        repr=False,
+    )
+    """Tool names exempt from stuck-loop detection (e.g. polling tools)."""
 
     _call_history: list[tuple[str, str]] = field(default_factory=list, init=False, repr=False)
     """Per-run history of (tool_name, args_hash) tuples."""
@@ -175,6 +180,10 @@ class StuckLoopDetection(AbstractCapability[Any]):
         result: Any,
     ) -> Any:
         """Track tool calls and detect stuck patterns."""
+        # Skip polling/exempt tools — they legitimately repeat with same args
+        if call.tool_name in self.exclude_tools:
+            return result
+
         call_key = (call.tool_name, _hash_args(args))
         self._call_history.append(call_key)
 
