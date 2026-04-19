@@ -71,6 +71,8 @@ _STR_FIELDS = frozenset(
         "charset",
         "reasoning_effort",
         "thinking_effort",
+        "sandbox",
+        "sandbox_image",
     }
 )
 
@@ -114,6 +116,10 @@ class CliConfig:
     """Tool names that require user approval before execution."""
     temperature: float | None = None
     reasoning_effort: str | None = None
+    sandbox: str = "local"
+    """Sandbox backend: ``"local"`` (default) or ``"docker"``."""
+    sandbox_image: str = "python:3.12-slim"
+    """Docker image used when ``sandbox = "docker"``."""
     logfire: bool = False
     # ── Code-graph / KG integration ────────────────────────────────────────
     kg: KgConfig = field(default_factory=KgConfig)

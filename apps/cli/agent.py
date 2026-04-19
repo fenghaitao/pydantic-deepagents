@@ -64,6 +64,9 @@ def create_cli_agent(  # noqa: C901
     summarization_model: str | None = None,
     extra_middleware: list[Any] | None = None,
     backend: Any | None = None,
+    sandbox: str | None = None,
+    sandbox_image: str | None = None,
+    workspace: str | None = None,
     *,
     include_skills: bool = True,
     include_plan: bool = True,
@@ -126,7 +129,27 @@ def create_cli_agent(  # noqa: C901
     effective_allow_list = shell_allow_list or config.shell_allow_list or None
 
     root = Path(effective_working_dir) if effective_working_dir else Path.cwd()
-    effective_backend = backend or LocalBackend(root_dir=root)
+
+    # Resolve sandbox: explicit param > config
+    effective_sandbox = sandbox or config.sandbox
+    if effective_sandbox == "docker" and backend is None:
+        from pydantic_ai_backends import DockerSandbox
+
+        docker_kwargs: dict[str, Any] = {
+            "volumes": {str(root.resolve()): "/workspace"},
+            "work_dir": "/workspace",
+            "image": sandbox_image or config.sandbox_image,
+        }
+        if workspace:
+            import hashlib
+            dir_hash = hashlib.md5(str(root.resolve()).encode()).hexdigest()[:8]
+            docker_kwargs["container_name"] = f"pydantic-deep-{dir_hash}-{workspace}"
+        effective_backend: Any = DockerSandbox(**docker_kwargs)
+    else:
+        effective_backend = backend or LocalBackend(root_dir=root)
+
+    # When using Docker, agent operates inside container at /workspace
+    instruction_root = "/workspace" if effective_sandbox == "docker" else str(root.resolve())
 
     # Build hooks list
     hooks: list[Hook] = []
@@ -151,8 +174,8 @@ def create_cli_agent(  # noqa: C901
     # Append working directory context
     working_dir_section = (
         f"\n\n## Working Directory\n\n"
-        f"You are operating in: `{root.resolve()}`\n\n"
-        f"All file paths must be absolute, starting with `{root.resolve()}`."
+        f"You are operating in: `{instruction_root}`\n\n"
+        f"All file paths must be absolute, starting with `{instruction_root}`."
     )
     instructions += working_dir_section
 
