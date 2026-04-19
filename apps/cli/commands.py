@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import subprocess
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -579,3 +580,107 @@ async def dispatch_command(app: DeepApp, command: str) -> None:  # noqa: C901
                 app.notify(f"Failed to run skill: {skill_name}", severity="error")
         else:
             app.notify(f"Unknown command: {cmd}", severity="warning")
+
+
+# ── Command discovery (used by interactive.py) ────────────────────────────────
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class Command:
+    """A loaded custom command."""
+
+    name: str
+    description: str
+    argument_hint: str
+    body: str
+    source: str  # "built-in" | "user" | "project"
+
+
+def _builtin_dir() -> Path:
+    return Path(__file__).parent / "commands"
+
+
+def _user_dir() -> Path:
+    return Path.home() / ".pydantic-deep" / "commands"
+
+
+def _project_dir() -> Path | None:
+    project = Path.cwd() / ".pydantic-deep" / "commands"
+    return project if project.is_dir() else None
+
+
+def _parse_command(path: Path, source: str) -> Command:
+    """Parse a command ``.md`` file into a Command."""
+    content = path.read_text()
+    name = path.stem
+    description = ""
+    argument_hint = ""
+    body = content
+
+    if content.startswith("---"):
+        parts = content.split("---", 2)
+        if len(parts) >= 3:
+            for line in parts[1].strip().splitlines():
+                line = line.strip()
+                if line.startswith("description:"):
+                    description = line.split(":", 1)[1].strip().strip("\"'")
+                elif line.startswith("argument-hint:"):
+                    argument_hint = line.split(":", 1)[1].strip().strip("\"'")
+            body = parts[2].strip()
+
+    return Command(
+        name=name,
+        description=description,
+        argument_hint=argument_hint,
+        body=body,
+        source=source,
+    )
+
+
+def _scan_dir(directory: Path, source: str) -> dict[str, Command]:
+    """Scan a directory for ``.md`` command files."""
+    commands: dict[str, Command] = {}
+    if not directory.is_dir():
+        return commands
+    for path in sorted(directory.iterdir()):
+        if path.suffix == ".md" and path.is_file():
+            cmd = _parse_command(path, source)
+            commands[cmd.name] = cmd
+    return commands
+
+
+def discover_commands() -> list[Command]:
+    """Discover all custom commands across all scopes.
+
+    Returns deduplicated list — project overrides user overrides built-in.
+    """
+    merged: dict[str, Command] = {}
+    merged.update(_scan_dir(_builtin_dir(), "built-in"))
+    merged.update(_scan_dir(_user_dir(), "user"))
+    proj = _project_dir()
+    if proj:
+        merged.update(_scan_dir(proj, "project"))
+    return sorted(merged.values(), key=lambda c: c.name)
+
+
+def load_command(name: str) -> Command | None:
+    """Load a single command by name. Project > user > built-in."""
+    proj = _project_dir()
+    if proj:
+        path = proj / f"{name}.md"
+        if path.is_file():
+            return _parse_command(path, "project")
+    user = _user_dir() / f"{name}.md"
+    if user.is_file():
+        return _parse_command(user, "user")
+    builtin = _builtin_dir() / f"{name}.md"
+    if builtin.is_file():
+        return _parse_command(builtin, "built-in")
+    return None
+
+
+def invoke_command(cmd: Command, arguments: str) -> str:
+    """Substitute ``$ARGUMENTS`` and return the final prompt."""
+    return cmd.body.replace("$ARGUMENTS", arguments)
