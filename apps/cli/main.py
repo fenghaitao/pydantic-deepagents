@@ -415,6 +415,162 @@ def run(
     raise typer.Exit(exit_code)
 
 
+@app.command("run-upstream")
+def run_upstream(
+    task: Annotated[
+        str | None,
+        typer.Argument(help="Task description (or use --task-file)"),
+    ] = None,
+    task_file: Annotated[
+        Path | None,
+        typer.Option("--task-file", "-f", help="Read task from file"),
+    ] = None,
+    working_dir: Annotated[
+        str | None,
+        typer.Option("--working-dir", "-w", help="Working directory"),
+    ] = None,
+    model: Annotated[
+        str | None,
+        typer.Option("--model", "-m", help="Model to use (default: from config)"),
+    ] = None,
+    output_json: Annotated[
+        bool,
+        typer.Option("--json", help="Output result as JSON"),
+    ] = False,
+    max_turns: Annotated[
+        int | None,
+        typer.Option("--max-turns", help="Maximum number of agent turns"),
+    ] = None,
+    timeout: Annotated[
+        int | None,
+        typer.Option("--timeout", help="Timeout in seconds"),
+    ] = None,
+    web_search: Annotated[
+        bool | None,
+        typer.Option("--web-search/--no-web-search", help="Enable web search (from config)"),
+    ] = None,
+    web_fetch: Annotated[
+        bool | None,
+        typer.Option("--web-fetch/--no-web-fetch", help="Enable web fetch (from config)"),
+    ] = None,
+    thinking: Annotated[
+        str | None,
+        typer.Option("--thinking", help="Thinking effort: minimal/low/medium/high/xhigh or false"),
+    ] = None,
+    include_todo: Annotated[
+        bool | None,
+        typer.Option("--todo/--no-todo", help="Enable task planning (default: from config)"),
+    ] = None,
+    include_subagents: Annotated[
+        bool | None,
+        typer.Option("--subagents/--no-subagents", help="Enable subagent delegation (default: from config)"),
+    ] = None,
+    include_skills: Annotated[
+        bool | None,
+        typer.Option("--skills/--no-skills", help="Enable skills (default: from config)"),
+    ] = None,
+    include_plan: Annotated[
+        bool | None,
+        typer.Option("--plan/--no-plan", help="Enable plan mode (default: from config)"),
+    ] = None,
+    include_memory: Annotated[
+        bool | None,
+        typer.Option("--memory/--no-memory", help="Enable persistent memory (from config)"),
+    ] = None,
+    include_teams: Annotated[
+        bool | None,
+        typer.Option("--teams/--no-teams", help="Enable agent teams (from config)"),
+    ] = None,
+    context_discovery: Annotated[
+        bool | None,
+        typer.Option("--context/--no-context", help="Auto-discover AGENTS.md (from config)"),
+    ] = None,
+    temperature: Annotated[
+        float | None,
+        typer.Option("--temperature", help="Sampling temperature (default: 0.0)"),
+    ] = None,
+    sandbox: Annotated[
+        str | None,
+        typer.Option("--sandbox", "-s", help="Sandbox backend: local or docker (from config)"),
+    ] = None,
+    workspace: Annotated[
+        str | None,
+        typer.Option("--workspace", help="Named Docker workspace. Implies --sandbox docker."),
+    ] = None,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Stream progress to stderr"),
+    ] = False,
+    include_browser: Annotated[
+        bool | None,
+        typer.Option("--browser/--no-browser", help="Enable Playwright browser automation"),
+    ] = None,
+    browser_headless: Annotated[
+        bool | None,
+        typer.Option("--browser-headless/--browser-headed", help="Browser window mode"),
+    ] = None,
+) -> None:
+    """Run a task non-interactively (upstream headless mode).
+
+    Uses execute_headless from run.py — supports --task-file, --max-turns,
+    --timeout, feature flags, and sandbox options.
+
+    Examples:
+        pydantic-deep run-upstream "Fix the failing test"
+        pydantic-deep run-upstream --task-file task.md --json
+        pydantic-deep run-upstream "Refactor utils.py" --max-turns 50 --timeout 300
+    """
+    from apps.cli.run import execute_headless
+
+    if workspace and not sandbox:
+        sandbox = "docker"
+
+    if task is None and task_file is None:
+        typer.echo("Error: provide a task argument or --task-file", err=True)
+        raise typer.Exit(1)
+
+    if task_file is not None:
+        if not task_file.exists():
+            typer.echo(f"Error: task file not found: {task_file}", err=True)
+            raise typer.Exit(1)
+        task_text = task_file.read_text().strip()
+    else:
+        assert task is not None
+        task_text = task
+
+    if not task_text:
+        typer.echo("Error: task is empty", err=True)
+        raise typer.Exit(1)
+
+    result = asyncio.run(
+        execute_headless(
+            task=task_text,
+            working_dir=working_dir or os.getcwd(),
+            model=model,
+            output_json=output_json,
+            max_turns=max_turns,
+            timeout=timeout,
+            web_search=web_search,
+            web_fetch=web_fetch,
+            thinking=thinking,
+            include_todo=include_todo,
+            include_subagents=include_subagents,
+            include_skills=include_skills,
+            include_plan=include_plan,
+            include_memory=include_memory,
+            include_teams=include_teams,
+            context_discovery=context_discovery,
+            temperature=temperature,
+            sandbox=sandbox,
+            workspace=workspace,
+            verbose=verbose,
+            include_browser=include_browser,
+            browser_headless=browser_headless,
+        )
+    )
+    raise typer.Exit(result)
+
+
 @app.command()
 def chat(
     model: Annotated[
