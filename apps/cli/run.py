@@ -116,6 +116,15 @@ async def execute_headless(  # noqa: C901
 
     agent, deps = create_cli_agent(**agent_kwargs)
 
+    import secrets
+    session_id = secrets.token_hex(6)
+    try:
+        from apps.cli.config import get_sessions_dir
+        from apps.cli.logfire_tracer import notify_session_start
+        notify_session_start(session_id, get_sessions_dir() / session_id)
+    except Exception:
+        pass
+
     try:
         run_kwargs: dict[str, Any] = {
             "usage_limits": DEFAULT_USAGE_LIMITS,
@@ -150,6 +159,11 @@ async def execute_headless(  # noqa: C901
         # Stop Docker container if sandbox backend was used
         if hasattr(deps.backend, "stop"):
             deps.backend.stop()
+        try:
+            from apps.cli.logfire_tracer import end_session_span
+            end_session_span(session_id)
+        except Exception:
+            pass
 
 
 async def _run_verbose(  # noqa: C901

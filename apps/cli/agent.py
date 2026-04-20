@@ -305,7 +305,6 @@ def create_cli_agent(  # noqa: C901
     )
 
     # Build extra capabilities list (browser, future additions)
-    extra_capabilities: list[Any] = []
     if effective_browser:
         try:
             from pydantic_deep.capabilities.browser import BrowserCapability
@@ -313,7 +312,7 @@ def create_cli_agent(  # noqa: C901
             effective_headless = (
                 browser_headless if browser_headless is not None else config.browser_headless
             )
-            extra_capabilities.append(BrowserCapability(headless=effective_headless))
+            extra_caps.append(BrowserCapability(headless=effective_headless))
         except ImportError:
             import warnings
 
