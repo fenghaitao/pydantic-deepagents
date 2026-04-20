@@ -5,9 +5,9 @@ description: >
 
 inputs:
   python-version:
-    description: Python version to install (e.g. "3.12")
+    description: Python version to install (e.g. "3.13")
     required: false
-    default: "3.12"
+    default: "3.13"
   uv-sync-args:
     description: Extra arguments forwarded verbatim to `uv sync`
     required: false

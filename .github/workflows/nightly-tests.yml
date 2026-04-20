@@ -50,7 +50,7 @@ jobs:
   #       - uses: actions/checkout@v4
   #       - uses: ./.github/actions/setup-uv
   #         with:
-  #           python-version: "3.12"
+  #           python-version: "3.13"
   #           uv-sync-args: "--all-extras --group dev --no-sources"
   #       - name: Run <description>
   #         run: <command>
