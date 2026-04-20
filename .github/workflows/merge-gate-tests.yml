@@ -1,0 +1,53 @@
+name: Merge Gate Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Cancel stale runs for the same PR to save runner minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  COLUMNS: 150
+  UV_NO_SOURCES: "1"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Run the full test suite via `make test`.
+  # To add more fast checks to the merge gate, add new jobs below and list
+  # them in the `needs:` of the `gate` job at the bottom.
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test / Python ${{ matrix.python-version }}
+    runs-on: self-hosted
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-uv
+        with:
+          python-version: ${{ matrix.python-version }}
+          uv-sync-args: "--all-extras --group dev --no-sources"
+
+      - name: Run tests
+        run: make test
+
+      - name: Generate lcov report
+        run: uv run coverage lcov -o coverage.lcov
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov-${{ matrix.python-version }}
+          path: coverage.lcov
+          retention-days: 30

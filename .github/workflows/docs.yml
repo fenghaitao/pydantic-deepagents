@@ -1,9 +1,7 @@
 name: Deploy Documentation
 
 on:
-  push:
-    branches:
-      - main
+  # Automatic deployment is disabled. Run manually via workflow_dispatch when needed.
   workflow_dispatch:
 
 permissions:
@@ -25,7 +23,7 @@ jobs:
         uses: astral-sh/setup-uv@v4
 
       - name: Set up Python
-        run: uv python install 3.12
+        run: uv python install 3.13
 
       - name: Install dependencies
         run: uv sync --group docs

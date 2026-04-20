@@ -1,0 +1,72 @@
+name: Nightly Tests
+
+# Scheduled at 20:00 Beijing time (CST, UTC+8) = 12:00 UTC.
+on:
+  schedule:
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false   # let nightly runs finish so results are complete
+
+env:
+  COLUMNS: 150
+  UV_NO_SOURCES: "1"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Full test suite across all supported Python versions.
+  # Mirrors the merge-gate run but on the nightly schedule so we catch
+  # cross-version regressions without slowing down PR feedback.
+  # ---------------------------------------------------------------------------
+  test-all-python:
+    name: Full Tests / Python ${{ matrix.python-version }}
+    runs-on: self-hosted
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-uv
+        with:
+          python-version: ${{ matrix.python-version }}
+          uv-sync-args: "--all-extras --group dev --no-sources"
+
+      - name: Run tests
+        run: make test
+
+  # ---------------------------------------------------------------------------
+  # Long-running / expensive tests — add new jobs here.
+  #
+  # Pattern for a new long-running test job:
+  #
+  #   my-long-test:
+  #     name: Long-Running / <description>
+  #     runs-on: self-hosted
+  #     steps:
+  #       - uses: actions/checkout@v4
+  #       - uses: ./.github/actions/setup-uv
+  #         with:
+  #           python-version: "3.13"
+  #           uv-sync-args: "--all-extras --group dev --no-sources"
+  #       - name: Run <description>
+  #         run: <command>
+  # ---------------------------------------------------------------------------
+
+  # Summary gate — reports overall pass/fail in the Actions UI.
+  nightly-gate:
+    name: Nightly Tests Passed
+    runs-on: self-hosted
+    needs: [test-all-python]
+    if: always()
+    steps:
+      - name: Check results
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
+            echo "One or more nightly jobs failed."
+            exit 1
+          fi
+          echo "All nightly checks passed."

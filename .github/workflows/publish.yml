@@ -1,8 +1,8 @@
 name: Publish to PyPI
 
 on:
-  release:
-    types: [published]
+  # Automatic publishing is disabled. Run manually via workflow_dispatch when ready to publish.
+  workflow_dispatch:
 
 jobs:
   publish:
