@@ -1,0 +1,61 @@
+name: Merge Gate Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Cancel stale runs for the same PR to save runner minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  COLUMNS: 150
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Run the full test suite via `make test`.
+  # To add more fast checks to the merge gate, add new jobs below and list
+  # them in the `needs:` of the `gate` job at the bottom.
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test / Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: ./.github/actions/setup-uv
+        with:
+          python-version: ${{ matrix.python-version }}
+          uv-sync-args: "--all-extras --group dev"
+
+      - name: Run tests
+        run: make test
+
+      - name: Generate lcov report
+        run: uv run coverage lcov -o coverage.lcov
+
+      - name: Upload coverage to Coveralls
+        if: matrix.python-version == '3.12'
+        uses: coverallsapp/github-action@v2
+        with:
+          file: coverage.lcov
+
+  # Gate job: all jobs above must pass before a PR can be merged.
+  gate:
+    name: Merge Gate Passed
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - run: echo "All merge-gate checks passed."

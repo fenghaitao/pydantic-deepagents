@@ -1,9 +1,7 @@
 name: Deploy Documentation
 
 on:
-  push:
-    branches:
-      - main
+  # Automatic deployment is disabled. Run manually via workflow_dispatch when needed.
   workflow_dispatch:
 
 permissions:
