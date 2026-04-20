@@ -32,13 +32,11 @@ jobs:
         python-version: ["3.13"]
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - uses: ./.github/actions/setup-uv
         with:
           python-version: ${{ matrix.python-version }}
-          uv-sync-args: "--all-extras --group dev"
+          uv-sync-args: "--all-extras --group dev --no-sources"
 
       - name: Run tests
         run: make test
