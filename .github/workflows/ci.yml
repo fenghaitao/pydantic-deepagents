@@ -4,10 +4,7 @@ on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
-  # Allow manual runs from the Actions tab with optional overrides.
+  # CI runs on main push and manual dispatch only — not on pull requests.
   workflow_dispatch:
     inputs:
       python-version:

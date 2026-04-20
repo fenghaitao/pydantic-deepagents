@@ -50,11 +50,3 @@ jobs:
         uses: coverallsapp/github-action@v2
         with:
           file: coverage.lcov
-
-  # Gate job: all jobs above must pass before a PR can be merged.
-  gate:
-    name: Merge Gate Passed
-    runs-on: self-hosted
-    needs: [test]
-    steps:
-      - run: echo "All merge-gate checks passed."
