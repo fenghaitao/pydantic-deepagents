@@ -1,3 +1,6 @@
 [submodule "subagents-pydantic-ai"]
 	path = subagents-pydantic-ai
 	url = https://github.com/intel-sandbox/subagents-pydantic-ai.git
+[submodule "code-graph-providers/potpie"]
+	path = code-graph-providers/potpie
+	url = https://github.com/intel-sandbox/potpie

@@ -42,6 +42,7 @@ class DeepAgentDeps:
     context_middleware: Any = field(default=None, repr=False)  # ContextManagerCapability | None
     share_todos: bool = False  # When True, subagents share parent's todo list
     kg_context: Any = field(default=None, repr=False)  # PotpieContext | None
+    cgc_context: Any = field(default=None, repr=False)  # CGCContext | None
 
     def __post_init__(self) -> None:
         """Initialize backend with files if using StateBackend."""
@@ -235,6 +236,7 @@ class DeepAgentDeps:
             ask_user=self.ask_user,  # Propagate to subagents
             share_todos=self.share_todos,  # Propagate to subagents
             kg_context=self.kg_context,  # Propagate project context to subagents
+            cgc_context=self.cgc_context,  # Propagate CGC context to subagents
         )
 
 
