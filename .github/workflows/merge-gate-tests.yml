@@ -238,6 +238,7 @@ jobs:
           }
           echo "API is healthy."
 
+          export PATH="$HOME/.cargo/bin:$PATH"
           make build-dls
           (cd tests/integration-tests/scip-dml/simics-project && \
             /nfs/site/disks/ssg_stc_simics_base-packages-release/simics-7/1000/7.79.0/bin/project-setup \
