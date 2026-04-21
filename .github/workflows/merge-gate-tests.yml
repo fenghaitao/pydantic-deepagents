@@ -16,7 +16,6 @@ concurrency:
 
 env:
   COLUMNS: 150
-  UV_NO_SOURCES: "1"
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -34,10 +33,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Checkout submodules
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --recursive
+
       - uses: ./.github/actions/setup-uv
         with:
           python-version: ${{ matrix.python-version }}
-          uv-sync-args: "--all-extras --group dev --no-sources"
+          uv-sync-args: "--all-extras --group dev"
 
       - name: Run tests
         run: make test
