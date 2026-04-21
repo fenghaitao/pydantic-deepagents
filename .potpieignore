@@ -1,0 +1,34 @@
+# Subdirectories to exclude from code indexing
+code-graph-providers/
+subagents-pydantic-ai/
+jobs/
+bench-test/
+docs/
+assets/
+
+# Runtime / user data
+.pydantic-deep/
+
+# Python artifacts
+__pycache__/
+.venv/
+*.egg-info/
+
+# Test/cache artifacts
+.pytest_cache/
+.hypothesis/
+.ruff_cache/
+
+# Tooling/IDE
+.github/
+.cursor/
+.claude/
+.qoder/
+
+# Config/metadata files (not source code)
+.gitmodules
+.pre-commit-config.yaml
+
+# Lock files
+uv.lock
+.coverage

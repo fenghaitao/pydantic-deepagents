@@ -32,16 +32,13 @@ jobs:
         python-version: ["3.13"]
     steps:
       - uses: actions/checkout@v4
-
-      - name: Checkout submodules
-        run: |
-          git submodule sync --recursive
-          git submodule update --init --recursive
+        with:
+          submodules: recursive
 
       - uses: ./.github/actions/setup-uv
         with:
           python-version: ${{ matrix.python-version }}
-          uv-sync-args: "--all-extras --group dev"
+          uv-sync-args: "--all-groups"
 
       - name: Run tests
         run: make test
@@ -65,10 +62,6 @@ jobs:
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted]
 
-    defaults:
-      run:
-        working-directory: code-graph-providers/potpie
-
     strategy:
       fail-fast: false
       matrix:
@@ -87,7 +80,7 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: |
           if [ -f code-graph-providers/potpie/Makefile ]; then
-            make -C code-graph-providers/potpie stop-force 2>/dev/null || true
+            make potpie-stop-force 2>/dev/null || true
           fi
           pkill -f "${GITHUB_WORKSPACE}/code-graph-providers/potpie/.venv/bin/gunicorn" 2>/dev/null || true
           pkill -f "${GITHUB_WORKSPACE}/code-graph-providers/potpie/.venv/bin/celery"   2>/dev/null || true
@@ -95,23 +88,21 @@ jobs:
           rm -rf code-graph-providers/potpie/singularity/potpie-data
           sleep 3
 
-      - name: Checkout code
+      - name: Checkout code and submodules
         uses: actions/checkout@v4
-
-      - name: Checkout submodules
-        working-directory: ${{ github.workspace }}
-        run: |
-          git submodule sync --recursive
-          git submodule update --init --recursive
+        with:
+          submodules: recursive
 
       - name: Clear logfire sessions
         if: env.CI_LOGFIRE_ENABLED == 'true'
+        working-directory: code-graph-providers/potpie
         run: |
           rm -rf .pydantic-deep/sessions
           mkdir -p .pydantic-deep/sessions
           echo "Logfire sessions directory cleared."
 
       - name: Prepare Python & venv (install dev extra -> pytest)
+        working-directory: code-graph-providers/potpie
         run: |
           set -euo pipefail
           uv python install "${UV_PYTHON}"
@@ -123,6 +114,7 @@ jobs:
           mkdir -p test-results
 
       - name: Run tests/unit-tests
+        working-directory: code-graph-providers/potpie
         run: |
           uv run pytest tests/unit-tests \
             -m "not integration" \
@@ -135,12 +127,14 @@ jobs:
           ENABLE_MULTI_AGENT: "false"
 
       - name: Login to Docker Hub (reduce Singularity pull rate-limit exposure)
+        working-directory: code-graph-providers/potpie
         run: |
           echo "${{ secrets.DOCKER_HUB_TOKEN }}" | singularity remote login \
             --username "${{ secrets.DOCKER_HUB_USERNAME }}" \
             --password-stdin docker://docker.io 2>/dev/null || true
 
       - name: Ensure backend services are healthy
+        working-directory: code-graph-providers/potpie
         run: |
           set -euo pipefail
           _port_open() { (echo >/dev/tcp/127.0.0.1/"$1") >/dev/null 2>&1; }
@@ -208,6 +202,7 @@ jobs:
           fi
 
       - name: Run scip_dml integration test
+        working-directory: code-graph-providers/potpie
         run: |
           SESSION_KEY="${USER}@$(hostname -s)"
           DISCO_FILE=".potpie-sessions/${SESSION_KEY}.discovery"
@@ -249,6 +244,7 @@ jobs:
             --junitxml=test-results/junit-int-scip-dml.xml
 
       - name: Run scip-python tests
+        working-directory: code-graph-providers/potpie
         run: |
           uv run pytest tests/integration-tests/scip-python/test_scip_python.py \
             -v -s \
@@ -256,6 +252,7 @@ jobs:
             --junitxml=test-results/junit-int-scip-python.xml
 
       - name: Run phoenix integration test
+        working-directory: code-graph-providers/potpie
         run: |
           SESSION_KEY="${USER}@$(hostname -s)"
           DISCO_FILE=".potpie-sessions/${SESSION_KEY}.discovery"
@@ -292,6 +289,7 @@ jobs:
 
       - name: Backup logfire sessions
         if: always()
+        working-directory: code-graph-providers/potpie
         run: |
           if [ "${CI_LOGFIRE_ENABLED}" != "true" ] || [ -z "${CI_LOGFIRE_BACKUP_PATH}" ]; then
             echo "Logfire backup skipped (CI_LOGFIRE_ENABLED=${CI_LOGFIRE_ENABLED})."
@@ -312,6 +310,7 @@ jobs:
 
       - name: Clean up potpie-data
         if: always()
+        working-directory: code-graph-providers/potpie
         run: |
           make stop-force 2>/dev/null || true
           rm -rf singularity/code-graph-providers/potpie-data

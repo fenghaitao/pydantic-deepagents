@@ -81,6 +81,18 @@ docs: ## Build the documentation
 docs-serve: ## Build and serve the documentation
 	uv run mkdocs serve
 
+.PHONY: potpie-start
+potpie-start: ## Start the potpie backend
+	$(MAKE) -C code-graph-providers/potpie start
+
+.PHONY: potpie-stop
+potpie-stop: ## Stop the potpie backend
+	$(MAKE) -C code-graph-providers/potpie stop
+
+.PHONY: potpie-stop-force
+potpie-stop-force: ## Force-stop the potpie backend
+	$(MAKE) -C code-graph-providers/potpie stop-force
+
 .PHONY: all
 all: format lint typecheck security testcov ## Run code formatting, linting, static type checks, security scan, and tests with coverage report generation
 

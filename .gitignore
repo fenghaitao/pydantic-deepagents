@@ -108,5 +108,8 @@ playground/
 # pydantic-deep CLI data (per-project)
 .pydantic-deep/
 
+# LightRAG vector/graph storage (generated at runtime)
+lightrag_storage/
+
 # API keys (pydantic-deep TUI)
 keys.toml

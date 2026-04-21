@@ -196,6 +196,7 @@ def _main_callback(
     try:
         from dotenv import load_dotenv
 
+        load_dotenv(Path.cwd() / "code-graph-providers" / "potpie" / ".env", override=False)
         load_dotenv(Path.home() / ".pydantic-deep" / ".env", override=False)
         load_dotenv(Path.cwd() / ".pydantic-deep" / ".env", override=True)
         load_dotenv()
