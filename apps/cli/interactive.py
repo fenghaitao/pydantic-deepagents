@@ -2434,7 +2434,7 @@ async def run_interactive(  # noqa: C901
             _show_compression_start(context_pct, context_current, context_max)
 
     _auto_approve_state["active"] = auto_approve
-    cap: Any = None  # CodeGraphCapability — closed in finally
+    cap: Any = None  # PotpieCapability — closed in finally
 
     try:
         backend = None
@@ -2474,9 +2474,9 @@ async def run_interactive(  # noqa: C901
                 return
 
         # Auto-discover potpie project and build KG resources in one step,
-        # sharing a single CodeGraphRuntime to avoid double PotpieRuntime init.
+        # sharing a single PotpieRuntime to avoid double PotpieRuntime init.
         _root = Path(working_dir) if working_dir else Path.cwd()
-        from apps.cli.potpie_setup import build_kg_capability
+        from apps.cli.code_graph.potpie_setup import build_kg_capability
         cap = await build_kg_capability(
             project_id,
             user_id,

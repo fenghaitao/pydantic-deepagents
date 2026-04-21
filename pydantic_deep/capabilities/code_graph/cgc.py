@@ -2,14 +2,14 @@
 
 Encapsulates all CGC code-graph concerns (toolset, runtime context)
 behind the standard AbstractCapability interface, following the same pattern
-as CodeGraphCapability.
+as PotpieCapability.
 
 Usage::
 
-    from pydantic_deep.capabilities.cgc_code_graph import CGCCapability
-    from pydantic_deep.toolsets.code_graph.cgc_context import CGCContext
-    from pydantic_deep.toolsets.code_graph.cgc_runtime import CGCRuntime
-    from pydantic_deep.toolsets.code_graph.cgc_toolset import CGCToolset
+    from pydantic_deep.capabilities.code_graph.cgc import CGCCapability
+    from pydantic_deep.toolsets.code_graph.cgc.context import CGCContext
+    from pydantic_deep.toolsets.code_graph.cgc.runtime import CGCRuntime
+    from pydantic_deep.toolsets.code_graph.cgc.toolset import CGCToolset
 
     runtime = CGCRuntime(repo_path="/path/to/repo")
     context = CGCContext(repo_path="/path/to/repo")
@@ -34,8 +34,8 @@ from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.toolsets import AbstractToolset, FunctionToolset
 
-from pydantic_deep.toolsets.code_graph.cgc_context import CGCContext
-from pydantic_deep.toolsets.code_graph.cgc_runtime import CGCRuntime
+from pydantic_deep.toolsets.code_graph.cgc.context import CGCContext
+from pydantic_deep.toolsets.code_graph.cgc.runtime import CGCRuntime
 
 
 @dataclass

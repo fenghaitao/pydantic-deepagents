@@ -171,7 +171,7 @@ async def run_non_interactive(  # noqa: C901
         try:
             from pathlib import Path as _Path
 
-            from apps.cli.potpie_setup import build_kg_capability
+            from apps.cli.code_graph.potpie_setup import build_kg_capability
 
             _root = _Path(working_dir) if working_dir else _Path.cwd()
             cap = await build_kg_capability(

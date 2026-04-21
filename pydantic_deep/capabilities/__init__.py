@@ -5,7 +5,7 @@ enabling clean composition via ``Agent(capabilities=[...])``.
 """
 
 from pydantic_deep.capabilities.browser import BrowserCapability
-from pydantic_deep.capabilities.code_graph import CodeGraphCapability
+from pydantic_deep.capabilities.code_graph.potpie import PotpieCapability
 from pydantic_deep.capabilities.context import ContextFilesCapability
 from pydantic_deep.capabilities.hooks import HooksCapability
 from pydantic_deep.capabilities.memory import MemoryCapability
@@ -16,7 +16,7 @@ from pydantic_deep.capabilities.teams import TeamCapability
 
 __all__ = [
     "BrowserCapability",
-    "CodeGraphCapability",
+    "PotpieCapability",
     "ContextFilesCapability",
     "HooksCapability",
     "MemoryCapability",

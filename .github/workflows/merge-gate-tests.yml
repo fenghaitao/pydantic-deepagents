@@ -34,6 +34,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          token: ${{ secrets.GH_PAT }}
 
       - uses: ./.github/actions/setup-uv
         with:
@@ -92,6 +93,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          token: ${{ secrets.GH_PAT }}
 
       - name: Clear logfire sessions
         if: env.CI_LOGFIRE_ENABLED == 'true'
@@ -314,3 +316,49 @@ jobs:
         run: |
           make stop-force 2>/dev/null || true
           rm -rf singularity/code-graph-providers/potpie-data
+
+  # ---------------------------------------------------------------------------
+  # Gate: the committed potpie submodule SHA must equal the current HEAD of
+  # the remote main branch.  This enforces the policy that potpie changes are
+  # merged into potpie/main BEFORE this repo is updated to reference them.
+  # ---------------------------------------------------------------------------
+  check-potpie-submodule-sha:
+    name: Check / Potpie submodule SHA matches remote main HEAD
+    runs-on: self-hosted
+    steps:
+      - name: Checkout parent repo (no submodule clone needed)
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: Validate potpie submodule SHA matches remote main HEAD
+        run: |
+          set -euo pipefail
+
+          # Read the committed submodule SHA directly from the git tree object.
+          # This is cleaner than `git submodule status` which requires submodule
+          # state and emits status-prefix characters (+, -, U) that need stripping.
+          SUBMODULE_SHA=$(git ls-tree HEAD code-graph-providers/potpie | awk '{print $3}')
+          REMOTE_SHA=$(git ls-remote https://github.com/intel-sandbox/potpie \
+            refs/heads/main | awk '{print $1}')
+
+          echo "Committed submodule SHA : ${SUBMODULE_SHA}"
+          echo "Remote main HEAD        : ${REMOTE_SHA}"
+
+          if [ -z "${REMOTE_SHA}" ]; then
+            echo "ERROR: Could not retrieve the latest SHA from the remote repository."
+            exit 1
+          fi
+
+          if [ "${SUBMODULE_SHA}" != "${REMOTE_SHA}" ]; then
+            echo ""
+            echo "ERROR: The potpie submodule is not pinned to the current HEAD of remote main."
+            echo "Merge your potpie changes into potpie/main first, then update this repo:"
+            echo "  git submodule update --remote code-graph-providers/potpie"
+            echo "  git add code-graph-providers/potpie"
+            echo "  git commit -m 'chore: update potpie submodule to latest main'"
+            exit 1
+          fi
+
+          echo "OK: potpie submodule SHA matches the current HEAD of remote main."

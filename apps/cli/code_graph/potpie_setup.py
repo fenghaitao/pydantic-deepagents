@@ -1,7 +1,7 @@
 """Code-graph resource setup for CLI agents.
 
 Shared by interactive and non-interactive modes. Builds a
-CodeGraphCapability from a single CodeGraphRuntime, with optional
+PotpieCapability from a single PotpieRuntime, with optional
 git-based project auto-discovery.
 """
 
@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from pydantic_deep.capabilities.code_graph import CodeGraphCapability
+    from pydantic_deep.capabilities.code_graph.potpie import PotpieCapability
 
 
 async def build_kg_capability(
@@ -20,8 +20,8 @@ async def build_kg_capability(
     user_id: str,
     root: Path | None = None,
     on_status: Any | None = None,
-) -> CodeGraphCapability | None:
-    """Build a CodeGraphCapability sharing one CodeGraphRuntime.
+) -> PotpieCapability | None:
+    """Build a PotpieCapability sharing one PotpieRuntime.
 
     When *project_id* is ``None`` and *root* is provided, auto-discovers
     the project from the git repo using the already-created runtime,
@@ -42,21 +42,21 @@ async def build_kg_capability(
             messages (e.g. auto-discovery notice, loaded notice).
 
     Returns:
-        CodeGraphCapability on success, or None on failure (warning printed
+        PotpieCapability on success, or None on failure (warning printed
         to stderr).
     """
     try:
-        from pydantic_deep.capabilities.code_graph import CodeGraphCapability
-        from pydantic_deep.toolsets.code_graph.context import PotpieContext
-        from pydantic_deep.toolsets.code_graph.runtime import CodeGraphRuntime
+        from pydantic_deep.capabilities.code_graph.potpie import PotpieCapability
+        from pydantic_deep.toolsets.code_graph.potpie.context import PotpieContext
+        from pydantic_deep.toolsets.code_graph.potpie.runtime import PotpieRuntime
 
-        runtime = CodeGraphRuntime(user_id=user_id)
+        runtime = PotpieRuntime(user_id=user_id)
 
         try:
             # Auto-discover project from git if not explicitly provided.
             resolved_by_discovery = False
             if not project_id and root is not None:
-                from apps.cli.potpie_discovery import parse_git_identity
+                from apps.cli.code_graph.potpie_discovery import parse_git_identity
 
                 identity = parse_git_identity(root)
                 if identity:
@@ -72,7 +72,7 @@ async def build_kg_capability(
                 return None
 
             context = PotpieContext(project_id=project_id, user_id=user_id)
-            cap = CodeGraphCapability(
+            cap = PotpieCapability(
                 runtime=runtime, project_id=project_id, context=context
             )
 
@@ -84,26 +84,26 @@ async def build_kg_capability(
 
             # Build toolset and subagent configs here (async context) and inject
             # directly — no build methods on the capability class needed.
-            from pydantic_deep.toolsets.code_graph.toolset import (
+            from pydantic_deep.toolsets.code_graph.potpie.toolset import (
                 KG_TOOL_NAMES,
-                CodeGraphToolset,
+                PotpieToolset,
             )
-            from pydantic_deep.capabilities.code_graph import (
+            from pydantic_deep.capabilities.code_graph.potpie import (
                 _BLAST_RADIUS_INSTRUCTIONS,
                 _BLAST_RADIUS_TOOL_NAMES,
                 _QNA_INSTRUCTIONS,
                 _QNA_TOOL_NAMES,
             )
 
-            ts = await CodeGraphToolset.from_runtime(
+            ts = await PotpieToolset.from_runtime(
                 runtime=runtime, tool_names=KG_TOOL_NAMES, toolset_id="potpie-kg"
             )
             object.__setattr__(cap, "_toolset", ts)
 
-            qna_ts = await CodeGraphToolset.from_runtime(
+            qna_ts = await PotpieToolset.from_runtime(
                 runtime=runtime, tool_names=_QNA_TOOL_NAMES, toolset_id="potpie-qna"
             )
-            blast_ts = await CodeGraphToolset.from_runtime(
+            blast_ts = await PotpieToolset.from_runtime(
                 runtime=runtime, tool_names=_BLAST_RADIUS_TOOL_NAMES, toolset_id="potpie-blast-radius"
             )
             object.__setattr__(cap, "_subagents", [

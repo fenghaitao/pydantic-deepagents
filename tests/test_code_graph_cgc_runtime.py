@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from pydantic_deep.toolsets.code_graph.cgc_runtime import CGCRuntime
+from pydantic_deep.toolsets.code_graph.cgc.runtime import CGCRuntime
 
 
 def _make_server() -> MagicMock:

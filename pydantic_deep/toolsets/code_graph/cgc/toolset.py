@@ -19,7 +19,7 @@ from typing import Any
 from pydantic_ai import RunContext
 from pydantic_ai.toolsets import FunctionToolset
 
-from pydantic_deep.toolsets.code_graph.cgc_runtime import CGCRuntime
+from pydantic_deep.toolsets.code_graph.cgc.runtime import CGCRuntime
 
 # ── Tool descriptions ──────────────────────────────────────────────────────────
 

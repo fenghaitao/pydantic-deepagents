@@ -14,7 +14,7 @@ from pydantic_deep.capabilities.hooks import Hook, HookEvent, HookInput, HookRes
 from pydantic_deep.deps import DeepAgentDeps
 
 if TYPE_CHECKING:
-    from pydantic_deep.capabilities.code_graph import CodeGraphCapability
+    from pydantic_deep.capabilities.code_graph.potpie import PotpieCapability
 
 
 def _make_shell_allow_list_hook(allow_list: list[str]) -> Hook:
@@ -84,7 +84,7 @@ def create_cli_agent(  # noqa: C901
     extra_instructions: str | None = None,
     extra_toolsets: list[Any] | None = None,
     extra_capabilities: list[Any] | None = None,
-    kg_capability: CodeGraphCapability | None = None,
+    kg_capability: PotpieCapability | None = None,
     web_search: bool | None = None,
     web_fetch: bool | None = None,
     thinking: bool | str | None = None,

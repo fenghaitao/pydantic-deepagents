@@ -5,7 +5,7 @@ only the DB credentials (NEO4J_URI, POSTGRES_SERVER, etc.) in the environment.
 
 The runtime is initialized lazily on the first call and reused for the
 lifetime of the backend instance.  Call ``close()`` when done (or use
-``async with CodeGraphRuntime() as b:``).
+``async with PotpieRuntime() as b:``).
 
 Requires:
   - ``potpie`` Python package installed (in the same environment)
@@ -21,32 +21,32 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from potpie import PotpieRuntime
+    from potpie import PotpieRuntime as _PotpieRuntime
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_USER_ID = "defaultuser"
 
 
-class CodeGraphRuntime:
-    """PotpieBackend implementation that calls PotpieRuntime directly.
+class PotpieRuntime:
+    """Async adapter that calls potpie's PotpieRuntime directly in-process.
 
     Instantiation is cheap; the runtime is initialized on the first call.
     """
 
     def __init__(self, user_id: str | None = None) -> None:
         self._user_id: str = user_id or os.environ.get("POTPIE_USER_ID", _DEFAULT_USER_ID)
-        self._runtime: PotpieRuntime | None = None
+        self._runtime: _PotpieRuntime | None = None
 
     # ── Lifecycle ─────────────────────────────────────────────────────────
 
-    async def _get_runtime(self) -> PotpieRuntime:
+    async def _get_runtime(self) -> _PotpieRuntime:
         if self._runtime is None:
             from potpie import PotpieRuntime as _RT
 
             self._runtime = _RT.from_env()
             await self._runtime.initialize()
-            logger.debug("CodeGraphRuntime: PotpieRuntime initialized")
+            logger.debug("PotpieRuntime: initialized")
         return self._runtime
 
     async def close(self) -> None:
@@ -54,7 +54,7 @@ class CodeGraphRuntime:
             await self._runtime.close()
             self._runtime = None
 
-    async def __aenter__(self) -> CodeGraphRuntime:
+    async def __aenter__(self) -> PotpieRuntime:
         return self
 
     async def __aexit__(self, *_: Any) -> None:
@@ -294,4 +294,4 @@ class CodeGraphRuntime:
             session.close()
 
 
-__all__ = ["CodeGraphRuntime"]
+__all__ = ["PotpieRuntime"]

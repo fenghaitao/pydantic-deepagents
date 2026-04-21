@@ -1,4 +1,4 @@
-"""CodeGraphCapability — pydantic-ai capability for code-graph/potpie integration.
+"""PotpieCapability — pydantic-ai capability for code-graph/potpie integration.
 
 Encapsulates all code-graph concerns (toolset, subagents, runtime context)
 behind the standard AbstractCapability interface, following the same pattern
@@ -6,13 +6,13 @@ as MemoryCapability and other pydantic-deep capabilities.
 
 Usage::
 
-    from pydantic_deep.capabilities.code_graph import CodeGraphCapability
-    from pydantic_deep.toolsets.code_graph.context import PotpieContext
-    from pydantic_deep.toolsets.code_graph.runtime import CodeGraphRuntime
+    from pydantic_deep.capabilities.code_graph.potpie import PotpieCapability
+    from pydantic_deep.toolsets.code_graph.potpie.context import PotpieContext
+    from pydantic_deep.toolsets.code_graph.potpie.runtime import PotpieRuntime
 
-    runtime = CodeGraphRuntime()
+    runtime = PotpieRuntime()
     context = PotpieContext(project_id="abc-123", user_id="user1")
-    cap = CodeGraphCapability(runtime=runtime, project_id="abc-123", context=context)
+    cap = PotpieCapability(runtime=runtime, project_id="abc-123", context=context)
 
     agent = create_deep_agent(
         model="anthropic:claude-sonnet-4-6",
@@ -31,9 +31,9 @@ from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.toolsets import AbstractToolset, FunctionToolset
 
-from pydantic_deep.toolsets.code_graph import CodeGraphToolset, KG_TOOL_NAMES
-from pydantic_deep.toolsets.code_graph.context import PotpieContext
-from pydantic_deep.toolsets.code_graph.runtime import CodeGraphRuntime
+from pydantic_deep.toolsets.code_graph import PotpieToolset, KG_TOOL_NAMES
+from pydantic_deep.toolsets.code_graph.potpie.context import PotpieContext
+from pydantic_deep.toolsets.code_graph.potpie.runtime import PotpieRuntime
 
 if TYPE_CHECKING:
     pass
@@ -118,25 +118,25 @@ Be specific: name the affected files, functions, and APIs.
 
 
 # ---------------------------------------------------------------------------
-# CodeGraphCapability
+# PotpieCapability
 # ---------------------------------------------------------------------------
 
 
 @dataclass
-class CodeGraphCapability(AbstractCapability[Any]):
+class PotpieCapability(AbstractCapability[Any]):
     """Capability encapsulating all code-graph/potpie concerns.
 
-    Builds the CodeGraphToolset and subagent configs lazily in ``for_run()``,
+    Builds the PotpieToolset and subagent configs lazily in ``for_run()``,
     injects ``kg_context`` into deps via ``before_run()``, and exposes a
     ``subagents`` property for wiring into ``create_cli_agent()``.
 
     Args:
-        runtime: Initialised CodeGraphRuntime.
+        runtime: Initialised PotpieRuntime.
         project_id: Default project UUID (optional).
         context: PotpieContext for the current session (optional).
     """
 
-    runtime: CodeGraphRuntime
+    runtime: PotpieRuntime
     project_id: str | None = None
     context: PotpieContext | None = None
     _toolset: FunctionToolset[Any] | None = field(default=None, init=False, repr=False)
@@ -146,7 +146,7 @@ class CodeGraphCapability(AbstractCapability[Any]):
         """Inject kg_context into deps before each run.
 
         Sets ``ctx.deps.kg_context`` to ``self.context`` so that
-        CodeGraphToolset tool functions can read the project_id.
+        PotpieToolset tool functions can read the project_id.
 
         Args:
             ctx: The current run context.
@@ -214,4 +214,4 @@ class CodeGraphCapability(AbstractCapability[Any]):
         return self._subagents
 
 
-__all__ = ["CodeGraphCapability"]
+__all__ = ["PotpieCapability"]

@@ -5,23 +5,23 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 from pydantic_deep.toolsets.code_graph import make_cgc_runtime, make_runtime
-from pydantic_deep.toolsets.code_graph.cgc_runtime import CGCRuntime
-from pydantic_deep.toolsets.code_graph.runtime import CodeGraphRuntime
+from pydantic_deep.toolsets.code_graph.cgc.runtime import CGCRuntime
+from pydantic_deep.toolsets.code_graph.potpie.runtime import PotpieRuntime
 
 
 class TestMakeBackend:
     def test_returns_runtime(self) -> None:
         with patch(
-            "pydantic_deep.toolsets.code_graph.CodeGraphRuntime"
+            "pydantic_deep.toolsets.code_graph.PotpieRuntime"
         ) as mock_cls:
-            mock_cls.return_value = MagicMock(spec=CodeGraphRuntime)
+            mock_cls.return_value = MagicMock(spec=PotpieRuntime)
             backend = make_runtime()
             mock_cls.assert_called_once()
             assert backend is mock_cls.return_value
 
     def test_returns_runtime_instance(self) -> None:
         backend = make_runtime()
-        assert isinstance(backend, CodeGraphRuntime)
+        assert isinstance(backend, PotpieRuntime)
 
 
 class TestMakeCGCRuntime:

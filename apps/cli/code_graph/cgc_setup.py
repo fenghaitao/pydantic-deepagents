@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from pydantic_deep.capabilities.cgc_code_graph import CGCCapability
+    from pydantic_deep.capabilities.code_graph.cgc import CGCCapability
 
 
 async def build_cgc_capability(
@@ -38,10 +38,10 @@ async def build_cgc_capability(
         or the import fails (warning printed to stderr).
     """
     try:
-        from pydantic_deep.capabilities.cgc_code_graph import CGCCapability
-        from pydantic_deep.toolsets.code_graph.cgc_context import CGCContext
-        from pydantic_deep.toolsets.code_graph.cgc_runtime import CGCRuntime
-        from pydantic_deep.toolsets.code_graph.cgc_toolset import CGCToolset
+        from pydantic_deep.capabilities.code_graph.cgc import CGCCapability
+        from pydantic_deep.toolsets.code_graph.cgc.context import CGCContext
+        from pydantic_deep.toolsets.code_graph.cgc.runtime import CGCRuntime
+        from pydantic_deep.toolsets.code_graph.cgc.toolset import CGCToolset
 
         effective_repo = repo_path or (str(root.resolve()) if root is not None else None)
         if not effective_repo:

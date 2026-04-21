@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from pydantic_ai import RunContext
 
-from pydantic_deep.toolsets.code_graph.cgc_context import CGCContext
-from pydantic_deep.toolsets.code_graph.cgc_toolset import CGCToolset
+from pydantic_deep.toolsets.code_graph.cgc.context import CGCContext
+from pydantic_deep.toolsets.code_graph.cgc.toolset import CGCToolset
 
 
 def _make_runtime(

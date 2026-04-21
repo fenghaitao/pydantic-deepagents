@@ -1,4 +1,4 @@
-"""Tests for CodeGraphToolset.from_runtime and KG_TOOL_NAMES.
+"""Tests for PotpieToolset.from_runtime and KG_TOOL_NAMES.
 
 Validates:
 - from_runtime returns a FunctionToolset with all KG tool names
@@ -60,7 +60,7 @@ def _install_stubs() -> None:
 
 _install_stubs()
 
-from pydantic_deep.toolsets.code_graph.toolset import KG_TOOL_NAMES, CodeGraphToolset  # noqa: E402
+from pydantic_deep.toolsets.code_graph.potpie.toolset import KG_TOOL_NAMES, PotpieToolset  # noqa: E402
 
 TOOL_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
@@ -91,7 +91,7 @@ def _make_backend_mock(tool_names: list[str]) -> MagicMock:
 
 
 class TestFromRuntime:
-    """Tests for CodeGraphToolset.from_runtime factory."""
+    """Tests for PotpieToolset.from_runtime factory."""
 
     @pytest.mark.asyncio
     async def test_returns_function_toolset(self) -> None:
@@ -102,7 +102,7 @@ class TestFromRuntime:
             "app.modules.intelligence.agents.chat_agents.multi_agent.utils.tool_utils.wrap_structured_tools",
             return_value=real_tools,
         ):
-            toolset = await CodeGraphToolset.from_runtime(backend)
+            toolset = await PotpieToolset.from_runtime(backend)
 
         assert isinstance(toolset, FunctionToolset)
 
@@ -115,7 +115,7 @@ class TestFromRuntime:
             "app.modules.intelligence.agents.chat_agents.multi_agent.utils.tool_utils.wrap_structured_tools",
             return_value=real_tools,
         ):
-            toolset = await CodeGraphToolset.from_runtime(backend)
+            toolset = await PotpieToolset.from_runtime(backend)
 
         for expected in KG_TOOL_NAMES:
             assert expected in toolset.tools, f"Missing tool: {expected}"
@@ -129,7 +129,7 @@ class TestFromRuntime:
             "app.modules.intelligence.agents.chat_agents.multi_agent.utils.tool_utils.wrap_structured_tools",
             return_value=real_tools,
         ):
-            toolset = await CodeGraphToolset.from_runtime(backend)
+            toolset = await PotpieToolset.from_runtime(backend)
 
         for name in toolset.tools:
             assert TOOL_NAME_RE.match(name), f"Tool name not sanitized: {name!r}"
@@ -143,7 +143,7 @@ class TestFromRuntime:
             "app.modules.intelligence.agents.chat_agents.multi_agent.utils.tool_utils.wrap_structured_tools",
             return_value=real_tools,
         ):
-            await CodeGraphToolset.from_runtime(backend)
+            await PotpieToolset.from_runtime(backend)
 
         backend.get_tools.assert_called_once_with(KG_TOOL_NAMES, exclude_embedding_tools=False)
 
@@ -157,7 +157,7 @@ class TestFromRuntime:
             "app.modules.intelligence.agents.chat_agents.multi_agent.utils.tool_utils.wrap_structured_tools",
             return_value=real_tools,
         ):
-            await CodeGraphToolset.from_runtime(backend, tool_names=custom)
+            await PotpieToolset.from_runtime(backend, tool_names=custom)
 
         backend.get_tools.assert_called_once_with(custom, exclude_embedding_tools=False)
 
@@ -170,7 +170,7 @@ class TestFromRuntime:
             "app.modules.intelligence.agents.chat_agents.multi_agent.utils.tool_utils.wrap_structured_tools",
             return_value=real_tools,
         ):
-            await CodeGraphToolset.from_runtime(backend, exclude_embedding_tools=True)
+            await PotpieToolset.from_runtime(backend, exclude_embedding_tools=True)
 
         backend.get_tools.assert_called_once_with(KG_TOOL_NAMES, exclude_embedding_tools=True)
 
@@ -186,7 +186,7 @@ class TestFromRuntime:
 # Tests for _inject_project_id
 # ---------------------------------------------------------------------------
 
-from pydantic_deep.toolsets.code_graph.toolset import _inject_project_id  # noqa: E402
+from pydantic_deep.toolsets.code_graph.potpie.toolset import _inject_project_id  # noqa: E402
 
 
 class TestInjectProjectId:

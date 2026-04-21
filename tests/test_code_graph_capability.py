@@ -1,4 +1,4 @@
-"""Tests for CodeGraphCapability.
+"""Tests for PotpieCapability.
 
 Validates:
 - Construction with backend, project_id, context
@@ -18,14 +18,14 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from pydantic_deep.capabilities.code_graph import CodeGraphCapability
+from pydantic_deep.capabilities.code_graph.potpie import PotpieCapability
 from pydantic_deep.deps import DeepAgentDeps
-from pydantic_deep.toolsets.code_graph.context import PotpieContext
-from pydantic_deep.toolsets.code_graph.runtime import CodeGraphRuntime
+from pydantic_deep.toolsets.code_graph.potpie.context import PotpieContext
+from pydantic_deep.toolsets.code_graph.potpie.runtime import PotpieRuntime
 
 
 def _make_runtime() -> MagicMock:
-    b = MagicMock(spec=CodeGraphRuntime)
+    b = MagicMock(spec=PotpieRuntime)
     b.get_tools = AsyncMock(return_value=[])
     return b
 
@@ -40,12 +40,12 @@ def _make_run_ctx(deps: DeepAgentDeps | None = None) -> MagicMock:
     return ctx
 
 
-class TestCodeGraphCapabilityConstruction:
-    """Tests for CodeGraphCapability construction."""
+class TestPotpieCapabilityConstruction:
+    """Tests for PotpieCapability construction."""
 
     def test_basic_construction(self) -> None:
         backend = _make_runtime()
-        cap = CodeGraphCapability(runtime=backend)
+        cap = PotpieCapability(runtime=backend)
         assert cap.runtime is backend
         assert cap.project_id is None
         assert cap.context is None
@@ -53,42 +53,42 @@ class TestCodeGraphCapabilityConstruction:
     def test_construction_with_all_fields(self) -> None:
         backend = _make_runtime()
         context = _make_context()
-        cap = CodeGraphCapability(runtime=backend, project_id="proj-1", context=context)
+        cap = PotpieCapability(runtime=backend, project_id="proj-1", context=context)
         assert cap.project_id == "proj-1"
         assert cap.context is context
 
     def test_toolset_none_on_construction(self) -> None:
-        cap = CodeGraphCapability(runtime=_make_runtime())
+        cap = PotpieCapability(runtime=_make_runtime())
         assert cap.get_toolset() is None
 
     def test_subagents_none_on_construction(self) -> None:
-        cap = CodeGraphCapability(runtime=_make_runtime())
+        cap = PotpieCapability(runtime=_make_runtime())
         assert cap.subagents is None
 
 
-class TestCodeGraphCapabilityGetToolset:
+class TestPotpieCapabilityGetToolset:
     """Tests for get_toolset() — always None until set externally by build_kg_capability."""
 
     def test_get_toolset_returns_none_before_external_setup(self) -> None:
-        cap = CodeGraphCapability(runtime=_make_runtime())
+        cap = PotpieCapability(runtime=_make_runtime())
         assert cap.get_toolset() is None
 
     def test_get_toolset_returns_toolset_after_external_set(self) -> None:
-        cap = CodeGraphCapability(runtime=_make_runtime(), project_id="proj-1")
+        cap = PotpieCapability(runtime=_make_runtime(), project_id="proj-1")
         mock_toolset = MagicMock()
         object.__setattr__(cap, "_toolset", mock_toolset)
         assert cap.get_toolset() is mock_toolset
 
 
-class TestCodeGraphCapabilitySubagents:
+class TestPotpieCapabilitySubagents:
     """Tests for subagents property — set externally by build_kg_capability."""
 
     def test_subagents_none_before_external_setup(self) -> None:
-        cap = CodeGraphCapability(runtime=_make_runtime())
+        cap = PotpieCapability(runtime=_make_runtime())
         assert cap.subagents is None
 
     def test_subagents_returned_after_external_set(self) -> None:
-        cap = CodeGraphCapability(runtime=_make_runtime(), project_id="proj-1")
+        cap = PotpieCapability(runtime=_make_runtime(), project_id="proj-1")
         subagents = [{"name": "codebase_qna"}, {"name": "blast_radius"}]
         object.__setattr__(cap, "_subagents", subagents)
         assert cap.subagents is not None
@@ -98,14 +98,14 @@ class TestCodeGraphCapabilitySubagents:
         assert "blast_radius" in names
 
 
-class TestCodeGraphCapabilityBeforeRun:
+class TestPotpieCapabilityBeforeRun:
     """Tests for before_run() setting ctx.deps.kg_context."""
 
     @pytest.mark.asyncio
     async def test_before_run_sets_kg_context(self) -> None:
         backend = _make_runtime()
         context = _make_context("proj-42")
-        cap = CodeGraphCapability(runtime=backend, context=context)
+        cap = PotpieCapability(runtime=backend, context=context)
 
         deps = DeepAgentDeps()
         ctx = _make_run_ctx(deps)
@@ -115,7 +115,7 @@ class TestCodeGraphCapabilityBeforeRun:
 
     @pytest.mark.asyncio
     async def test_before_run_sets_none_context(self) -> None:
-        cap = CodeGraphCapability(runtime=_make_runtime(), context=None)
+        cap = PotpieCapability(runtime=_make_runtime(), context=None)
         deps = DeepAgentDeps()
         ctx = _make_run_ctx(deps)
 
@@ -127,7 +127,7 @@ class TestCodeGraphCapabilityBeforeRun:
         old_context = _make_context("old-proj")
         new_context = _make_context("new-proj")
 
-        cap = CodeGraphCapability(runtime=_make_runtime(), context=new_context)
+        cap = PotpieCapability(runtime=_make_runtime(), context=new_context)
         deps = DeepAgentDeps()
         deps.kg_context = old_context
         ctx = _make_run_ctx(deps)
@@ -136,13 +136,13 @@ class TestCodeGraphCapabilityBeforeRun:
         assert ctx.deps.kg_context is new_context
 
 
-class TestCodeGraphCapabilityGetInstructions:
+class TestPotpieCapabilityGetInstructions:
     """Tests for get_instructions() callable."""
 
     @pytest.mark.asyncio
     async def test_instructions_with_project_id(self) -> None:
         context = _make_context("proj-42")
-        cap = CodeGraphCapability(runtime=_make_runtime(), context=context)
+        cap = PotpieCapability(runtime=_make_runtime(), context=context)
         fn = cap.get_instructions()
         ctx = _make_run_ctx()
         ctx.deps.kg_context = context
@@ -152,7 +152,7 @@ class TestCodeGraphCapabilityGetInstructions:
 
     @pytest.mark.asyncio
     async def test_instructions_without_project_id(self) -> None:
-        cap = CodeGraphCapability(runtime=_make_runtime(), context=None)
+        cap = PotpieCapability(runtime=_make_runtime(), context=None)
         fn = cap.get_instructions()
         ctx = _make_run_ctx()
         ctx.deps.kg_context = None
@@ -164,7 +164,7 @@ class TestCodeGraphCapabilityGetInstructions:
     async def test_instructions_inferring_status(self) -> None:
         from unittest.mock import MagicMock
         context = _make_context("proj-1")
-        cap = CodeGraphCapability(runtime=_make_runtime(), context=context)
+        cap = PotpieCapability(runtime=_make_runtime(), context=context)
         fn = cap.get_instructions()
         ctx = _make_run_ctx()
         kg_ctx = MagicMock()
@@ -179,7 +179,7 @@ class TestCodeGraphCapabilityGetInstructions:
     async def test_instructions_parsing_status(self) -> None:
         from unittest.mock import MagicMock
         context = _make_context("proj-1")
-        cap = CodeGraphCapability(runtime=_make_runtime(), context=context)
+        cap = PotpieCapability(runtime=_make_runtime(), context=context)
         fn = cap.get_instructions()
         ctx = _make_run_ctx()
         kg_ctx = MagicMock()
@@ -191,12 +191,12 @@ class TestCodeGraphCapabilityGetInstructions:
         assert "PARSING" in result
 
 
-class TestCodeGraphCapabilityExternalSetup:
+class TestPotpieCapabilityExternalSetup:
     """Tests that toolset and subagents are set externally (by build_kg_capability)
     and that the original capability is not mutated by before_run."""
 
     def test_toolset_and_subagents_set_via_object_setattr(self) -> None:
-        cap = CodeGraphCapability(runtime=_make_runtime(), project_id="proj-1")
+        cap = PotpieCapability(runtime=_make_runtime(), project_id="proj-1")
         mock_toolset = MagicMock()
         subagents = [{"name": "codebase_qna"}, {"name": "blast_radius"}]
         object.__setattr__(cap, "_toolset", mock_toolset)
@@ -206,7 +206,7 @@ class TestCodeGraphCapabilityExternalSetup:
 
     @pytest.mark.asyncio
     async def test_before_run_does_not_clear_toolset(self) -> None:
-        cap = CodeGraphCapability(runtime=_make_runtime(), project_id="proj-1")
+        cap = PotpieCapability(runtime=_make_runtime(), project_id="proj-1")
         mock_toolset = MagicMock()
         object.__setattr__(cap, "_toolset", mock_toolset)
         ctx = _make_run_ctx()
@@ -245,7 +245,7 @@ class TestBeforeRunProperty:
         import asyncio
 
         backend = _make_runtime()
-        cap = CodeGraphCapability(runtime=backend, context=context)
+        cap = PotpieCapability(runtime=backend, context=context)
         deps = DeepAgentDeps()
         ctx = _make_run_ctx(deps)
 

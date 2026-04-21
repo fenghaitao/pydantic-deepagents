@@ -10,10 +10,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pydantic_ai import RunContext
 
-from pydantic_deep.capabilities.cgc_code_graph import CGCCapability
+from pydantic_deep.capabilities.code_graph.cgc import CGCCapability
 from pydantic_deep.deps import DeepAgentDeps
-from pydantic_deep.toolsets.code_graph.cgc_context import CGCContext
-from pydantic_deep.toolsets.code_graph.cgc_runtime import CGCRuntime
+from pydantic_deep.toolsets.code_graph.cgc.context import CGCContext
+from pydantic_deep.toolsets.code_graph.cgc.runtime import CGCRuntime
 
 
 def _make_runtime() -> MagicMock:
@@ -124,10 +124,10 @@ class TestCGCCapabilityGetInstructions:
 
 class TestBuildCGCCapability:
     async def test_success_with_explicit_repo_path(self) -> None:
-        from apps.cli.cgc_setup import build_cgc_capability
+        from apps.cli.code_graph.cgc_setup import build_cgc_capability
 
         with patch(
-            "pydantic_deep.toolsets.code_graph.cgc_runtime.CGCRuntime"
+            "pydantic_deep.toolsets.code_graph.cgc.runtime.CGCRuntime"
         ) as mock_rt_cls:
             mock_rt_cls.return_value = MagicMock(spec=CGCRuntime)
             cap = await build_cgc_capability(repo_path="/explicit/repo")
@@ -139,11 +139,11 @@ class TestBuildCGCCapability:
         assert cap.get_toolset() is not None
 
     async def test_success_with_root_fallback(self) -> None:
-        from apps.cli.cgc_setup import build_cgc_capability
+        from apps.cli.code_graph.cgc_setup import build_cgc_capability
 
         root = Path("/from/root")
         with patch(
-            "pydantic_deep.toolsets.code_graph.cgc_runtime.CGCRuntime"
+            "pydantic_deep.toolsets.code_graph.cgc.runtime.CGCRuntime"
         ) as mock_rt_cls:
             mock_rt_cls.return_value = MagicMock(spec=CGCRuntime)
             cap = await build_cgc_capability(repo_path=None, root=root)
@@ -153,17 +153,17 @@ class TestBuildCGCCapability:
         assert cap.context.repo_path == str(root.resolve())
 
     async def test_returns_none_when_no_path(self) -> None:
-        from apps.cli.cgc_setup import build_cgc_capability
+        from apps.cli.code_graph.cgc_setup import build_cgc_capability
 
         cap = await build_cgc_capability(repo_path=None, root=None)
         assert cap is None
 
     async def test_on_status_callback(self) -> None:
-        from apps.cli.cgc_setup import build_cgc_capability
+        from apps.cli.code_graph.cgc_setup import build_cgc_capability
 
         messages: list[str] = []
         with patch(
-            "pydantic_deep.toolsets.code_graph.cgc_runtime.CGCRuntime"
+            "pydantic_deep.toolsets.code_graph.cgc.runtime.CGCRuntime"
         ) as mock_rt_cls:
             mock_rt_cls.return_value = MagicMock(spec=CGCRuntime)
             await build_cgc_capability(
@@ -174,12 +174,12 @@ class TestBuildCGCCapability:
         assert "/r" in messages[0]
 
     async def test_returns_none_on_import_error(self, capsys) -> None:
-        from apps.cli.cgc_setup import build_cgc_capability
+        from apps.cli.code_graph.cgc_setup import build_cgc_capability
 
         # Patch CGCRuntime in its source module so the local import in
         # build_cgc_capability (from ... import CGCRuntime) gets the mock.
         with patch(
-            "pydantic_deep.toolsets.code_graph.cgc_runtime.CGCRuntime",
+            "pydantic_deep.toolsets.code_graph.cgc.runtime.CGCRuntime",
             side_effect=ImportError("codegraphcontext not installed"),
         ):
             cap = await build_cgc_capability(repo_path="/r")
@@ -189,10 +189,10 @@ class TestBuildCGCCapability:
         assert "[cgc]" in captured.err
 
     async def test_returns_none_on_exception(self, capsys) -> None:
-        from apps.cli.cgc_setup import build_cgc_capability
+        from apps.cli.code_graph.cgc_setup import build_cgc_capability
 
         with patch(
-            "pydantic_deep.toolsets.code_graph.cgc_runtime.CGCRuntime",
+            "pydantic_deep.toolsets.code_graph.cgc.runtime.CGCRuntime",
             side_effect=RuntimeError("unexpected"),
         ):
             cap = await build_cgc_capability(repo_path="/r")

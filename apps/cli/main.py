@@ -1408,7 +1408,7 @@ def main() -> None:
 
 
 def _make_code_graph_runtime():
-    """Return a CodeGraphRuntime instance."""
+    """Return a PotpieRuntime instance."""
     from pydantic_deep.toolsets.code_graph import make_runtime
 
     return make_runtime()

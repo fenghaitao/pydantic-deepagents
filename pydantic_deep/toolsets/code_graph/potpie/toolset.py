@@ -1,6 +1,6 @@
-"""CodeGraphToolset — pydantic-ai FunctionToolset that exposes potpie code-graph tools.
+"""PotpieToolset — pydantic-ai FunctionToolset that exposes potpie code-graph tools.
 
-The toolset is backend-agnostic: it accepts a CodeGraphRuntime instance
+The toolset is backend-agnostic: it accepts a PotpieRuntime instance
 and exposes four agent-callable tools:
 
   list_code_projects   — enumerate indexed repositories
@@ -8,8 +8,8 @@ and exposes four agent-callable tools:
   nl_query             — structural NL→Cypher query (call graphs, imports, etc.)
   ask_knowledge_graph  — semantic / docstring similarity search
 
-For subagent use, ``CodeGraphToolset.from_runtime()`` fetches the full set of
-low-level KG tools from a CodeGraphRuntime and wraps them with project_id injection.
+For subagent use, ``PotpieToolset.from_runtime()`` fetches the full set of
+low-level KG tools from a PotpieRuntime and wraps them with project_id injection.
 
 ``get_instructions()`` injects the list of available project IDs into the
 system prompt so the agent can reference them without a round-trip.
@@ -24,7 +24,7 @@ from typing import Any
 from pydantic_ai import RunContext, Tool
 from pydantic_ai.toolsets import FunctionToolset
 
-from pydantic_deep.toolsets.code_graph.runtime import CodeGraphRuntime
+from pydantic_deep.toolsets.code_graph.potpie.runtime import PotpieRuntime
 
 # ── Tool descriptions ─────────────────────────────────────────────────────────
 
@@ -70,7 +70,7 @@ Returns a ranked list of nodes with docstrings, file paths, and similarity score
 :param questions: One or more natural-language questions (list of strings).
 :param node_ids: Optional list of node IDs to narrow the search scope."""
 
-# ── Low-level KG tool names (CodeGraphRuntime only) ────────────────────────────
+# ── Low-level KG tool names (PotpieRuntime only) ────────────────────────────
 
 KG_TOOL_NAMES: list[str] = [
     "ask_knowledge_graph_queries",
@@ -153,10 +153,10 @@ def _inject_project_id(tool: Tool) -> Tool:
     )
 
 
-class CodeGraphToolset(FunctionToolset[Any]):
+class PotpieToolset(FunctionToolset[Any]):
     """Agent toolset for potpie code-graph operations.
 
-    Constructed with a runtime (CodeGraphRuntime) and an optional
+    Constructed with a runtime (PotpieRuntime) and an optional
     default project_id that is injected into the system prompt.
 
     Tools:
@@ -169,7 +169,7 @@ class CodeGraphToolset(FunctionToolset[Any]):
     def __init__(
         self,
         *,
-        runtime: CodeGraphRuntime,
+        runtime: PotpieRuntime,
         project_id: str | None = None,
     ) -> None:
         super().__init__(id="potpie-code-graph")
@@ -295,20 +295,20 @@ class CodeGraphToolset(FunctionToolset[Any]):
     @classmethod
     async def from_runtime(
         cls,
-        runtime: CodeGraphRuntime,
+        runtime: PotpieRuntime,
         tool_names: list[str] | None = None,
         toolset_id: str = "potpie-kg",
         exclude_embedding_tools: bool = False,
     ) -> FunctionToolset[Any]:
-        """Create a FunctionToolset of low-level KG tools from a CodeGraphRuntime.
+        """Create a FunctionToolset of low-level KG tools from a PotpieRuntime.
 
         Fetches StructuredTool instances via backend.get_tools(), wraps them
         with project_id injection, and returns a FunctionToolset for subagent use.
 
-        Requires CodeGraphRuntime — only CodeGraphRuntime supports get_tools().
+        Requires PotpieRuntime — only PotpieRuntime supports get_tools().
 
         Args:
-            runtime: An initialised CodeGraphRuntime.
+            runtime: An initialised PotpieRuntime.
             tool_names: Tool names to retrieve. Defaults to KG_TOOL_NAMES.
             toolset_id: FunctionToolset identifier.
             exclude_embedding_tools: Skip embedding-dependent tools.
@@ -331,4 +331,4 @@ class CodeGraphToolset(FunctionToolset[Any]):
 
 
 
-__all__ = ["CodeGraphToolset"]
+__all__ = ["PotpieToolset"]
