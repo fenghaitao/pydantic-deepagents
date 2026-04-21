@@ -14,6 +14,9 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 _DEEPRESEARCH_SRC = _REPO_ROOT / "apps" / "deepresearch" / "src"
 if _DEEPRESEARCH_SRC.is_dir() and str(_DEEPRESEARCH_SRC) not in sys.path:
     sys.path.insert(0, str(_DEEPRESEARCH_SRC))
+_APPS_DIR = _REPO_ROOT / "apps"
+if _APPS_DIR.is_dir() and str(_APPS_DIR) not in sys.path:
+    sys.path.insert(0, str(_APPS_DIR))
 
 pytest.importorskip("deepresearch")
 

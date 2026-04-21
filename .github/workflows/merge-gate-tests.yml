@@ -16,7 +16,6 @@ concurrency:
 
 env:
   COLUMNS: 150
-  UV_NO_SOURCES: "1"
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -34,10 +33,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Checkout submodules
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --recursive
+
       - uses: ./.github/actions/setup-uv
         with:
           python-version: ${{ matrix.python-version }}
-          uv-sync-args: "--all-extras --group dev --no-sources"
+          uv-sync-args: "--all-extras --group dev"
 
       - name: Run tests
         run: make test
@@ -51,3 +55,263 @@ jobs:
           name: coverage-lcov-${{ matrix.python-version }}
           path: coverage.lcov
           retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # Potpie submodule tests — copied from potpie/.github/workflows/unit-tests.yml
+  # All `run:` steps execute inside the potpie/ submodule directory.
+  # ---------------------------------------------------------------------------
+  potpie-unit-tests:
+    name: Potpie / Run unit tests (Python ${{ matrix.python-version }})
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted]
+
+    defaults:
+      run:
+        working-directory: code-graph-providers/potpie
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13"]
+
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
+      UV_LINK_MODE: copy
+      PYDANTIC_DEEP_LOGFIRE: ${{ vars.CI_LOGFIRE_ENABLED }}
+      PYDANTIC_DEEP_LOG_LEVEL: ${{ vars.CI_LOGFIRE_LEVEL }}
+      CI_LOGFIRE_ENABLED: ${{ vars.CI_LOGFIRE_ENABLED }}
+      CI_LOGFIRE_BACKUP_PATH: ${{ vars.CI_LOGFIRE_BACKUP_PATH }}
+
+    steps:
+      - name: Stop backend before clean checkout
+        working-directory: ${{ github.workspace }}
+        run: |
+          if [ -f code-graph-providers/potpie/Makefile ]; then
+            make -C code-graph-providers/potpie stop-force 2>/dev/null || true
+          fi
+          pkill -f "${GITHUB_WORKSPACE}/code-graph-providers/potpie/.venv/bin/gunicorn" 2>/dev/null || true
+          pkill -f "${GITHUB_WORKSPACE}/code-graph-providers/potpie/.venv/bin/celery"   2>/dev/null || true
+          rm -rf code-graph-providers/potpie/singularity/singularity-compose/.venv
+          rm -rf code-graph-providers/potpie/singularity/potpie-data
+          sleep 3
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Checkout submodules
+        working-directory: ${{ github.workspace }}
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --recursive
+
+      - name: Clear logfire sessions
+        if: env.CI_LOGFIRE_ENABLED == 'true'
+        run: |
+          rm -rf .pydantic-deep/sessions
+          mkdir -p .pydantic-deep/sessions
+          echo "Logfire sessions directory cleared."
+
+      - name: Prepare Python & venv (install dev extra -> pytest)
+        run: |
+          set -euo pipefail
+          uv python install "${UV_PYTHON}"
+          test -d .venv || uv venv --python "${UV_PYTHON}" .venv
+          uv sync --group dev
+          uv run python -V
+          uv run pytest --version
+          cp .env.template .env
+          mkdir -p test-results
+
+      - name: Run tests/unit-tests
+        run: |
+          uv run pytest tests/unit-tests \
+            -m "not integration" \
+            -v \
+            --tb=short \
+            --noconftest \
+            --junitxml=test-results/junit-tests.xml
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          ENABLE_MULTI_AGENT: "false"
+
+      - name: Login to Docker Hub (reduce Singularity pull rate-limit exposure)
+        run: |
+          echo "${{ secrets.DOCKER_HUB_TOKEN }}" | singularity remote login \
+            --username "${{ secrets.DOCKER_HUB_USERNAME }}" \
+            --password-stdin docker://docker.io 2>/dev/null || true
+
+      - name: Ensure backend services are healthy
+        run: |
+          set -euo pipefail
+          _port_open() { (echo >/dev/tcp/127.0.0.1/"$1") >/dev/null 2>&1; }
+
+          SESSION_KEY="${USER}@$(hostname -s)"
+          DISCO_FILE=".potpie-sessions/${SESSION_KEY}.discovery"
+          DISCO_PORT=""; DISCO_PID=""; SESSION_INFO=""
+
+          if [ -f "$DISCO_FILE" ]; then
+            DISCO_PORT=$(python3 -c "import json; print(json.load(open('$DISCO_FILE'))['port'])" 2>/dev/null || true)
+            DISCO_PID=$(python3  -c "import json; print(json.load(open('$DISCO_FILE'))['pid'])"  2>/dev/null || true)
+          fi
+
+          DISCO_OK=false
+          if [ -n "$DISCO_PORT" ] && [ -n "$DISCO_PID" ] && kill -0 "$DISCO_PID" 2>/dev/null; then
+            _cmdline=$(tr '\0' ' ' < "/proc/${DISCO_PID}/cmdline" 2>/dev/null || true)
+            if echo "$_cmdline" | grep -Fq "potpie.discovery"; then
+              curl -sf "http://127.0.0.1:${DISCO_PORT}/health" >/dev/null 2>&1 && DISCO_OK=true
+            else
+              echo "PID ${DISCO_PID} is alive but is not a potpie.discovery process — treating Discovery Server as dead."
+            fi
+          fi
+
+          if $DISCO_OK; then
+            SESSION_INFO=$(curl -sf "http://127.0.0.1:${DISCO_PORT}/session/${SESSION_KEY}" 2>/dev/null || true)
+          fi
+
+          SERVICES_HEALTHY=false
+          if [ -n "$SESSION_INFO" ]; then
+            REDIS_PORT=$(python3   -c "import json,sys; print(json.loads(sys.argv[1])['ports']['redis'])"               "$SESSION_INFO" 2>/dev/null || true)
+            PG_PORT=$(python3      -c "import json,sys; print(json.loads(sys.argv[1])['ports']['postgres'])"            "$SESSION_INFO" 2>/dev/null || true)
+            BOLT_PORT=$(python3    -c "import json,sys; print(json.loads(sys.argv[1])['ports']['neo4j_bolt'])"          "$SESSION_INFO" 2>/dev/null || true)
+            API_PORT=$(python3     -c "import json,sys; print(json.loads(sys.argv[1])['ports']['api'])"                 "$SESSION_INFO" 2>/dev/null || true)
+            PHOENIX_PORT=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['ports'].get('phoenix', ''))"    "$SESSION_INFO" 2>/dev/null || true)
+
+            REDIS_OK=false; PG_OK=false; NEO4J_OK=false; API_OK=false; PHOENIX_OK=false
+            _port_open "${REDIS_PORT}"    && REDIS_OK=true   || true
+            _port_open "${PG_PORT}"       && PG_OK=true      || true
+            _port_open "${BOLT_PORT}"     && NEO4J_OK=true   || true
+            curl -sf "http://localhost:${API_PORT}/health" >/dev/null 2>&1 && API_OK=true || true
+            if [ -n "$PHOENIX_PORT" ]; then
+              _port_open "${PHOENIX_PORT}" && PHOENIX_OK=true || true
+            fi
+
+            echo "Service health check:"
+            echo "  Discovery Server (pid ${DISCO_PID}, port ${DISCO_PORT}): OK"
+            echo "  Postgres  port ${PG_PORT}       : ${PG_OK}"
+            echo "  Redis     port ${REDIS_PORT}    : ${REDIS_OK}"
+            echo "  Neo4j bolt port ${BOLT_PORT}    : ${NEO4J_OK}"
+            echo "  API       port ${API_PORT}      : ${API_OK}"
+            echo "  Phoenix   port ${PHOENIX_PORT}  : ${PHOENIX_OK}"
+
+            if $REDIS_OK && $PG_OK && $NEO4J_OK && $API_OK && $PHOENIX_OK; then
+              SERVICES_HEALTHY=true
+            fi
+          else
+            echo "Discovery Server not reachable or no active session."
+          fi
+
+          if $SERVICES_HEALTHY; then
+            echo "All backend services are healthy — skipping start."
+          else
+            echo "One or more services are unhealthy. Running make start ..."
+            make start
+          fi
+
+      - name: Run scip_dml integration test
+        run: |
+          SESSION_KEY="${USER}@$(hostname -s)"
+          DISCO_FILE=".potpie-sessions/${SESSION_KEY}.discovery"
+          DISCO_PORT=$(python3 -c "import json; print(json.load(open('$DISCO_FILE'))['port'])" 2>/dev/null || true)
+          if [ -n "$DISCO_PORT" ]; then
+            SESSION_INFO=$(curl -sf "http://127.0.0.1:${DISCO_PORT}/session/${SESSION_KEY}" 2>/dev/null || true)
+          fi
+          if [ -n "$SESSION_INFO" ]; then
+            export POSTGRES_SERVER=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['postgres_server'])" "$SESSION_INFO" 2>/dev/null || true)
+            export REDIS_URL=$(python3       -c "import json,sys; print(json.loads(sys.argv[1])['redis_url'])"        "$SESSION_INFO" 2>/dev/null || true)
+            export NEO4J_URI=$(python3       -c "import json,sys; print(json.loads(sys.argv[1])['neo4j_uri'])"        "$SESSION_INFO" 2>/dev/null || true)
+            export API_PORT=$(python3        -c "import json,sys; print(json.loads(sys.argv[1])['ports']['api'])"     "$SESSION_INFO" 2>/dev/null || true)
+            echo "Integration test ports — postgres: $(python3 -c "import json,sys; print(json.loads(sys.argv[1])['ports']['postgres'])" "$SESSION_INFO" 2>/dev/null), redis: $(python3 -c "import json,sys; print(json.loads(sys.argv[1])['ports']['redis'])" "$SESSION_INFO" 2>/dev/null), neo4j_bolt: $(python3 -c "import json,sys; print(json.loads(sys.argv[1])['ports']['neo4j_bolt'])" "$SESSION_INFO" 2>/dev/null), api: ${API_PORT}"
+          else
+            echo "ERROR: Could not retrieve session info from Discovery Server. Backend may not have started correctly."
+            exit 1
+          fi
+
+          echo "Verifying API health before test..."
+          for _i in $(seq 1 15); do
+            curl -sf "http://127.0.0.1:${API_PORT}/health" >/dev/null 2>&1 && break
+            echo "  API not ready yet (attempt ${_i}/15) — waiting 4s..."
+            sleep 4
+          done
+          curl -sf "http://127.0.0.1:${API_PORT}/health" || {
+            echo "ERROR: API at port ${API_PORT} is not healthy after 60s. Cannot run integration tests."
+            exit 1
+          }
+          echo "API is healthy."
+
+          export PATH="$HOME/.cargo/bin:$PATH"
+          make build-dls
+          (cd tests/integration-tests/scip-dml/simics-project && \
+            /nfs/site/disks/ssg_stc_simics_base-packages-release/simics-7/1000/7.79.0/bin/project-setup \
+            --ignore-existing-files .)
+          uv run pytest tests/integration-tests/scip-dml/test_scip_dml.py \
+            -v -s \
+            --tb=short \
+            --junitxml=test-results/junit-int-scip-dml.xml
+
+      - name: Run scip-python tests
+        run: |
+          uv run pytest tests/integration-tests/scip-python/test_scip_python.py \
+            -v -s \
+            --tb=short \
+            --junitxml=test-results/junit-int-scip-python.xml
+
+      - name: Run phoenix integration test
+        run: |
+          SESSION_KEY="${USER}@$(hostname -s)"
+          DISCO_FILE=".potpie-sessions/${SESSION_KEY}.discovery"
+          DISCO_PORT=$(python3 -c "import json; print(json.load(open('$DISCO_FILE'))['port'])" 2>/dev/null || true)
+          if [ -n "$DISCO_PORT" ]; then
+            SESSION_INFO=$(curl -sf "http://127.0.0.1:${DISCO_PORT}/session/${SESSION_KEY}" 2>/dev/null || true)
+          fi
+          if [ -z "$SESSION_INFO" ]; then
+            echo "ERROR: Could not retrieve session info from Discovery Server. Backend may not be running."
+            exit 1
+          fi
+          PHOENIX_PORT=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['ports'].get('phoenix', ''))" "$SESSION_INFO" 2>/dev/null || true)
+          if [ -z "$PHOENIX_PORT" ]; then
+            echo "ERROR: Phoenix port not found in session. Ensure the backend was started with Phoenix support."
+            exit 1
+          fi
+
+          echo "Checking Phoenix on port ${PHOENIX_PORT}..."
+          for _i in $(seq 1 10); do
+            curl -sf "http://127.0.0.1:${PHOENIX_PORT}/" >/dev/null 2>&1 && break
+            echo "  Phoenix not ready yet (attempt ${_i}/10) — waiting 3s..."
+            sleep 3
+          done
+          curl -sf "http://127.0.0.1:${PHOENIX_PORT}/" >/dev/null 2>&1 || {
+            echo "ERROR: Phoenix is not responding on port ${PHOENIX_PORT} after 30s."
+            exit 1
+          }
+          echo "Phoenix is healthy on port ${PHOENIX_PORT}."
+
+          # uv run pytest tests/integration-tests/test_phoenix.py \
+          #   -v -s \
+          #   --tb=short \
+          #   --junitxml=test-results/junit-int-phoenix.xml
+
+      - name: Backup logfire sessions
+        if: always()
+        run: |
+          if [ "${CI_LOGFIRE_ENABLED}" != "true" ] || [ -z "${CI_LOGFIRE_BACKUP_PATH}" ]; then
+            echo "Logfire backup skipped (CI_LOGFIRE_ENABLED=${CI_LOGFIRE_ENABLED})."
+            exit 0
+          fi
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          SHA_SHORT="${GITHUB_SHA:0:8}"
+          WORKFLOW_SAFE=$(echo "${GITHUB_WORKFLOW}" | tr ' /' '-' | tr -cd '[:alnum:]_-')
+          DEST="${CI_LOGFIRE_BACKUP_PATH}/${WORKFLOW_SAFE}_${GITHUB_RUN_ID}_${SHA_SHORT}_${TIMESTAMP}"
+          mkdir -p "$DEST"
+          if [ -d .pydantic-deep/sessions ] && [ "$(ls -A .pydantic-deep/sessions 2>/dev/null)" ]; then
+            cp -r .pydantic-deep/sessions/. "$DEST/"
+            SESSION_COUNT=$(ls .pydantic-deep/sessions | wc -l)
+            echo "Logfire sessions backed up to $DEST (${SESSION_COUNT} session(s))."
+          else
+            echo "No sessions found to back up."
+          fi
+
+      - name: Clean up potpie-data
+        if: always()
+        run: |
+          make stop-force 2>/dev/null || true
+          rm -rf singularity/code-graph-providers/potpie-data

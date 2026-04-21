@@ -21,7 +21,7 @@ keywords = [
     "terminal-assistant",
 ]
 license = "MIT"
-requires-python = ">=3.10"
+requires-python = "==3.13.*"
 authors = [
     { name = "Pydantic Deep Contributors" }
 ]
@@ -49,6 +49,7 @@ dependencies = [
     "pydantic>=2.0",
     "chardet>=5.0.0",
     "litellm==1.82.0",
+    "potpie",
 ]
 
 [project.optional-dependencies]
@@ -91,6 +92,10 @@ browser = [
 acp = ["agent-client-protocol>=0.8.0"]
 # Logfire tracing support
 logfire = ["logfire>=4.0"]
+# Potpie KG (knowledge-graph) code intelligence — requires Python 3.13
+kg = ["potpie"]
+# CodeGraphContext (CGC) provider — tree-sitter-based code graph, multi-language
+cgc = ["codegraphcontext"]
 # All optional dependencies
 all = [
     "pydantic-deep[sandbox,cli,web,yaml,acp,logfire,browser]",
@@ -109,10 +114,25 @@ pydantic-deep = "apps.cli.main:app"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.uv]
+# Ensure the resolver picks wheels compatible with the CI runner's glibc (2.31).
+# tree-sitter-language-pack>=1.5 only ships manylinux_2_34 wheels; older
+# versions have manylinux2014 (glibc>=2.17) wheels that work fine here.
+required-environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
+constraint-dependencies = [
+    "tree-sitter-language-pack<1.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
+
 [tool.uv.sources]
 subagents-pydantic-ai = { path = "subagents-pydantic-ai", editable = true }
+potpie = { path = "code-graph-providers/potpie", editable = true }
 
 [tool.hatch.build.targets.wheel]
+packages = ["pydantic_deep", "apps"]
+
+[tool.hatch.build.targets.editable]
 packages = ["pydantic_deep", "apps"]
 
 # Dependency groups for development
