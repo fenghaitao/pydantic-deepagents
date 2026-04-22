@@ -1,0 +1,11 @@
+node_modules/
+.next/
+.env.local
+agent/__pycache__/
+*.tsbuildinfo
+package-lock.json
+pnpm-lock.yaml
+.venv
+
+# un-ignore src/lib which is tracked source code
+!src/lib/

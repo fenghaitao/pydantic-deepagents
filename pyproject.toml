@@ -82,6 +82,8 @@ web = [
     "fastapi>=0.125.0",
     "uvicorn>=0.38.0",
     "python-multipart>=0.0.21",
+    "ag-ui-protocol>=0.1.14",
+    "python-dotenv>=1.0.0",
 ]
 # Browser automation support via Playwright
 browser = [

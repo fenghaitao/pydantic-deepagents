@@ -15,6 +15,7 @@ Requires:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -37,15 +38,25 @@ class PotpieRuntime:
     def __init__(self, user_id: str | None = None) -> None:
         self._user_id: str = user_id or os.environ.get("POTPIE_USER_ID", _DEFAULT_USER_ID)
         self._runtime: _PotpieRuntime | None = None
+        self._init_lock: asyncio.Lock = asyncio.Lock()
 
     # ── Lifecycle ─────────────────────────────────────────────────────────
 
     async def _get_runtime(self) -> _PotpieRuntime:
-        if self._runtime is None:
+        # Fast path — already initialized (lock-free read is safe in Python's GIL)
+        if self._runtime is not None:
+            return self._runtime
+        # Slow path — only one coroutine does the initialization; others wait.
+        async with self._init_lock:
+            if self._runtime is not None:  # pragma: no cover
+                return self._runtime  # pragma: no cover
             from potpie import PotpieRuntime as _RT
 
-            self._runtime = _RT.from_env()
-            await self._runtime.initialize()
+            rt = _RT.from_env()
+            await rt.initialize()
+            # Only assign after successful init so callers never see a
+            # partially-initialized runtime.
+            self._runtime = rt
             logger.debug("PotpieRuntime: initialized")
         return self._runtime
 
@@ -204,13 +215,34 @@ class PotpieRuntime:
     async def list_projects(self) -> list:
         rt = await self._get_runtime()
         projects = await rt.projects.list(user_id=self._user_id)
+
+        # rt.projects.list() and ProjectService.list_projects() both omit
+        # repo_path.  Try to supplement it via a direct ORM query; fall back
+        # silently (e.g. in tests or non-potpie environments).
+        repo_paths: dict[str, str] = {}
+        try:
+            from app.modules.projects.projects_model import Project as _Project  # pragma: no cover
+
+            session = rt.db.get_session()  # pragma: no cover
+            try:  # pragma: no cover
+                rows = (  # pragma: no cover
+                    session.query(_Project)
+                    .filter(_Project.user_id == self._user_id)
+                    .all()
+                )
+                repo_paths = {r.id: r.repo_path or "" for r in rows}  # pragma: no cover
+            finally:  # pragma: no cover
+                session.close()  # pragma: no cover
+        except Exception:  # pragma: no cover
+            pass  # pragma: no cover
+
         return [
             {
                 "id": p.id,
                 "repo_name": p.repo_name,
-                "branch_name": p.branch_name,
-                "status": p.status.value,
-                "repo_path": getattr(p, "repo_path", "") or "",
+                "branch_name": p.branch_name or "",
+                "status": str(p.status.value) if hasattr(p.status, "value") else str(p.status) if p.status is not None else "",
+                "repo_path": repo_paths.get(p.id) or getattr(p, "repo_path", "") or "",
             }
             for p in projects
         ]
