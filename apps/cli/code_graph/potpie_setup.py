@@ -7,9 +7,14 @@ git-based project auto-discovery.
 
 from __future__ import annotations
 
+import logging
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from pydantic_deep.capabilities.code_graph.potpie import PotpieCapability
@@ -56,8 +61,6 @@ async def build_kg_capability(
             # Auto-discover project from git if not explicitly provided.
             resolved_by_discovery = False
             if not project_id and root is not None:
-                from apps.cli.code_graph.potpie_discovery import parse_git_identity
-
                 identity = parse_git_identity(root)
                 if identity:
                     repo_name, branch = identity
@@ -144,4 +147,64 @@ async def build_kg_capability(
         return None
 
 
-__all__ = ["build_kg_capability"]
+def parse_git_identity(root: Path | None = None) -> tuple[str, str] | None:
+    """Return ``(repo_name, branch)`` for the git repo at *root*, or ``None``.
+
+    Pure git operations — no PotpieRuntime needed. Handles submodule
+    scenarios by resolving the superproject for remote URL lookups.
+
+    Args:
+        root: Directory to inspect. Defaults to CWD.
+
+    Returns:
+        ``(repo_name, branch)`` tuple, or ``None`` if not a git repo or
+        no remote origin is configured.
+    """
+    root = root or Path.cwd()
+    git = shutil.which("git")
+    if not git:
+        logger.debug("parse_git_identity: git not found")
+        return None
+
+    def _run(args: list[str], cwd: Path = root) -> str | None:
+        try:
+            r = subprocess.run(
+                args, capture_output=True, text=True, timeout=3, cwd=str(cwd), check=False
+            )
+            return r.stdout.strip() if r.returncode == 0 else None
+        except Exception:
+            return None
+
+    # Resolve git root; if inside a submodule use the superproject for remote URL
+    git_root_str = _run([git, "rev-parse", "--show-toplevel"])
+    git_root = Path(git_root_str) if git_root_str else root
+    superproject_str = _run([git, "rev-parse", "--show-superproject-working-tree"])
+    if superproject_str:
+        git_root = Path(superproject_str)
+
+    branch = _run([git, "rev-parse", "--abbrev-ref", "HEAD"])
+    if not branch:
+        logger.debug("parse_git_identity: could not determine branch")
+        return None
+
+    remote_url = _run([git, "remote", "get-url", "origin"], cwd=git_root)
+    if not remote_url:
+        logger.debug("parse_git_identity: no git remote 'origin'")
+        return None
+
+    # Strip trailing slash, then .git suffix with proper suffix removal (not rstrip
+    # which strips individual characters and would corrupt names like "pytest").
+    url = remote_url.rstrip("/")
+    if url.endswith(".git"):
+        url = url[:-4]
+    # Handles both https://host/org/repo and git@host:org/repo
+    repo_name = url.rsplit("/", 1)[-1].rsplit(":", 1)[-1]
+    if not repo_name:
+        logger.debug("parse_git_identity: could not parse repo name from %s", remote_url)
+        return None
+
+    logger.debug("parse_git_identity: repo=%s branch=%s", repo_name, branch)
+    return repo_name, branch
+
+
+__all__ = ["build_kg_capability", "parse_git_identity"]

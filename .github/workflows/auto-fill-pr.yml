@@ -1,0 +1,128 @@
+name: Auto-fill PR Template
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  fill-pr:
+    name: Auto-fill PR description
+    runs-on: self-hosted
+    # Only run for PRs opened against main from within the same repo
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Auto-fill PR template
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+            });
+
+            const body = pr.body || '';
+
+            // Normalize line endings so all string operations work consistently.
+            const normalizedBody = body.replace(/\r\n/g, '\n');
+
+            const SUMMARY_PLACEHOLDER   = '<!-- What does this PR do? What problem does it solve? -->';
+            const CHANGES_PLACEHOLDER   = '<!-- List the key changes made in this PR -->';
+            const ISSUES_PLACEHOLDER    = '<!-- Link to any related issues: "Fixes #123" or "Closes #456" -->';
+
+            const isFirstOpen = context.payload.action === 'opened';
+
+            // On synchronize: always refresh Changes even if the author has already
+            // edited the body (the summary placeholder will be gone).
+            // On opened: only fill if the body still has the summary placeholder
+            // (guard against the author having written something before opening).
+            if (isFirstOpen && !normalizedBody.includes(SUMMARY_PLACEHOLDER)) {
+              console.log('PR body has already been customised — skipping auto-fill.');
+              return;
+            }
+
+            // ----------------------------------------------------------------
+            // Fetch commits and changed files
+            // ----------------------------------------------------------------
+            const { data: commits } = await github.rest.pulls.listCommits({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              per_page: 100,
+            });
+
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              per_page: 100,
+            });
+
+            // ----------------------------------------------------------------
+            // Summary: use single-commit message or PR title for multi-commit
+            // ----------------------------------------------------------------
+            const summary = commits.length === 1
+              ? commits[0].commit.message.split('\n')[0]
+              : pr.title;
+
+            // ----------------------------------------------------------------
+            // Changes: bullet list of changed files grouped by status
+            // ----------------------------------------------------------------
+            const statusLabel = { added: 'added', removed: 'deleted', modified: 'changed',
+                                   renamed: 'renamed', copied: 'copied', changed: 'changed' };
+            const changeLines = files
+              .slice(0, 30)  // cap at 30 files to avoid huge descriptions
+              .map(f => `- \`${f.filename}\`${f.previous_filename ? ` ← \`${f.previous_filename}\`` : ''} (${statusLabel[f.status] ?? f.status})`)
+              .join('\n');
+            const changesSection = changeLines + (files.length > 30
+              ? `\n- … and ${files.length - 30} more file(s)`
+              : '');
+
+            // ----------------------------------------------------------------
+            // Related issues: extract "Fixes/Closes/Resolves #N" from commits
+            // ----------------------------------------------------------------
+            const allMessages = commits.map(c => c.commit.message).join('\n');
+            const issueMatches = [...allMessages.matchAll(/(?:fix(?:e[sd])?|close[sd]?|resolve[sd]?)\s+#(\d+)/gi)];
+            const uniqueRefs = [...new Set(issueMatches.map(m => `Fixes #${m[1]}`))];
+            const issuesSection = uniqueRefs.length > 0
+              ? uniqueRefs.join('\n')
+              : ISSUES_PLACEHOLDER;
+
+            // ----------------------------------------------------------------
+            // Patch the template placeholders
+            // Normalize to \n so all replacements work regardless of whether
+            // GitHub stored the body with \r\n or \n line endings.
+            // ----------------------------------------------------------------
+            let newBody = normalizedBody;
+
+            if (isFirstOpen) {
+              // First open: fill Summary and Issues from commits/title.
+              newBody = newBody
+                .replace(SUMMARY_PLACEHOLDER, summary)
+                .replace(ISSUES_PLACEHOLDER, issuesSection);
+            }
+
+            // Always refresh the Changes block (on both opened and synchronize).
+            // Replace everything between the CHANGES_PLACEHOLDER comment and the
+            // next ## section heading, so manual edits to other sections are preserved.
+            newBody = newBody.replace(
+              new RegExp(
+                '(' + CHANGES_PLACEHOLDER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')' +
+                '[\\s\\S]*?' +
+                '(?=\\n## )',
+                'g'
+              ),
+              `$1\n${changesSection}\n`
+            );
+
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              body: newBody,
+            });
+
+            console.log('PR template auto-filled successfully.');
