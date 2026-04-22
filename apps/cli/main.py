@@ -59,6 +59,43 @@ def _setup_logfire() -> None:
         raise SystemExit(2) from None
 
 
+def _setup_vector() -> None:
+    """Configure OTLP tracing to Vector (or any OTLP-compatible backend).
+
+    Uses logfire with ``send_to_logfire=False`` so spans are exported only
+    via the standard OpenTelemetry OTLP exporter.  The endpoint is read from
+    ``VECTOR_OTLP_ENDPOINT`` (default: ``http://localhost:4318``), which
+    Vector listens on for OTLP/HTTP traces.
+
+    Metrics export is disabled — Vector forwards traces to Tempo but has no
+    metrics pipeline on the OTLP port (metrics go directly to VictoriaMetrics).
+    """
+    try:
+        import logfire
+    except ImportError:
+        import sys
+
+        print(
+            "Logfire not installed. Run: pip install pydantic-deep[logfire]",
+            file=sys.stderr,
+        )
+        raise SystemExit(2) from None
+
+    endpoint = os.environ.get("VECTOR_OTLP_ENDPOINT", "http://localhost:4318")
+    service_name = os.environ.get("OTEL_SERVICE_NAME", "pydantic-deep")
+
+    # Point the OTLP traces exporter at Vector.
+    os.environ.setdefault("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", f"{endpoint}/v1/traces")
+    # Suppress metrics export — no metrics pipeline on Vector's OTLP port.
+    os.environ.setdefault("OTEL_METRICS_EXPORTER", "none")
+
+    logfire.configure(
+        send_to_logfire=False,
+        service_name=service_name,
+    )
+    logfire.instrument_pydantic_ai()
+
+
 @app.callback(invoke_without_command=True)
 def _main_callback(
     ctx: typer.Context,
@@ -76,6 +113,10 @@ def _main_callback(
         bool,
         typer.Option("--logfire/--no-logfire", help="Enable Logfire tracing"),
     ] = False,
+    vector_enabled: Annotated[
+        bool,
+        typer.Option("--vector/--no-vector", help="Enable Vector OTLP tracing"),
+    ] = False,
 ) -> None:
     """Deep Agent CLI — AI coding assistant powered by pydantic-ai."""
     try:
@@ -87,14 +128,19 @@ def _main_callback(
     except ImportError:  # pragma: no cover
         pass
 
-    if not logfire_enabled:
+    if not logfire_enabled or not vector_enabled:
         from apps.cli.config import load_config
 
         config = load_config()
-        logfire_enabled = config.logfire
+        if not logfire_enabled:
+            logfire_enabled = config.logfire
+        if not vector_enabled:
+            vector_enabled = config.vector
 
     if logfire_enabled:
         _setup_logfire()
+    elif vector_enabled:
+        _setup_vector()
 
     # Non-blocking update notification (uses 24-hour file cache)
     from apps.cli.update import check_for_update

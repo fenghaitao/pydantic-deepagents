@@ -1,0 +1,56 @@
+# Vector configuration: routes HTTP logs to VictoriaLogs
+# Traces go directly from the app to Tempo (port 4318) — Vector's
+# opentelemetry sink does not emit standard OTLP wire format.
+#
+# Port map:
+#   9880  — HTTP JSON log ingestion → VictoriaLogs
+#   8686  — Vector API
+#
+# App should send traces directly to Tempo:
+#   OTLP HTTP: http://localhost:4318/v1/traces
+#   OTLP gRPC: localhost:4317
+
+api:
+  enabled: true
+  address: "0.0.0.0:8686"
+
+# ─── Sources ──────────────────────────────────────────────────────────────────
+
+sources:
+  # HTTP JSON logs from the app
+  app_logs_http:
+    type: http
+    address: "0.0.0.0:9880"
+    decoding:
+      codec: json
+
+# ─── Transforms ───────────────────────────────────────────────────────────────
+
+transforms:
+  # Enrich HTTP logs before sending to VictoriaLogs
+  enrich_logs:
+    type: remap
+    inputs: [app_logs_http]
+    source: |
+      if !exists(.timestamp) {
+        .timestamp = now()
+      }
+      .service = get_env_var("SERVICE_NAME") ?? "unknown"
+
+# ─── Sinks ────────────────────────────────────────────────────────────────────
+
+sinks:
+  # Logs → VictoriaLogs (Loki-compatible push)
+  victoria_logs:
+    type: loki
+    inputs: [enrich_logs]
+    endpoint: "${VICTORIA_LOGS_URL:-http://localhost:9428}"
+    path: /insert/loki/api/v1/push
+    encoding:
+      codec: json
+    labels:
+      service: "{{service}}"
+      level: "{{level}}"
+    out_of_order_action: accept
+    healthcheck:
+      enabled: false

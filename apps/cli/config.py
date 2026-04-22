@@ -61,6 +61,7 @@ _BOOL_FIELDS = frozenset(
         "show_cost",
         "show_tokens",
         "logfire",
+        "vector",
         "include_browser",
         "browser_headless",
     }
@@ -107,6 +108,8 @@ class CliConfig:
     sandbox_image: str = "python:3.12-slim"
     """Docker image used when ``sandbox = "docker"``."""
     logfire: bool = False
+    vector: bool = False
+    """Send traces to Vector via OTLP (endpoint from VECTOR_OTLP_ENDPOINT, default: http://localhost:4318)."""
     include_browser: bool = True
     """Enable browser automation via Playwright (requires ``pydantic-deep[browser]``)."""
     browser_headless: bool = True
