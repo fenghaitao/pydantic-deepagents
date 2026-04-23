@@ -1408,10 +1408,12 @@ def main() -> None:
 
 
 def _make_code_graph_runtime():
-    """Return a PotpieRuntime instance."""
-    from pydantic_deep.toolsets.code_graph import make_runtime
+    """Return a CodeGraphProvider for the configured provider (potpie or cgc)."""
+    from apps.cli.config import load_config
+    from pydantic_deep.providers.code_graph import make_provider
 
-    return make_runtime()
+    cfg = load_config()
+    return make_provider(cfg.kg.provider)
 
 
 # ── parse sub-app ─────────────────────────────────────────────────────────────
@@ -1526,45 +1528,77 @@ app.add_typer(projects_app)
 @projects_app.command("list")
 def projects_list(
     output_json: Annotated[bool, typer.Option("--json", help="Output raw JSON")] = False,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            "-p",
+            help="Provider to query: 'potpie', 'cgc', or 'all'. Defaults to configured provider.",
+        ),
+    ] = None,
     local: Annotated[
         bool,
         typer.Option("--local", help="Use direct PotpieRuntime instead of REST API"),
     ] = False,
 ) -> None:
-    """List all indexed projects."""
+    """List all indexed projects.
+
+    Use --provider all to list projects from both Potpie and CGC simultaneously.
+    """
     console = Console()
 
     async def _run() -> None:
-        runtime = _make_code_graph_runtime()
-        projects = await runtime.list_projects()
+        from apps.cli.config import load_config
+        from pydantic_deep.providers.code_graph import make_provider
 
-        if output_json:
-            typer.echo(json.dumps(projects, indent=2, default=str))
-            return
+        cfg = load_config()
+        effective_provider = provider or cfg.kg.provider
 
-        if not projects:
-            console.print("[dim]No projects found.[/dim]")
-            return
+        def _render_table(projects: list[dict]) -> None:
+            if not projects:
+                console.print("[dim]No projects found.[/dim]")
+                return
+            table = Table(show_header=True, header_style="bold")
+            table.add_column("ID", style="cyan")
+            table.add_column("Repo")
+            table.add_column("Branch")
+            table.add_column("Repo Path", style="dim")
+            table.add_column("Status")
+            for p in projects:
+                status = p.get("status", "")
+                style = "green" if status == "READY" else ("red" if status == "ERROR" else "yellow")
+                table.add_row(
+                    p.get("id", ""),
+                    p.get("repo_name", p.get("project_name", "")),
+                    p.get("branch_name", ""),
+                    p.get("repo_path", ""),
+                    Text(status, style=style),
+                )
+            console.print(table)
 
-        table = Table(show_header=True, header_style="bold")
-        table.add_column("ID", style="cyan")
-        table.add_column("Repo")
-        table.add_column("Branch")
-        table.add_column("Repo Path", style="dim")
-        table.add_column("Status")
+        if effective_provider == "all":
+            all_results: dict[str, list[dict]] = {}
+            for p_name in ("potpie", "cgc"):
+                try:
+                    all_results[p_name] = await make_provider(p_name).list_projects()
+                except Exception:
+                    all_results[p_name] = []
 
-        for p in projects:
-            status = p.get("status", "")
-            style = "green" if status == "READY" else ("red" if status == "ERROR" else "yellow")
-            table.add_row(
-                p.get("id", ""),
-                p.get("repo_name", p.get("project_name", "")),
-                p.get("branch_name", ""),
-                p.get("repo_path", ""),
-                Text(status, style=style),
-            )
+            if output_json:
+                typer.echo(json.dumps(all_results, indent=2, default=str))
+                return
 
-        console.print(table)
+            for p_name, projects in all_results.items():
+                console.print(f"\n[bold]{p_name.upper()}[/bold]")
+                _render_table(projects)
+        else:
+            projects = await make_provider(effective_provider).list_projects()
+
+            if output_json:
+                typer.echo(json.dumps(projects, indent=2, default=str))
+                return
+
+            _render_table(projects)
 
     asyncio.run(_run())
 

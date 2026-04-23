@@ -87,6 +87,8 @@ _FLOAT_FIELDS = frozenset({"temperature"})
 class KgConfig:
     """Configuration for the code-graph / KG backend."""
 
+    provider: str = "potpie"
+    """Code-graph provider: ``"potpie"`` (default) or ``"cgc"``."""
     project_id: str | None = None
     """Default project UUID injected into agent system prompt."""
 
@@ -203,6 +205,12 @@ def validate_config(config: CliConfig) -> list[str]:
     if config.sandbox not in known_sandboxes:
         warnings.append(
             f"Unknown sandbox '{config.sandbox}'. Known: {', '.join(sorted(known_sandboxes))}"
+        )
+    known_providers = {"potpie", "cgc"}
+    if config.kg.provider not in known_providers:
+        warnings.append(
+            f"Unknown code-graph provider '{config.kg.provider}'."
+            f" Valid values: {', '.join(sorted(known_providers))}"
         )
     if config.max_history < 0:
         warnings.append("max_history must be non-negative")
@@ -362,4 +370,5 @@ __all__ = [
     "get_sessions_dir",
     "load_config",
     "set_config_value",
+    "validate_config",
 ]

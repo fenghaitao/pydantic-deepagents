@@ -1,10 +1,10 @@
-"""Runtime backend — calls CodeGraphContext MCPServer directly in-process.
+"""Runtime backend — calls CodeGraphContext tools directly in-process.
 
-This wraps the synchronous ``MCPServer`` tool methods from the
-``codegraphcontext`` package via ``asyncio.to_thread``, making them safe
-to call from async pydantic-ai agent code.
+Bypasses ``MCPServer`` and wires directly to the underlying components:
+  ``get_database_manager`` / ``CodeFinder`` / ``GraphBuilder`` / ``JobManager``
+  and the handler functions in ``codegraphcontext.tools.handlers``.
 
-The MCPServer is initialized lazily on the first call and reused for the
+The components are initialized lazily on the first call and reused for the
 lifetime of the backend instance. Call ``close()`` when done (or use
 ``async with CGCRuntime(...) as r:``).
 
@@ -18,42 +18,69 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    pass
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
 class CGCRuntime:
-    """Runtime that calls CodeGraphContext MCPServer directly in-process.
+    """Runtime that calls CodeGraphContext components directly in-process.
 
-    Instantiation is cheap; the MCPServer is created on the first call.
-    All tool methods are async and delegate to the underlying synchronous
-    MCPServer methods via ``asyncio.to_thread``.
+    Instantiation is cheap; components are created on the first call.
+    All tool methods are async and delegate to synchronous handler functions
+    via ``asyncio.to_thread``.
     """
 
     def __init__(self, repo_path: str | None = None) -> None:
         self._repo_path = repo_path
-        self._server: Any | None = None
+        self._db_manager: Any | None = None
+        self._code_finder: Any | None = None
+        self._graph_builder: Any | None = None
+        self._job_manager: Any | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     # ── Lifecycle ─────────────────────────────────────────────────────────
 
-    def _get_server(self) -> Any:
-        if self._server is None:
-            from codegraphcontext.server import MCPServer
+    def _get_components(self) -> tuple[Any, Any, Any, Any]:
+        """Lazily initialize and return (db_manager, code_finder, graph_builder, job_manager)."""
+        if self._db_manager is None:
+            from codegraphcontext.cli.config_manager import resolve_context
+            from codegraphcontext.core import get_database_manager
+            from codegraphcontext.core.jobs import JobManager
+            from codegraphcontext.tools.code_finder import CodeFinder
+            from codegraphcontext.tools.graph_builder import GraphBuilder
 
             cwd = Path(self._repo_path) if self._repo_path else Path.cwd()
-            self._server = MCPServer(cwd=cwd)
-            logger.debug("CGCRuntime: MCPServer initialized at %s", cwd)
-        return self._server
+            ctx = resolve_context(cwd=cwd)
+            if ctx.database:
+                os.environ["CGC_RUNTIME_DB_TYPE"] = ctx.database
+
+            self._db_manager = get_database_manager(db_path=ctx.db_path)
+            self._db_manager.get_driver()
+
+            self._job_manager = JobManager()
+            try:
+                self._loop = asyncio.get_running_loop()
+            except RuntimeError:  # pragma: no cover
+                self._loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(self._loop)
+
+            self._graph_builder = GraphBuilder(self._db_manager, self._job_manager, self._loop)
+            self._code_finder = CodeFinder(self._db_manager)
+            logger.debug("CGCRuntime: components initialized at %s", cwd)
+
+        return self._db_manager, self._code_finder, self._graph_builder, self._job_manager
 
     def close(self) -> None:
-        if self._server is not None:
-            self._server.shutdown()
-            self._server = None
+        if self._db_manager is not None:
+            self._db_manager.close_driver()
+            self._db_manager = None
+            self._code_finder = None
+            self._graph_builder = None
+            self._job_manager = None
+            self._loop = None
 
     async def __aenter__(self) -> CGCRuntime:
         return self
@@ -79,13 +106,15 @@ class CGCRuntime:
         Returns:
             Dict with ``results`` list and status information.
         """
-        server = self._get_server()
+        _, code_finder, _, _ = self._get_components()
+        from codegraphcontext.tools.handlers import analysis_handlers
+
         kwargs: dict[str, Any] = {"query": query}
         if repo_path:
             kwargs["repo_path"] = repo_path
         if fuzzy_search:
             kwargs["fuzzy_search"] = fuzzy_search
-        return await asyncio.to_thread(server.find_code_tool, **kwargs)
+        return await asyncio.to_thread(analysis_handlers.find_code, code_finder, **kwargs)
 
     async def analyze_relationships(
         self,
@@ -110,13 +139,17 @@ class CGCRuntime:
         Returns:
             Dict with relationship results.
         """
-        server = self._get_server()
+        _, code_finder, _, _ = self._get_components()
+        from codegraphcontext.tools.handlers import analysis_handlers
+
         kwargs: dict[str, Any] = {"query_type": query_type, "target": target}
         if context:
             kwargs["context"] = context
         if repo_path:
             kwargs["repo_path"] = repo_path
-        return await asyncio.to_thread(server.analyze_code_relationships_tool, **kwargs)
+        return await asyncio.to_thread(
+            analysis_handlers.analyze_code_relationships, code_finder, **kwargs
+        )
 
     async def execute_cypher(self, cypher_query: str) -> dict[str, Any]:
         """Execute a read-only Cypher query directly against the code graph.
@@ -127,9 +160,11 @@ class CGCRuntime:
         Returns:
             Dict with query results.
         """
-        server = self._get_server()
+        db_manager, _, _, _ = self._get_components()
+        from codegraphcontext.tools.handlers import query_handlers
+
         return await asyncio.to_thread(
-            server.execute_cypher_query_tool, cypher_query=cypher_query
+            query_handlers.execute_cypher_query, db_manager, cypher_query=cypher_query
         )
 
     # ── Repository management ──────────────────────────────────────────────
@@ -140,8 +175,12 @@ class CGCRuntime:
         Returns:
             Dict with list of indexed repositories and their metadata.
         """
-        server = self._get_server()
-        return await asyncio.to_thread(server.list_indexed_repositories_tool)
+        _, code_finder, _, _ = self._get_components()
+        from codegraphcontext.tools.handlers import management_handlers
+
+        return await asyncio.to_thread(
+            management_handlers.list_indexed_repositories, code_finder
+        )
 
     async def add_code_to_graph(
         self, path: str, is_dependency: bool = False
@@ -158,9 +197,19 @@ class CGCRuntime:
         Returns:
             Dict with ``job_id`` for polling.
         """
-        server = self._get_server()
+        _, code_finder, graph_builder, job_manager = self._get_components()
+        from codegraphcontext.tools.handlers import indexing_handlers, management_handlers
+
+        loop = self._loop
+        list_repos_func = lambda: management_handlers.list_indexed_repositories(code_finder)  # noqa: E731
         return await asyncio.to_thread(
-            server.add_code_to_graph_tool, path=path, is_dependency=is_dependency
+            indexing_handlers.add_code_to_graph,
+            graph_builder,
+            job_manager,
+            loop,
+            list_repos_func,
+            path=path,
+            is_dependency=is_dependency,
         )
 
     async def check_job_status(self, job_id: str) -> dict[str, Any]:
@@ -172,8 +221,12 @@ class CGCRuntime:
         Returns:
             Dict with job status and progress information.
         """
-        server = self._get_server()
-        return await asyncio.to_thread(server.check_job_status_tool, job_id=job_id)
+        _, _, _, job_manager = self._get_components()
+        from codegraphcontext.tools.handlers import management_handlers
+
+        return await asyncio.to_thread(
+            management_handlers.check_job_status, job_manager, job_id=job_id
+        )
 
     async def delete_repository(self, repo_path: str) -> dict[str, Any]:
         """Remove an indexed repository from the graph.
@@ -184,9 +237,11 @@ class CGCRuntime:
         Returns:
             Dict with deletion result.
         """
-        server = self._get_server()
+        _, _, graph_builder, _ = self._get_components()
+        from codegraphcontext.tools.handlers import management_handlers
+
         return await asyncio.to_thread(
-            server.delete_repository_tool, repo_path=repo_path
+            management_handlers.delete_repository, graph_builder, repo_path=repo_path
         )
 
     async def get_stats(self, repo_path: str | None = None) -> dict[str, Any]:
@@ -199,11 +254,15 @@ class CGCRuntime:
         Returns:
             Dict with counts of files, functions, classes, and modules.
         """
-        server = self._get_server()
+        _, code_finder, _, _ = self._get_components()
+        from codegraphcontext.tools.handlers import management_handlers
+
         kwargs: dict[str, Any] = {}
         if repo_path:
             kwargs["repo_path"] = repo_path
-        return await asyncio.to_thread(server.get_repository_stats_tool, **kwargs)
+        return await asyncio.to_thread(
+            management_handlers.get_repository_stats, code_finder, **kwargs
+        )
 
 
 __all__ = ["CGCRuntime"]

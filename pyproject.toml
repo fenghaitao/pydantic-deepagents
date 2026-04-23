@@ -96,7 +96,7 @@ logfire = ["logfire>=4.0"]
 # Potpie KG (knowledge-graph) code intelligence — requires Python 3.13
 potpie = ["potpie"]
 # CodeGraphContext (CGC) provider — tree-sitter-based code graph, multi-language
-cgc = ["codegraphcontext"]
+cgc = ["codegraphcontext", "kuzu>=0.11.3"]
 # All optional dependencies
 all = [
     "pydantic-deep[sandbox,cli,web,yaml,acp,logfire,browser,potpie,cgc]",

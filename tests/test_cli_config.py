@@ -18,6 +18,7 @@ from apps.cli.config import (
     get_config_value,
     load_config,
     set_config_value,
+    validate_config,
 )
 
 
@@ -368,6 +369,7 @@ class TestKgConfig:
     def test_kg_config_defaults(self) -> None:
         kg = KgConfig()
         assert kg.project_id is None
+        assert kg.provider == "potpie"
 
     def test_cli_config_has_kg_field(self) -> None:
         config = CliConfig()
@@ -387,8 +389,40 @@ class TestKgConfig:
         config = load_config(config_file)
         assert config.kg.project_id == "abc-123"
 
+    def test_kg_provider_toml_parsing(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "config.toml"
+        config_file.write_text('[kg]\nprovider = "cgc"\n')
+        config = load_config(config_file)
+        assert config.kg.provider == "cgc"
+
+    def test_kg_provider_and_project_id_toml(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "config.toml"
+        config_file.write_text('[kg]\nprovider = "cgc"\nproject_id = "abc-123"\n')
+        config = load_config(config_file)
+        assert config.kg.provider == "cgc"
+        assert config.kg.project_id == "abc-123"
+
     def test_env_var_overrides_kg_project_id(self, monkeypatch: pytest.MonkeyPatch) -> None:
         config = CliConfig()
         monkeypatch.setenv("POTPIE_PROJECT_ID", "proj-abc-123")
         _apply_env_overrides(config)
         assert config.kg.project_id == "proj-abc-123"
+
+    def test_validate_config_unknown_provider(self) -> None:
+        config = CliConfig()
+        config.kg.provider = "unknown"
+        warnings = validate_config(config)
+        assert any("code-graph provider" in w for w in warnings)
+
+    def test_validate_config_known_providers_no_warning(self) -> None:
+        for p in ("potpie", "cgc"):
+            config = CliConfig()
+            config.kg.provider = p
+            warnings = validate_config(config)
+            assert not any("code-graph provider" in w for w in warnings)
+
+    def test_set_config_value_kg_provider(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "config.toml"
+        set_config_value(config_file, "kg.provider", "cgc")
+        config = load_config(config_file)
+        assert config.kg.provider == "cgc"

@@ -35,6 +35,8 @@ def make_cgc_runtime(repo_path: str | None = None) -> CGCRuntime:
     return CGCRuntime(repo_path=repo_path)
 
 
+from pydantic_deep.providers.code_graph import CGCProvider, CodeGraphProvider, make_provider  # noqa: E402
+
 __all__ = [
     "PotpieRuntime",
     "PotpieContext",
@@ -45,4 +47,7 @@ __all__ = [
     "CGCContext",
     "CGCToolset",
     "make_cgc_runtime",
+    "CodeGraphProvider",
+    "CGCProvider",
+    "make_provider",
 ]
