@@ -216,9 +216,6 @@ class PotpieRuntime:
         rt = await self._get_runtime()
         projects = await rt.projects.list(user_id=self._user_id)
 
-        # rt.projects.list() and ProjectService.list_projects() both omit
-        # repo_path.  Try to supplement it via a direct ORM query; fall back
-        # silently (e.g. in tests or non-potpie environments).
         repo_paths: dict[str, str] = {}
         try:
             from app.modules.projects.projects_model import Project as _Project  # pragma: no cover

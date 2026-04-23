@@ -1550,6 +1550,7 @@ def projects_list(
         table.add_column("ID", style="cyan")
         table.add_column("Repo")
         table.add_column("Branch")
+        table.add_column("Repo Path", style="dim")
         table.add_column("Status")
 
         for p in projects:
@@ -1559,6 +1560,7 @@ def projects_list(
                 p.get("id", ""),
                 p.get("repo_name", p.get("project_name", "")),
                 p.get("branch_name", ""),
+                p.get("repo_path", ""),
                 Text(status, style=style),
             )
 
