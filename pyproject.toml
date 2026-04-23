@@ -49,7 +49,6 @@ dependencies = [
     "pydantic>=2.0",
     "chardet>=5.0.0",
     "litellm==1.82.0",
-    "potpie",
 ]
 
 [project.optional-dependencies]
@@ -95,12 +94,12 @@ acp = ["agent-client-protocol>=0.8.0"]
 # Logfire tracing support
 logfire = ["logfire>=4.0"]
 # Potpie KG (knowledge-graph) code intelligence — requires Python 3.13
-kg = ["potpie"]
+potpie = ["potpie"]
 # CodeGraphContext (CGC) provider — tree-sitter-based code graph, multi-language
 cgc = ["codegraphcontext"]
 # All optional dependencies
 all = [
-    "pydantic-deep[sandbox,cli,web,yaml,acp,logfire,browser]",
+    "pydantic-deep[sandbox,cli,web,yaml,acp,logfire,browser,potpie,cgc]",
 ]
 
 [project.urls]
@@ -130,6 +129,7 @@ constraint-dependencies = [
 [tool.uv.sources]
 subagents-pydantic-ai = { path = "subagents-pydantic-ai", editable = true }
 potpie = { path = "code-graph-providers/potpie", editable = true }
+codegraphcontext = { path = "code-graph-providers/CodeGraphContext", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["pydantic_deep", "apps"]
