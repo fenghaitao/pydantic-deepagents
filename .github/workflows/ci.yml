@@ -1,10 +1,10 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - main
-  # CI runs on main push and manual dispatch only — not on pull requests.
+  # Automatic CI is disabled. Run manually via workflow_dispatch when needed.
+  # push:
+  #   branches:
+  #     - main
   workflow_dispatch:
     inputs:
       python-version:
