@@ -18,6 +18,7 @@ Features:
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 import contextlib
 import json
 import logging
@@ -1868,7 +1869,26 @@ def main():
     """Run the DeepResearch server."""
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+    try:
+        from ports_allocator import PortManager
+        _workspace = str(Path(__file__).resolve().parents[4])  # repo root
+        port = PortManager().allocate("deepresearch", workspace=_workspace)
+    except ImportError:
+        port = int(os.environ.get("DEEPRESEARCH_PORT", "8080"))
+
+    # Write DEEPRESEARCH_URL to apps/deepresearch/.env.local so other tools
+    # and scripts can discover the dynamically allocated port.
+    _env_file = Path(__file__).resolve().parents[3] / ".env.local"  # apps/deepresearch/.env.local
+    _url = f"http://localhost:{port}"
+    lines: list[str] = []
+    if _env_file.exists():
+        lines = [l for l in _env_file.read_text().splitlines(keepends=True)
+                 if not l.startswith("DEEPRESEARCH_URL=")]
+    lines.append(f"DEEPRESEARCH_URL={_url}\n")
+    _env_file.write_text("".join(lines))
+    print(f"[deepresearch] Listening on {_url}", flush=True)
+
+    uvicorn.run(app, host="0.0.0.0", port=port)
 
 
 if __name__ == "__main__":

@@ -195,7 +195,24 @@ app.add_api_route("/parse/status/{job_id}", _parse_status, methods=["GET"])
 if __name__ == "__main__":
     import uvicorn
 
-    port = int(os.getenv("AGENT_PORT", "8000"))
+    try:
+        from ports_allocator import PortManager
+        port = PortManager().allocate("web-agent", workspace=str(_REPO_ROOT))
+    except ImportError:
+        port = int(os.getenv("AGENT_PORT", "8000"))
+
+    # Write AGENT_URL to .env.local so the Next.js frontend can find this server.
+    # (start.py does this too; this covers the `python main.py` direct-run path.)
+    _env_file = Path(__file__).resolve().parent.parent / ".env.local"
+    _agent_url = f"http://localhost:{port}"
+    lines: list[str] = []
+    if _env_file.exists():
+        lines = [l for l in _env_file.read_text().splitlines(keepends=True)
+                 if not l.startswith("AGENT_URL=")]
+    lines.append(f"AGENT_URL={_agent_url}\n")
+    _env_file.write_text("".join(lines))
+    print(f"[agent] AGENT_URL={_agent_url}", flush=True)
+
     reload = os.getenv("DEBUG", "false").lower() == "true"
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=reload)
 

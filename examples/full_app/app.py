@@ -44,6 +44,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
 import re
 import uuid
 from contextlib import asynccontextmanager
@@ -1899,4 +1900,11 @@ async def preview_file(session_id: str, filepath: str):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+    try:
+        from ports_allocator import PortManager
+        _workspace = str(Path(__file__).resolve().parents[2])  # repo root
+        _port = PortManager().allocate("full-app", workspace=_workspace)
+    except ImportError:
+        _port = int(os.environ.get("APP_PORT", "8080"))
+
+    uvicorn.run(app, host="0.0.0.0", port=_port)

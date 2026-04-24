@@ -22,19 +22,22 @@ if [ ! -d "${SCRIPT_DIR}/node_modules" ]; then
 fi
 
 # ── 3. Find a free UI port (starting from 3000) ───────────────────────────────
-UI_PORT=$(python3 - <<'EOF'
-import socket
-for p in range(3000, 3020):
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.bind(("", p))
-        s.close()
-        print(p)
-        break
-    except OSError:
-        continue
-EOF
-)
+UI_PORT=$(python3 -c "
+try:
+    from ports_allocator import PortManager
+    print(PortManager().allocate('web-ui', workspace='${ROOT_DIR}'))
+except ImportError:
+    import socket
+    for p in range(3000, 3020):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.bind(('', p))
+            s.close()
+            print(p)
+            break
+        except OSError:
+            continue
+")
 if [ -z "${UI_PORT}" ]; then
     echo "[error] No free port found in range 3000-3019."
     exit 1

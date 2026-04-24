@@ -93,6 +93,14 @@ potpie-stop: ## Stop the potpie backend
 potpie-stop-force: ## Force-stop the potpie backend
 	$(MAKE) -C code-graph-providers/potpie stop-force
 
+.PHONY: potpie-ci-ensure-backend
+potpie-ci-ensure-backend: ## CI: verify all potpie backend services healthy; start if not
+	$(MAKE) -C code-graph-providers/potpie ensure-healthy HEALTH_FLAGS="--phoenix"
+
+.PHONY: potpie-ci-backup-logfire
+potpie-ci-backup-logfire: ## CI: back up potpie logfire session traces
+	$(MAKE) -C code-graph-providers/potpie backup-logfire
+
 .PHONY: all
 all: format lint typecheck security testcov ## Run code formatting, linting, static type checks, security scan, and tests with coverage report generation
 

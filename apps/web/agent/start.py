@@ -55,9 +55,14 @@ def update_env_file(port: int) -> None:
 
 
 if __name__ == "__main__":
-    port = find_free_port(DEFAULT_PORT)
-    if port != DEFAULT_PORT:
-        print(f"[agent] Port {DEFAULT_PORT} in use, using {port}", flush=True)
+    try:
+        from ports_allocator import PortManager
+        _workspace = str(Path(__file__).resolve().parents[3])  # repo root
+        port = PortManager().allocate("web-agent", workspace=_workspace)
+    except ImportError:
+        port = find_free_port(DEFAULT_PORT)
+        if port != DEFAULT_PORT:
+            print(f"[agent] Port {DEFAULT_PORT} in use, using {port}", flush=True)
 
     update_env_file(port)
 

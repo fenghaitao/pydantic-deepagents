@@ -137,91 +137,13 @@ jobs:
 
       - name: Ensure backend services are healthy
         working-directory: code-graph-providers/potpie
-        run: |
-          set -euo pipefail
-          _port_open() { (echo >/dev/tcp/127.0.0.1/"$1") >/dev/null 2>&1; }
-
-          SESSION_KEY="${USER}@$(hostname -s)"
-          DISCO_FILE=".potpie-sessions/${SESSION_KEY}.discovery"
-          DISCO_PORT=""; DISCO_PID=""; SESSION_INFO=""
-
-          if [ -f "$DISCO_FILE" ]; then
-            DISCO_PORT=$(python3 -c "import json; print(json.load(open('$DISCO_FILE'))['port'])" 2>/dev/null || true)
-            DISCO_PID=$(python3  -c "import json; print(json.load(open('$DISCO_FILE'))['pid'])"  2>/dev/null || true)
-          fi
-
-          DISCO_OK=false
-          if [ -n "$DISCO_PORT" ] && [ -n "$DISCO_PID" ] && kill -0 "$DISCO_PID" 2>/dev/null; then
-            _cmdline=$(tr '\0' ' ' < "/proc/${DISCO_PID}/cmdline" 2>/dev/null || true)
-            if echo "$_cmdline" | grep -Fq "potpie.discovery"; then
-              curl -sf "http://127.0.0.1:${DISCO_PORT}/health" >/dev/null 2>&1 && DISCO_OK=true
-            else
-              echo "PID ${DISCO_PID} is alive but is not a potpie.discovery process — treating Discovery Server as dead."
-            fi
-          fi
-
-          if $DISCO_OK; then
-            SESSION_INFO=$(curl -sf "http://127.0.0.1:${DISCO_PORT}/session/${SESSION_KEY}" 2>/dev/null || true)
-          fi
-
-          SERVICES_HEALTHY=false
-          if [ -n "$SESSION_INFO" ]; then
-            REDIS_PORT=$(python3   -c "import json,sys; print(json.loads(sys.argv[1])['ports']['redis'])"               "$SESSION_INFO" 2>/dev/null || true)
-            PG_PORT=$(python3      -c "import json,sys; print(json.loads(sys.argv[1])['ports']['postgres'])"            "$SESSION_INFO" 2>/dev/null || true)
-            BOLT_PORT=$(python3    -c "import json,sys; print(json.loads(sys.argv[1])['ports']['neo4j_bolt'])"          "$SESSION_INFO" 2>/dev/null || true)
-            API_PORT=$(python3     -c "import json,sys; print(json.loads(sys.argv[1])['ports']['api'])"                 "$SESSION_INFO" 2>/dev/null || true)
-            PHOENIX_PORT=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['ports'].get('phoenix', ''))"    "$SESSION_INFO" 2>/dev/null || true)
-
-            REDIS_OK=false; PG_OK=false; NEO4J_OK=false; API_OK=false; PHOENIX_OK=false
-            _port_open "${REDIS_PORT}"    && REDIS_OK=true   || true
-            _port_open "${PG_PORT}"       && PG_OK=true      || true
-            _port_open "${BOLT_PORT}"     && NEO4J_OK=true   || true
-            curl -sf "http://localhost:${API_PORT}/health" >/dev/null 2>&1 && API_OK=true || true
-            if [ -n "$PHOENIX_PORT" ]; then
-              _port_open "${PHOENIX_PORT}" && PHOENIX_OK=true || true
-            fi
-
-            echo "Service health check:"
-            echo "  Discovery Server (pid ${DISCO_PID}, port ${DISCO_PORT}): OK"
-            echo "  Postgres  port ${PG_PORT}       : ${PG_OK}"
-            echo "  Redis     port ${REDIS_PORT}    : ${REDIS_OK}"
-            echo "  Neo4j bolt port ${BOLT_PORT}    : ${NEO4J_OK}"
-            echo "  API       port ${API_PORT}      : ${API_OK}"
-            echo "  Phoenix   port ${PHOENIX_PORT}  : ${PHOENIX_OK}"
-
-            if $REDIS_OK && $PG_OK && $NEO4J_OK && $API_OK && $PHOENIX_OK; then
-              SERVICES_HEALTHY=true
-            fi
-          else
-            echo "Discovery Server not reachable or no active session."
-          fi
-
-          if $SERVICES_HEALTHY; then
-            echo "All backend services are healthy — skipping start."
-          else
-            echo "One or more services are unhealthy. Running make start ..."
-            make start
-          fi
+        run: make ensure-healthy HEALTH_FLAGS="--phoenix"
 
       - name: Run scip_dml integration test
         working-directory: code-graph-providers/potpie
         run: |
-          SESSION_KEY="${USER}@$(hostname -s)"
-          DISCO_FILE=".potpie-sessions/${SESSION_KEY}.discovery"
-          DISCO_PORT=$(python3 -c "import json; print(json.load(open('$DISCO_FILE'))['port'])" 2>/dev/null || true)
-          if [ -n "$DISCO_PORT" ]; then
-            SESSION_INFO=$(curl -sf "http://127.0.0.1:${DISCO_PORT}/session/${SESSION_KEY}" 2>/dev/null || true)
-          fi
-          if [ -n "$SESSION_INFO" ]; then
-            export POSTGRES_SERVER=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['postgres_server'])" "$SESSION_INFO" 2>/dev/null || true)
-            export REDIS_URL=$(python3       -c "import json,sys; print(json.loads(sys.argv[1])['redis_url'])"        "$SESSION_INFO" 2>/dev/null || true)
-            export NEO4J_URI=$(python3       -c "import json,sys; print(json.loads(sys.argv[1])['neo4j_uri'])"        "$SESSION_INFO" 2>/dev/null || true)
-            export API_PORT=$(python3        -c "import json,sys; print(json.loads(sys.argv[1])['ports']['api'])"     "$SESSION_INFO" 2>/dev/null || true)
-            echo "Integration test ports — postgres: $(python3 -c "import json,sys; print(json.loads(sys.argv[1])['ports']['postgres'])" "$SESSION_INFO" 2>/dev/null), redis: $(python3 -c "import json,sys; print(json.loads(sys.argv[1])['ports']['redis'])" "$SESSION_INFO" 2>/dev/null), neo4j_bolt: $(python3 -c "import json,sys; print(json.loads(sys.argv[1])['ports']['neo4j_bolt'])" "$SESSION_INFO" 2>/dev/null), api: ${API_PORT}"
-          else
-            echo "ERROR: Could not retrieve session info from Discovery Server. Backend may not have started correctly."
-            exit 1
-          fi
+          eval "$(make --no-print-directory export-ports)"
+          echo "Integration test ports — postgres: ${POSTGRES_PORT}, redis: ${REDIS_PORT}, neo4j_bolt: ${BOLT_PORT}, api: ${API_PORT}"
 
           echo "Verifying API health before test..."
           for _i in $(seq 1 15); do
@@ -256,19 +178,9 @@ jobs:
       - name: Run phoenix integration test
         working-directory: code-graph-providers/potpie
         run: |
-          SESSION_KEY="${USER}@$(hostname -s)"
-          DISCO_FILE=".potpie-sessions/${SESSION_KEY}.discovery"
-          DISCO_PORT=$(python3 -c "import json; print(json.load(open('$DISCO_FILE'))['port'])" 2>/dev/null || true)
-          if [ -n "$DISCO_PORT" ]; then
-            SESSION_INFO=$(curl -sf "http://127.0.0.1:${DISCO_PORT}/session/${SESSION_KEY}" 2>/dev/null || true)
-          fi
-          if [ -z "$SESSION_INFO" ]; then
-            echo "ERROR: Could not retrieve session info from Discovery Server. Backend may not be running."
-            exit 1
-          fi
-          PHOENIX_PORT=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['ports'].get('phoenix', ''))" "$SESSION_INFO" 2>/dev/null || true)
+          PHOENIX_PORT=$(uv run python -c "from ports_allocator import PortManager; p=PortManager().get('phoenix',workspace='${PWD}'); print(p) if p is not None else exit('phoenix not allocated')")
           if [ -z "$PHOENIX_PORT" ]; then
-            echo "ERROR: Phoenix port not found in session. Ensure the backend was started with Phoenix support."
+            echo "ERROR: Phoenix port not found. Ensure the backend was started with Phoenix support."
             exit 1
           fi
 
@@ -292,23 +204,7 @@ jobs:
       - name: Backup logfire sessions
         if: always()
         working-directory: code-graph-providers/potpie
-        run: |
-          if [ "${CI_LOGFIRE_ENABLED}" != "true" ] || [ -z "${CI_LOGFIRE_BACKUP_PATH}" ]; then
-            echo "Logfire backup skipped (CI_LOGFIRE_ENABLED=${CI_LOGFIRE_ENABLED})."
-            exit 0
-          fi
-          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-          SHA_SHORT="${GITHUB_SHA:0:8}"
-          WORKFLOW_SAFE=$(echo "${GITHUB_WORKFLOW}" | tr ' /' '-' | tr -cd '[:alnum:]_-')
-          DEST="${CI_LOGFIRE_BACKUP_PATH}/${WORKFLOW_SAFE}_${GITHUB_RUN_ID}_${SHA_SHORT}_${TIMESTAMP}"
-          mkdir -p "$DEST"
-          if [ -d .pydantic-deep/sessions ] && [ "$(ls -A .pydantic-deep/sessions 2>/dev/null)" ]; then
-            cp -r .pydantic-deep/sessions/. "$DEST/"
-            SESSION_COUNT=$(ls .pydantic-deep/sessions | wc -l)
-            echo "Logfire sessions backed up to $DEST (${SESSION_COUNT} session(s))."
-          else
-            echo "No sessions found to back up."
-          fi
+        run: make backup-logfire
 
       - name: Clean up potpie-data
         if: always()

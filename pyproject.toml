@@ -83,6 +83,7 @@ web = [
     "python-multipart>=0.0.21",
     "ag-ui-protocol>=0.1.14",
     "python-dotenv>=1.0.0",
+    "ports-allocator",
 ]
 # Browser automation support via Playwright
 browser = [
@@ -130,6 +131,7 @@ constraint-dependencies = [
 subagents-pydantic-ai = { path = "subagents-pydantic-ai", editable = true }
 potpie = { path = "code-graph-providers/potpie", editable = true }
 codegraphcontext = { path = "code-graph-providers/CodeGraphContext", editable = true }
+ports-allocator = { git = "https://github.com/intel-sandbox/ports-allocator.git" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["pydantic_deep", "apps"]
