@@ -428,3 +428,150 @@ class TestPotpieRuntimeCache:
             result = await b.cache_clean(trim=True)
 
         assert result == {"trimmed": 0}
+
+
+class TestPotpieRuntimeSimicsTools:
+    async def test_analyze_register_side_effect(self) -> None:
+        b = PotpieRuntime()
+        mock_rt = _make_runtime()
+        expected = {"device_name": "my_dev", "done": 3, "total_registers": 3}
+        mock_tool = AsyncMock()
+        mock_tool.arun = AsyncMock(return_value=expected)
+        mock_mod = MagicMock(AnalyzeRegisterSideEffectTool=MagicMock(return_value=mock_tool))
+
+        with patch.dict("sys.modules", {
+            **_potpie_modules(mock_rt),
+            "app.modules.intelligence.tools.simics_device_tools.analyze_register_side_effect_tool": mock_mod,
+        }):
+            result = await b.analyze_register_side_effect(
+                project_id="p1",
+                device_name="my_dev",
+            )
+
+        assert result == expected
+        mock_tool.arun.assert_called_once_with(
+            project_id="p1",
+            device_name="my_dev",
+            refresh=False,
+            batch_size=30,
+            chunk_tokens=15000,
+        )
+
+    async def test_analyze_register_side_effect_with_options(self) -> None:
+        b = PotpieRuntime()
+        mock_rt = _make_runtime()
+        mock_tool = AsyncMock()
+        mock_tool.arun = AsyncMock(return_value={"done": 0})
+        mock_mod = MagicMock(AnalyzeRegisterSideEffectTool=MagicMock(return_value=mock_tool))
+
+        with patch.dict("sys.modules", {
+            **_potpie_modules(mock_rt),
+            "app.modules.intelligence.tools.simics_device_tools.analyze_register_side_effect_tool": mock_mod,
+        }):
+            await b.analyze_register_side_effect(
+                project_id="p1",
+                device_name="my_dev",
+                refresh=True,
+                batch_size=10,
+                chunk_tokens=5000,
+            )
+
+        mock_tool.arun.assert_called_once_with(
+            project_id="p1",
+            device_name="my_dev",
+            refresh=True,
+            batch_size=10,
+            chunk_tokens=5000,
+        )
+
+    async def test_analyze_capability(self) -> None:
+        b = PotpieRuntime()
+        mock_rt = _make_runtime()
+        expected = {"device_name": "my_dev", "capabilities": [], "cached": False}
+        mock_tool = AsyncMock()
+        mock_tool.arun = AsyncMock(return_value=expected)
+        mock_mod = MagicMock(AnalyzeCapabilityTool=MagicMock(return_value=mock_tool))
+
+        with patch.dict("sys.modules", {
+            **_potpie_modules(mock_rt),
+            "app.modules.intelligence.tools.simics_device_tools.analyze_capability_tool": mock_mod,
+        }):
+            result = await b.analyze_capability(
+                project_id="p1",
+                device_name="my_dev",
+            )
+
+        assert result == expected
+        mock_tool.arun.assert_called_once_with(
+            project_id="p1",
+            device_name="my_dev",
+            refresh=False,
+            chunk_tokens=15000,
+        )
+
+    async def test_analyze_capability_with_refresh(self) -> None:
+        b = PotpieRuntime()
+        mock_rt = _make_runtime()
+        mock_tool = AsyncMock()
+        mock_tool.arun = AsyncMock(return_value={"capabilities": []})
+        mock_mod = MagicMock(AnalyzeCapabilityTool=MagicMock(return_value=mock_tool))
+
+        with patch.dict("sys.modules", {
+            **_potpie_modules(mock_rt),
+            "app.modules.intelligence.tools.simics_device_tools.analyze_capability_tool": mock_mod,
+        }):
+            await b.analyze_capability(
+                project_id="p1",
+                device_name="my_dev",
+                refresh=True,
+                chunk_tokens=8000,
+            )
+
+        mock_tool.arun.assert_called_once_with(
+            project_id="p1",
+            device_name="my_dev",
+            refresh=True,
+            chunk_tokens=8000,
+        )
+
+    async def test_list_capability(self) -> None:
+        b = PotpieRuntime()
+        mock_rt = _make_runtime()
+        expected = {
+            "device_name": "my_dev",
+            "cached": True,
+            "capabilities": {"DMA": {"overview": "DMA engine"}},
+        }
+        mock_tool = AsyncMock()
+        mock_tool.arun = AsyncMock(return_value=expected)
+        mock_mod = MagicMock(ListCapabilityTool=MagicMock(return_value=mock_tool))
+
+        with patch.dict("sys.modules", {
+            **_potpie_modules(mock_rt),
+            "app.modules.intelligence.tools.simics_device_tools.list_capability_tool": mock_mod,
+        }):
+            result = await b.list_capability(project_id="p1", device_name="my_dev")
+
+        assert result == expected
+        mock_tool.arun.assert_called_once_with(project_id="p1", device_name="my_dev")
+
+    async def test_list_register_side_effect(self) -> None:
+        b = PotpieRuntime()
+        mock_rt = _make_runtime()
+        expected = {
+            "device_name": "my_dev",
+            "banks": {"bank0": {"REG_A": {"write_side_effect": "sets flag"}}},
+            "summary": {"total_banks": 1, "total_registers": 1, "total_done": 1},
+        }
+        mock_tool = AsyncMock()
+        mock_tool.arun = AsyncMock(return_value=expected)
+        mock_mod = MagicMock(ListRegisterSideEffectTool=MagicMock(return_value=mock_tool))
+
+        with patch.dict("sys.modules", {
+            **_potpie_modules(mock_rt),
+            "app.modules.intelligence.tools.simics_device_tools.list_register_side_effect_tool": mock_mod,
+        }):
+            result = await b.list_register_side_effect(project_id="p1", device_name="my_dev")
+
+        assert result == expected
+        mock_tool.arun.assert_called_once_with(project_id="p1", device_name="my_dev")

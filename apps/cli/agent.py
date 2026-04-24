@@ -15,6 +15,7 @@ from pydantic_deep.deps import DeepAgentDeps
 
 if TYPE_CHECKING:
     from pydantic_deep.capabilities.code_graph.potpie import PotpieCapability
+    from pydantic_deep.capabilities.code_graph.simics_device import SimicsDeviceCapability
 
 
 def _make_shell_allow_list_hook(allow_list: list[str]) -> Hook:
@@ -85,6 +86,7 @@ def create_cli_agent(  # noqa: C901
     extra_toolsets: list[Any] | None = None,
     extra_capabilities: list[Any] | None = None,
     kg_capability: PotpieCapability | None = None,
+    simics_dev_capability: SimicsDeviceCapability | None = None,
     web_search: bool | None = None,
     web_fetch: bool | None = None,
     thinking: bool | str | None = None,
@@ -221,6 +223,8 @@ def create_cli_agent(  # noqa: C901
     extra_caps: list[Any] = list(extra_capabilities) if extra_capabilities else []
     if kg_capability:
         extra_caps.append(kg_capability)
+    if simics_dev_capability:
+        extra_caps.append(simics_dev_capability)
 
     # Skills directories — searched in order, all matching dirs included:
     # 1. Bundled skills (shipped with CLI package)

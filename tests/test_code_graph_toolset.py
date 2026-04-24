@@ -16,12 +16,20 @@ def _make_backend(
     search_result: list | None = None,
     nl_result: dict | None = None,
     kg_result: list | None = None,
+    analyze_reg_result: dict | None = None,
+    list_reg_result: dict | None = None,
+    list_cap_result: dict | None = None,
+    analyze_cap_result: dict | None = None,
 ) -> MagicMock:
     b = AsyncMock()
     b.list_projects = AsyncMock(return_value=projects or [])
     b.search = AsyncMock(return_value=search_result or [])
     b.nl_query = AsyncMock(return_value=nl_result or {})
     b.kg_search = AsyncMock(return_value=kg_result or [])
+    b.analyze_register_side_effect = AsyncMock(return_value=analyze_reg_result or {})
+    b.list_register_side_effect = AsyncMock(return_value=list_reg_result or {})
+    b.list_capability = AsyncMock(return_value=list_cap_result or {})
+    b.analyze_capability = AsyncMock(return_value=analyze_cap_result or {})
     return b
 
 
@@ -204,3 +212,184 @@ class TestGetInstructions:
         ctx = _make_ctx(kg_context=None)
         parts = await ts.get_instructions(ctx)
         assert parts is not None
+
+
+class TestAnalyzeRegisterSideEffect:
+    async def test_returns_json(self) -> None:
+        result = {"device_name": "my_dev", "done": 5, "total_registers": 5}
+        b = _make_backend(analyze_reg_result=result)
+        ts = PotpieToolset(runtime=b, project_id="p1")
+        ctx = _make_ctx()
+        out = await ts.tools["analyze_register_side_effect"].function(
+            ctx, device_name="my_dev"
+        )
+        data = json.loads(out)
+        assert data["device_name"] == "my_dev"
+        assert data["done"] == 5
+
+    async def test_no_project_id_returns_error(self) -> None:
+        b = _make_backend()
+        ts = PotpieToolset(runtime=b)
+        ctx = _make_ctx()
+        out = await ts.tools["analyze_register_side_effect"].function(
+            ctx, device_name="dev"
+        )
+        assert "no project_id" in out
+
+    async def test_passes_refresh_and_batch(self) -> None:
+        b = _make_backend(analyze_reg_result={"done": 0})
+        ts = PotpieToolset(runtime=b, project_id="p1")
+        ctx = _make_ctx()
+        await ts.tools["analyze_register_side_effect"].function(
+            ctx, device_name="dev", refresh=True, batch_size=10, chunk_tokens=5000
+        )
+        b.analyze_register_side_effect.assert_called_once_with(
+            project_id="p1",
+            device_name="dev",
+            refresh=True,
+            batch_size=10,
+            chunk_tokens=5000,
+        )
+
+    async def test_project_id_from_kg_context(self) -> None:
+        b = _make_backend(analyze_reg_result={"done": 1})
+        ts = PotpieToolset(runtime=b)
+        kg_context = MagicMock()
+        kg_context.project_id = "ctx-proj"
+        ctx = _make_ctx(kg_context=kg_context)
+        await ts.tools["analyze_register_side_effect"].function(ctx, device_name="dev")
+        b.analyze_register_side_effect.assert_called_once()
+        call_kwargs = b.analyze_register_side_effect.call_args[1]
+        assert call_kwargs["project_id"] == "ctx-proj"
+
+
+class TestListRegisterSideEffect:
+    async def test_returns_json(self) -> None:
+        result = {
+            "device_name": "my_dev",
+            "banks": {"bank0": {"REG_A": {"write_side_effect": "sets flag"}}},
+            "summary": {"total_banks": 1, "total_registers": 1},
+        }
+        b = _make_backend(list_reg_result=result)
+        ts = PotpieToolset(runtime=b, project_id="p1")
+        ctx = _make_ctx()
+        out = await ts.tools["list_register_side_effect"].function(ctx, device_name="my_dev")
+        data = json.loads(out)
+        assert data["device_name"] == "my_dev"
+        assert "bank0" in data["banks"]
+
+    async def test_no_project_id_returns_error(self) -> None:
+        b = _make_backend()
+        ts = PotpieToolset(runtime=b)
+        ctx = _make_ctx()
+        out = await ts.tools["list_register_side_effect"].function(ctx, device_name="dev")
+        assert "no project_id" in out
+
+    async def test_passes_device_name(self) -> None:
+        b = _make_backend(list_reg_result={"banks": {}})
+        ts = PotpieToolset(runtime=b, project_id="p1")
+        ctx = _make_ctx()
+        await ts.tools["list_register_side_effect"].function(ctx, device_name="timer_dev")
+        b.list_register_side_effect.assert_called_once_with(
+            project_id="p1", device_name="timer_dev"
+        )
+
+    async def test_project_id_from_kg_context(self) -> None:
+        b = _make_backend(list_reg_result={"banks": {}})
+        ts = PotpieToolset(runtime=b)
+        kg_context = MagicMock()
+        kg_context.project_id = "ctx-proj"
+        ctx = _make_ctx(kg_context=kg_context)
+        await ts.tools["list_register_side_effect"].function(ctx, device_name="dev")
+        call_kwargs = b.list_register_side_effect.call_args[1]
+        assert call_kwargs["project_id"] == "ctx-proj"
+
+
+class TestListCapability:
+    async def test_returns_json(self) -> None:
+        result = {
+            "device_name": "my_dev",
+            "cached": True,
+            "generated": False,
+            "capabilities": {"DMA": {"overview": "DMA engine"}},
+        }
+        b = _make_backend(list_cap_result=result)
+        ts = PotpieToolset(runtime=b, project_id="p1")
+        ctx = _make_ctx()
+        out = await ts.tools["list_capability"].function(ctx, device_name="my_dev")
+        data = json.loads(out)
+        assert data["device_name"] == "my_dev"
+        assert data["cached"] is True
+        assert "DMA" in data["capabilities"]
+
+    async def test_no_project_id_returns_error(self) -> None:
+        b = _make_backend()
+        ts = PotpieToolset(runtime=b)
+        ctx = _make_ctx()
+        out = await ts.tools["list_capability"].function(ctx, device_name="dev")
+        assert "no project_id" in out
+
+    async def test_passes_device_name(self) -> None:
+        b = _make_backend(list_cap_result={"capabilities": {}})
+        ts = PotpieToolset(runtime=b, project_id="p1")
+        ctx = _make_ctx()
+        await ts.tools["list_capability"].function(ctx, device_name="uart_dev")
+        b.list_capability.assert_called_once_with(project_id="p1", device_name="uart_dev")
+
+    async def test_project_id_from_kg_context(self) -> None:
+        b = _make_backend(list_cap_result={"capabilities": {}})
+        ts = PotpieToolset(runtime=b)
+        kg_context = MagicMock()
+        kg_context.project_id = "ctx-proj"
+        ctx = _make_ctx(kg_context=kg_context)
+        await ts.tools["list_capability"].function(ctx, device_name="dev")
+        call_kwargs = b.list_capability.call_args[1]
+        assert call_kwargs["project_id"] == "ctx-proj"
+
+
+class TestAnalyzeCapability:
+    async def test_returns_json(self) -> None:
+        result = {
+            "device_name": "my_dev",
+            "project_id": "p1",
+            "cached": False,
+            "capabilities": [{"DMA": {"spec": "..."}}],
+        }
+        b = _make_backend(analyze_cap_result=result)
+        ts = PotpieToolset(runtime=b, project_id="p1")
+        ctx = _make_ctx()
+        out = await ts.tools["analyze_capability"].function(ctx, device_name="my_dev")
+        data = json.loads(out)
+        assert data["device_name"] == "my_dev"
+        assert data["cached"] is False
+
+    async def test_no_project_id_returns_error(self) -> None:
+        b = _make_backend()
+        ts = PotpieToolset(runtime=b)
+        ctx = _make_ctx()
+        out = await ts.tools["analyze_capability"].function(ctx, device_name="dev")
+        assert "no project_id" in out
+
+    async def test_passes_refresh_and_chunk_tokens(self) -> None:
+        b = _make_backend(analyze_cap_result={"capabilities": []})
+        ts = PotpieToolset(runtime=b, project_id="p1")
+        ctx = _make_ctx()
+        await ts.tools["analyze_capability"].function(
+            ctx, device_name="dev", refresh=True, chunk_tokens=8000
+        )
+        b.analyze_capability.assert_called_once_with(
+            project_id="p1",
+            device_name="dev",
+            refresh=True,
+            chunk_tokens=8000,
+        )
+
+    async def test_project_id_from_kg_context(self) -> None:
+        b = _make_backend(analyze_cap_result={"capabilities": []})
+        ts = PotpieToolset(runtime=b)
+        kg_context = MagicMock()
+        kg_context.project_id = "ctx-proj"
+        ctx = _make_ctx(kg_context=kg_context)
+        await ts.tools["analyze_capability"].function(ctx, device_name="dev")
+        call_kwargs = b.analyze_capability.call_args[1]
+        assert call_kwargs["project_id"] == "ctx-proj"

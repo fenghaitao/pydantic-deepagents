@@ -152,6 +152,96 @@ class PotpieRuntime:
         finally:
             session.close()
 
+    async def analyze_register_side_effect(
+        self,
+        project_id: str,
+        device_name: str,
+        refresh: bool = False,
+        batch_size: int = 30,
+        chunk_tokens: int = 15000,
+    ) -> dict:
+        from app.modules.intelligence.tools.simics_device_tools.analyze_register_side_effect_tool import (
+            AnalyzeRegisterSideEffectTool,
+        )
+
+        rt = await self._get_runtime()
+        session = rt.db.get_session()
+        try:
+            tool = AnalyzeRegisterSideEffectTool(sql_db=session, user_id=self._user_id)
+            return await tool.arun(
+                project_id=project_id,
+                device_name=device_name,
+                refresh=refresh,
+                batch_size=batch_size,
+                chunk_tokens=chunk_tokens,
+            )
+        finally:
+            session.close()
+
+    async def analyze_capability(
+        self,
+        project_id: str,
+        device_name: str,
+        refresh: bool = False,
+        chunk_tokens: int = 15000,
+    ) -> dict:
+        from app.modules.intelligence.tools.simics_device_tools.analyze_capability_tool import (
+            AnalyzeCapabilityTool,
+        )
+
+        rt = await self._get_runtime()
+        session = rt.db.get_session()
+        try:
+            tool = AnalyzeCapabilityTool(sql_db=session, user_id=self._user_id)
+            return await tool.arun(
+                project_id=project_id,
+                device_name=device_name,
+                refresh=refresh,
+                chunk_tokens=chunk_tokens,
+            )
+        finally:
+            session.close()
+
+    async def list_capability(
+        self,
+        project_id: str,
+        device_name: str,
+    ) -> dict:
+        from app.modules.intelligence.tools.simics_device_tools.list_capability_tool import (
+            ListCapabilityTool,
+        )
+
+        rt = await self._get_runtime()
+        session = rt.db.get_session()
+        try:
+            tool = ListCapabilityTool(sql_db=session, user_id=self._user_id)
+            return await tool.arun(
+                project_id=project_id,
+                device_name=device_name,
+            )
+        finally:
+            session.close()
+
+    async def list_register_side_effect(
+        self,
+        project_id: str,
+        device_name: str,
+    ) -> dict:
+        from app.modules.intelligence.tools.simics_device_tools.list_register_side_effect_tool import (
+            ListRegisterSideEffectTool,
+        )
+
+        rt = await self._get_runtime()
+        session = rt.db.get_session()
+        try:
+            tool = ListRegisterSideEffectTool(sql_db=session, user_id=self._user_id)
+            return await tool.arun(
+                project_id=project_id,
+                device_name=device_name,
+            )
+        finally:
+            session.close()
+
     # ── Parsing ───────────────────────────────────────────────────────────
 
     async def parse(

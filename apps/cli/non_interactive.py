@@ -168,10 +168,11 @@ async def run_non_interactive(  # noqa: C901
 
         # Potpie KG toolset — injected when --project-id is provided or auto-discovered
         cap = None
+        simics_cap = None
         try:
             from pathlib import Path as _Path
 
-            from apps.cli.code_graph.potpie_setup import build_kg_capability
+            from apps.cli.code_graph.potpie_setup import build_kg_capability, build_simics_dev_capability
 
             _root = _Path(working_dir) if working_dir else _Path.cwd()
             cap = await build_kg_capability(
@@ -182,8 +183,14 @@ async def run_non_interactive(  # noqa: C901
             )
             if cap is not None and cap.context is not None and cap.context.project_id:
                 project_id = cap.context.project_id
+            simics_cap = await build_simics_dev_capability(
+                project_id,
+                user_id,
+                root=_root,
+                on_status=None if effective_quiet else lambda msg: err_console.print(f"[dim]{msg}[/dim]"),
+            )
         except Exception as e:
-            err_console.print(f"[yellow]Warning: could not load Potpie KG tools: {e}[/yellow]")
+            err_console.print(f"[yellow]Warning: could not load Potpie KG or Simics tools: {e}[/yellow]")
 
         agent, deps = create_cli_agent(
             model=model,
@@ -196,6 +203,7 @@ async def run_non_interactive(  # noqa: C901
             model_settings=model_settings,
             session_id=session_id,
             kg_capability=cap,
+            simics_dev_capability=simics_cap,
         )
 
         show_tools = not effective_quiet or verbose

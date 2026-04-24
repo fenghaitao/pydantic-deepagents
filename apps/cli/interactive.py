@@ -2435,6 +2435,7 @@ async def run_interactive(  # noqa: C901
 
     _auto_approve_state["active"] = auto_approve
     cap: Any = None  # PotpieCapability — closed in finally
+    simics_cap: Any = None  # SimicsDeviceCapability — closed in finally
 
     try:
         backend = None
@@ -2473,11 +2474,19 @@ async def run_interactive(  # noqa: C901
             if setup_model is None:
                 return
 
-        # Auto-discover potpie project and build KG resources in one step,
-        # sharing a single PotpieRuntime to avoid double PotpieRuntime init.
+        # Auto-discover the potpie project root and build both Potpie-backed
+        # capabilities needed by the interactive agent.
         _root = Path(working_dir) if working_dir else Path.cwd()
-        from apps.cli.code_graph.potpie_setup import build_kg_capability
+        from apps.cli.code_graph.potpie_setup import build_kg_capability, build_simics_dev_capability
         cap = await build_kg_capability(
+            project_id,
+            user_id,
+            root=_root,
+            on_status=lambda msg: console.print(f"[dim]{msg}[/dim]"),
+        )
+        if cap is not None and cap.context is not None and cap.context.project_id:
+            project_id = cap.context.project_id
+        simics_cap = await build_simics_dev_capability(
             project_id,
             user_id,
             root=_root,
@@ -2495,6 +2504,7 @@ async def run_interactive(  # noqa: C901
             model_settings=model_settings,
             session_id=session_id,
             kg_capability=cap,
+            simics_dev_capability=simics_cap,
             lean=lean,
         )
         if result[0] is None:
@@ -2536,6 +2546,10 @@ async def run_interactive(  # noqa: C901
             import contextlib
             with contextlib.suppress(Exception):
                 await cap.runtime.close()
+        if simics_cap is not None:
+            import contextlib
+            with contextlib.suppress(Exception):
+                await simics_cap.runtime.close()
         try:
             from apps.cli.logfire_tracer import end_session_span
             end_session_span(session_id)
