@@ -41,6 +41,9 @@ async def execute_headless(  # noqa: C901
     verbose: bool = False,
     include_browser: bool | None = None,
     browser_headless: bool | None = None,
+    code_graph: bool | None = None,
+    project_id: str | None = None,
+    user_id: str | None = None,
 ) -> int:
     """Execute a task in headless mode and print the result.
 
@@ -64,6 +67,9 @@ async def execute_headless(  # noqa: C901
         include_plan: Enable plan mode. None = from config.
         include_memory: Enable persistent memory. None = from config.
         config_path: Override config file path.
+        code_graph: Enable code graph capabilities. None = from config.
+        project_id: Potpie project ID (overrides config).
+        user_id: Potpie user ID (overrides config).
 
     Returns:
         Exit code (0 for success, 1 for error).
@@ -113,6 +119,51 @@ async def execute_headless(  # noqa: C901
         agent_kwargs["include_browser"] = include_browser
     if browser_headless is not None:
         agent_kwargs["browser_headless"] = browser_headless
+    if code_graph is not None and code_graph:
+        cap = None
+        simics_cap = None
+        try:
+            from pathlib import Path as _Path
+
+            from apps.cli.code_graph.potpie_setup import build_kg_capability
+
+            user_id = user_id or "defaultuser"
+            _root = _Path(working_dir) if working_dir else _Path.cwd()
+            cap = await build_kg_capability(
+                project_id,
+                user_id,
+                root=_root,
+                on_status=None if not verbose else lambda msg: print(f"[dim]{msg}[/dim]"),
+            )
+            if cap is not None and cap.context is not None and cap.context.project_id:
+                project_id = cap.context.project_id
+            if cap is None:
+                print(
+                    "[yellow]Warning: --code-graph requested but no Potpie project found. "
+                    "Pass --project-id <id> or set a default with: "
+                    "pydantic-deep config set kg.project_id <id>[/yellow]",
+                    file=__import__("sys").stderr,
+                )
+
+            from apps.cli.code_graph.potpie_setup import build_simics_dev_capability
+            simics_cap = await build_simics_dev_capability(
+                project_id,
+                user_id,
+                root=_root,
+                on_status=None if not verbose else lambda msg: print(f"[dim]{msg}[/dim]"),
+            )
+            if simics_cap is None:
+                print(
+                    "[yellow]Warning: --code-graph requested but no Simics device project found. "
+                    "Pass --project-id <id> or set a default with: "
+                    "pydantic-deep config set simics.project_id <id>[/yellow]",
+                    file=__import__("sys").stderr,
+                )
+        except Exception as e:
+            print(f"[yellow]Warning: could not load Potpie KG tools: {e}[/yellow]")
+
+        agent_kwargs["kg_capability"] = cap
+        agent_kwargs["simics_capability"] = simics_cap
 
     agent, deps = create_cli_agent(**agent_kwargs)
 

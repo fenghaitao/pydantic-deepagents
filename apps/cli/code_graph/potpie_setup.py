@@ -60,19 +60,28 @@ async def build_kg_capability(
 
         try:
             # Auto-discover project from git if not explicitly provided.
+            # parse_git_identity returns an ordered sequence of (name, branch) candidates:
+            # [0] = remote repo name (preferred), [1] = local directory name (fallback).
             resolved_by_discovery = False
             if not project_id and root is not None:
-                identity = parse_git_identity(root)
-                if identity:
-                    repo_name, branch = identity
-                    for p in await runtime.list_projects():
-                        if p["repo_name"] == repo_name and p["branch_name"] == branch:
+                projects_cache: list | None = None
+                for candidate_name, candidate_branch in (parse_git_identity(root) or []):
+                    if projects_cache is None:
+                        projects_cache = await runtime.list_projects()
+                    for p in projects_cache:
+                        if p["repo_name"] == candidate_name and p["branch_name"] == candidate_branch:
                             project_id = p["id"]
                             resolved_by_discovery = True
+                            if on_status:
+                                on_status(f"Auto-discovered KG project: {project_id}")
                             break
+                    if project_id:
+                        break
 
             if not project_id:
                 await runtime.close()
+                if on_status:
+                    on_status(f"Warning: no KG project ID provided and auto-discovery for {root} failed.")
                 return None
 
             context = PotpieContext(project_id=project_id, user_id=user_id)
@@ -188,17 +197,24 @@ async def build_simics_dev_capability(
         try:
             resolved_by_discovery = False
             if not project_id and root is not None:
-                identity = parse_git_identity(root)
-                if identity:
-                    repo_name, branch = identity
-                    for p in await runtime.list_projects():
-                        if p["repo_name"] == repo_name and p["branch_name"] == branch:
+                projects_cache: list | None = None
+                for candidate_name, candidate_branch in (parse_git_identity(root) or []):
+                    if projects_cache is None:
+                        projects_cache = await runtime.list_projects()
+                    for p in projects_cache:
+                        if p["repo_name"] == candidate_name and p["branch_name"] == candidate_branch:
                             project_id = p["id"]
                             resolved_by_discovery = True
+                            if on_status:
+                                on_status(f"Auto-discovered Simics device project: {project_id}")
                             break
+                    if project_id:
+                        break
 
             if not project_id:
                 await runtime.close()
+                if on_status:
+                    on_status(f"Warning: no Simics device project ID provided and auto-discovery for {root} failed.")
                 return None
 
             context = PotpieContext(project_id=project_id, user_id=user_id)
@@ -227,20 +243,25 @@ async def build_simics_dev_capability(
         return None
 
 
-def parse_git_identity(root: Path | None = None) -> tuple[str, str] | None:
-    """Return ``(repo_name, branch)`` for the git repo at *root*, or ``None``.
+def parse_git_identity(root: Path | None = None) -> list[tuple[str, str]] | None:
+    """Return ordered ``(name, branch)`` candidates for the git repo at *root*, or ``None``.
 
-    Pure git operations — no PotpieRuntime needed. Handles submodule
-    scenarios by resolving the superproject for remote URL lookups.
+    Returns up to two candidates (tried in order):
+    1. ``(remote_repo_name, branch)`` — derived from ``git remote get-url origin``
+    2. ``(path_name, branch)`` — the directory name of *root* (fallback when no remote)
+
+    When there is no git remote both items collapse to the same directory-name candidate
+    so only one entry is returned.
 
     Args:
         root: Directory to inspect. Defaults to CWD.
 
     Returns:
-        ``(repo_name, branch)`` tuple, or ``None`` if not a git repo or
-        no remote origin is configured.
+        List of ``(name, branch)`` tuples to try, or ``None`` if not a git repo
+        or the branch cannot be determined.
     """
     root = root or Path.cwd()
+    path_name = root.name
     git = shutil.which("git")
     if not git:
         logger.debug("parse_git_identity: git not found")
@@ -270,7 +291,7 @@ def parse_git_identity(root: Path | None = None) -> tuple[str, str] | None:
     remote_url = _run([git, "remote", "get-url", "origin"], cwd=git_root)
     if not remote_url:
         logger.debug("parse_git_identity: no git remote 'origin'")
-        return None
+        return [(path_name, branch), ]
 
     # Strip trailing slash, then .git suffix with proper suffix removal (not rstrip
     # which strips individual characters and would corrupt names like "pytest").
@@ -281,10 +302,11 @@ def parse_git_identity(root: Path | None = None) -> tuple[str, str] | None:
     repo_name = url.rsplit("/", 1)[-1].rsplit(":", 1)[-1]
     if not repo_name:
         logger.debug("parse_git_identity: could not parse repo name from %s", remote_url)
-        return None
+        return [(path_name, branch), ]
 
     logger.debug("parse_git_identity: repo=%s branch=%s", repo_name, branch)
-    return repo_name, branch
+    return [(repo_name, branch), (path_name, branch)]
 
 
 __all__ = ["build_kg_capability", "build_simics_dev_capability", "parse_git_identity"]
+

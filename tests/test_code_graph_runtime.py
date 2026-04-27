@@ -231,6 +231,69 @@ class TestPotpieRuntimeParsing:
         call_kwargs = mock_rt.projects.register.call_args[1]
         assert call_kwargs["commit_id"] == "abc123"
 
+    async def test_parse_root_path_uses_elif_canonical_name(self) -> None:
+        # When repo_path is "/" Path("/").name returns "" (empty string).
+        # Lines 161-162 set repo_name="" (falsy), so the if repo_name: branch
+        # at line 176 is skipped and the elif repo_path: branch at line 179
+        # derives canonical_name directly from repo_path.
+        b = PotpieRuntime()
+        mock_rt = _make_runtime()
+
+        with patch.dict("sys.modules", _potpie_modules(mock_rt)):
+            result = await b.parse("/", None, "main")
+
+        assert result["project_id"] == "proj-new"
+        call_kwargs = mock_rt.projects.register.call_args[1]
+        assert call_kwargs["repo_name"] == ""
+
+    async def test_parse_auto_detects_branch(self) -> None:
+        """Lines 186-189: branch=None with repo_path → GitRepo.active_branch.name."""
+        b = PotpieRuntime()
+        mock_rt = _make_runtime()
+        mock_repo = MagicMock()
+        mock_repo.active_branch.name = "develop"
+        mock_git = MagicMock()
+        mock_git.Repo = MagicMock(return_value=mock_repo)
+
+        with patch.dict("sys.modules", {
+            **_potpie_modules(mock_rt),
+            "git": mock_git,
+        }):
+            result = await b.parse("/repo", "myrepo", None)
+
+        assert result["project_id"] == "proj-new"
+        call_kwargs = mock_rt.projects.register.call_args[1]
+        assert call_kwargs["branch_name"] == "develop"
+
+    async def test_parse_branch_defaults_to_main_when_no_repo_path(self) -> None:
+        """Line 189 ternary false branch: branch=None and repo_path=None → 'main'."""
+        b = PotpieRuntime()
+        mock_rt = _make_runtime()
+
+        with patch.dict("sys.modules", _potpie_modules(mock_rt)):
+            result = await b.parse(None, "myrepo", None)
+
+        assert result["project_id"] == "proj-new"
+        call_kwargs = mock_rt.projects.register.call_args[1]
+        assert call_kwargs["branch_name"] == "main"
+
+    async def test_parse_branch_falls_back_to_main_on_git_error(self) -> None:
+        """Line 191: branch=None and GitRepo raises → fallback 'main'."""
+        b = PotpieRuntime()
+        mock_rt = _make_runtime()
+        mock_git = MagicMock()
+        mock_git.Repo = MagicMock(side_effect=Exception("not a git repo"))
+
+        with patch.dict("sys.modules", {
+            **_potpie_modules(mock_rt),
+            "git": mock_git,
+        }):
+            result = await b.parse("/repo", "myrepo", None)
+
+        assert result["project_id"] == "proj-new"
+        call_kwargs = mock_rt.projects.register.call_args[1]
+        assert call_kwargs["branch_name"] == "main"
+
 
 class TestPotpieRuntimeQuery:
     async def test_nl_query(self) -> None:

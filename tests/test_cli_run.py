@@ -19,22 +19,22 @@ runner = CliRunner()
 
 
 class TestRunCommand:
-    """Tests for the 'run-upstream' CLI command."""
+    """Tests for the 'run' CLI command."""
 
     def test_no_task_or_file(self) -> None:
-        result = runner.invoke(app, ["run-upstream"])
+        result = runner.invoke(app, ["run"])
         assert result.exit_code == 1
         assert "provide a task" in result.output
 
     def test_task_file_not_found(self, tmp_path: Path) -> None:
-        result = runner.invoke(app, ["run-upstream", "--task-file", str(tmp_path / "nonexistent.md")])
+        result = runner.invoke(app, ["run", "--task-file", str(tmp_path / "nonexistent.md")])
         assert result.exit_code == 1
         assert "not found" in result.output
 
     def test_empty_task_file(self, tmp_path: Path) -> None:
         task_file = tmp_path / "empty.md"
         task_file.write_text("   \n  ")
-        result = runner.invoke(app, ["run-upstream", "--task-file", str(task_file)])
+        result = runner.invoke(app, ["run", "--task-file", str(task_file)])
         assert result.exit_code == 1
         assert "empty" in result.output
 
@@ -44,7 +44,7 @@ class TestRunCommand:
 
         with patch("apps.cli.run.execute_headless", new_callable=AsyncMock) as mock_exec:
             mock_exec.return_value = 0
-            result = runner.invoke(app, ["run-upstream", "--task-file", str(task_file)])
+            result = runner.invoke(app, ["run", "--task-file", str(task_file)])
 
         assert result.exit_code == 0
         mock_exec.assert_called_once()
@@ -54,7 +54,7 @@ class TestRunCommand:
     def test_passes_task_argument(self) -> None:
         with patch("apps.cli.run.execute_headless", new_callable=AsyncMock) as mock_exec:
             mock_exec.return_value = 0
-            result = runner.invoke(app, ["run-upstream", "Fix the bug"])
+            result = runner.invoke(app, ["run", "Fix the bug"])
 
         assert result.exit_code == 0
         call_kwargs = mock_exec.call_args.kwargs
@@ -66,7 +66,7 @@ class TestRunCommand:
             result = runner.invoke(
                 app,
                 [
-                    "run-upstream",
+                    "run",
                     "Do something",
                     "--model",
                     "test:model",
@@ -91,12 +91,12 @@ class TestRunCommand:
     def test_returns_nonzero_on_error(self) -> None:
         with patch("apps.cli.run.execute_headless", new_callable=AsyncMock) as mock_exec:
             mock_exec.return_value = 1
-            result = runner.invoke(app, ["run-upstream", "Do something"])
+            result = runner.invoke(app, ["run", "Do something"])
 
         assert result.exit_code == 1
 
     def test_help(self) -> None:
-        result = runner.invoke(app, ["run-upstream", "--help"])
+        result = runner.invoke(app, ["run", "--help"])
         assert result.exit_code == 0
         assert "headless" in result.output.lower()
 
@@ -256,7 +256,7 @@ class TestRunCommandBrowserFlags:
     def test_browser_flag_forwarded(self) -> None:
         with patch("apps.cli.run.execute_headless", new_callable=AsyncMock) as mock_exec:
             mock_exec.return_value = 0
-            result = runner.invoke(app, ["run-upstream", "Do something", "--browser"])
+            result = runner.invoke(app, ["run", "Do something", "--browser"])
 
         assert result.exit_code == 0
         call_kwargs = mock_exec.call_args.kwargs
@@ -265,7 +265,7 @@ class TestRunCommandBrowserFlags:
     def test_no_browser_flag_forwarded(self) -> None:
         with patch("apps.cli.run.execute_headless", new_callable=AsyncMock) as mock_exec:
             mock_exec.return_value = 0
-            result = runner.invoke(app, ["run-upstream", "Do something", "--no-browser"])
+            result = runner.invoke(app, ["run", "Do something", "--no-browser"])
 
         assert result.exit_code == 0
         call_kwargs = mock_exec.call_args.kwargs
@@ -274,7 +274,7 @@ class TestRunCommandBrowserFlags:
     def test_browser_headless_flag(self) -> None:
         with patch("apps.cli.run.execute_headless", new_callable=AsyncMock) as mock_exec:
             mock_exec.return_value = 0
-            result = runner.invoke(app, ["run-upstream", "Do something", "--browser-headless"])
+            result = runner.invoke(app, ["run", "Do something", "--browser-headless"])
 
         assert result.exit_code == 0
         call_kwargs = mock_exec.call_args.kwargs
@@ -283,7 +283,7 @@ class TestRunCommandBrowserFlags:
     def test_browser_headed_flag(self) -> None:
         with patch("apps.cli.run.execute_headless", new_callable=AsyncMock) as mock_exec:
             mock_exec.return_value = 0
-            result = runner.invoke(app, ["run-upstream", "Do something", "--browser-headed"])
+            result = runner.invoke(app, ["run", "Do something", "--browser-headed"])
 
         assert result.exit_code == 0
         call_kwargs = mock_exec.call_args.kwargs

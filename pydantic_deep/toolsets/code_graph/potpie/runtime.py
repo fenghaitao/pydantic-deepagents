@@ -248,10 +248,19 @@ class PotpieRuntime:
         self,
         repo_path: str | None,
         repo_name: str | None,
-        branch: str,
+        branch: str | None,
         commit_id: str | None = None,
     ) -> dict:
         rt = await self._get_runtime()
+
+        # Resolve relative paths (e.g. ".") to absolute before deriving the name
+        # — mirrors potpie_cli.py's _parse_repo which does the same.
+        if repo_path:
+            repo_path = str(Path(repo_path).expanduser().resolve())
+
+        # Derive repo_name from path when not explicitly provided (matches potpie_cli behaviour)
+        if not repo_name and repo_path:
+            repo_name = Path(repo_path).name
 
         # Auto-detect git commit if not provided
         effective_commit = commit_id
@@ -263,6 +272,14 @@ class PotpieRuntime:
             except Exception:
                 pass
 
+        if not branch:
+            try:
+                from git import Repo as GitRepo
+
+                branch = GitRepo(repo_path).active_branch.name if repo_path else "main"
+            except Exception:
+                branch = "main"
+
         # Determine canonical repo_name for registration
         canonical_name: str
         if repo_name:
@@ -272,6 +289,7 @@ class PotpieRuntime:
         else:
             raise ValueError("Either repo_path or repo_name must be provided.")
 
+        print(f"[kg] Starting parse: repo='{canonical_name}' branch='{branch}' commit='{effective_commit or 'unspecified'}'...")
         project_id = await rt.projects.register(
             repo_name=canonical_name,
             branch_name=branch,
