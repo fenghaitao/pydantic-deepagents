@@ -1498,6 +1498,412 @@ def agents_list(
     asyncio.run(_run())
 
 
+# ── spec sub-app ──────────────────────────────────────────────────────────────
+
+spec_app = typer.Typer(
+    name="spec",
+    help="Index and query specification documentation via the potpie backend.",
+    no_args_is_help=True,
+)
+app.add_typer(spec_app)
+
+def _collect_spec_texts(path: str, extensions: list[str] | None) -> list[str]:
+    """Read text files under *path* and return their contents as a list.
+
+    If *extensions* is provided only files whose suffix (without the leading
+    dot, e.g. ``"md"``) is in the set are included.  Both files and directories
+    are accepted for *path*.
+    """
+    from pathlib import Path as _Path
+
+    exts: set[str] | None = (
+        {e.lstrip(".").lower() for e in extensions} if extensions else None
+    )
+    root = _Path(path)
+    candidates = [root] if root.is_file() else list(root.rglob("*"))
+    texts: list[str] = []
+    for fp in candidates:
+        if not fp.is_file():
+            continue
+        if exts and fp.suffix.lstrip(".").lower() not in exts:
+            continue
+        try:
+            texts.append(fp.read_text(encoding="utf-8", errors="ignore"))
+        except OSError:
+            pass
+    return texts
+
+
+@spec_app.command("index")
+def spec_index(
+    paths: Annotated[
+        list[str],
+        typer.Option(
+            "--path",
+            "-P",
+            help="File or directory to index (repeatable: --path /a --path /b).",
+        ),
+    ],
+    project_name: Annotated[
+        str | None,
+        typer.Option(
+            "--project-name",
+            "-n",
+            help="Project name — looks up an existing project by this name.",
+        ),
+    ] = None,
+    project_id: Annotated[
+        str | None,
+        typer.Option(
+            "--project-id",
+            "-p",
+            help="Project ID to index into. If --project-name is also given it must match.",
+        ),
+    ] = None,
+    extensions: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--ext",
+            "-e",
+            help=(
+                "File extension(s) to include when PATH is a directory "
+                "(e.g. --ext md --ext rst).  Omit to include all readable files."
+            ),
+        ),
+    ] = None,
+    user_id: Annotated[
+        str,
+        typer.Option("--user-id", help="User ID for the LightRAG workspace (default: defaultuser)"),
+    ] = "defaultuser",
+    prompt: Annotated[
+        str | None,
+        typer.Option(
+            "--prompt",
+            help="Additional user prompt for LightRAG entity extraction.",
+        ),
+    ] = None,
+    local: Annotated[
+        bool,
+        typer.Option("--local", help="Use direct PotpieRuntime instead of REST API (required)"),
+    ] = False,
+) -> None:
+    """Index files into the LightRAG workspace for a project.
+
+    Reads all readable files under each --path (optionally filtered by --ext)
+    and inserts their text into the project's LightRAG on-disk workspace via
+    ``ainsert``.  The workspace is keyed by project ID and user ID so
+    ``spec query`` can read the result.
+
+    Examples:\n
+        pydantic-deep spec index --path /docs --project-name my-spec --local\n
+        pydantic-deep spec index --path /a --path /b --project-id <id> --ext md --local
+    """
+    if not project_name and not project_id:
+        typer.echo("Error: specify at least one of --project-name or --project-id.", err=True)
+        raise typer.Exit(1)
+
+    console = Console()
+
+    async def _run() -> None:
+        runtime = _make_code_graph_runtime()
+        all_projects = await runtime.list_projects()
+
+        if project_name:
+            existing = next(
+                (p for p in all_projects if p.get("repo_name", p.get("project_name", "")) == project_name),
+                None,
+            )
+            if existing is None:
+                console.print(f"[dim]Project '{project_name}' not found — registering it…[/dim]")
+                with console.status("[bold blue]Registering project…[/bold blue]"):
+                    reg_result = await runtime.register_project(project_name=project_name)
+                effective_project_id = reg_result.get("project_id", "")
+                if not effective_project_id:
+                    console.print("[red]Failed to register project.[/red]")
+                    raise typer.Exit(1)
+                console.print(f"[green]Project registered:[/green] {effective_project_id}")
+            else:
+                found_id = existing.get("id", "")
+                if project_id and project_id != found_id:
+                    console.print(
+                        f"[red]Error: --project-id '{project_id}' does not match the project "
+                        f"for '{project_name}' (ID: '{found_id}'). Remove one of the flags.[/red]"
+                    )
+                    raise typer.Exit(1)
+                effective_project_id = found_id
+        else:
+            existing = next((p for p in all_projects if p.get("id") == project_id), None)
+            if existing is None:
+                console.print(
+                    f"[red]Project '{project_id}' not found. "
+                    "Register a project first with: pydantic-deep parse repo <path> --local[/red]"
+                )
+                raise typer.Exit(1)
+            effective_project_id = project_id
+
+        repo_name = existing.get("repo_name", existing.get("project_name", effective_project_id)) if existing else project_name or effective_project_id
+        console.print(f"[bold]Project ID:[/bold] {effective_project_id}")
+        console.print(f"[bold]Name:[/bold]       {repo_name}")
+
+        if not paths:
+            console.print("[red]Provide at least one --path to index.[/red]")
+            raise typer.Exit(1)
+
+        console.print(f"[dim]Reading files from {paths}…[/dim]")
+        texts: list[str] = []
+        file_paths: list[str] = []
+        for p in paths:
+            texts.extend(_collect_spec_texts(p, extensions))
+            file_paths.append(p) # TODO: let _collect_spec_texts also return the paths of the files it read, and include that in the console output here
+        if not texts:
+            console.print(
+                f"[red]No readable files found under {paths}"
+                + (f" (extensions: {extensions})" if extensions else "")
+                + ".[/red]"
+            )
+            raise typer.Exit(1)
+
+        console.print(f"[dim]Inserting {len(texts)} document(s) into LightRAG…[/dim]")
+        with console.status("[bold blue]Inserting text → LightRAG…[/bold blue]"):
+            result = await runtime.spec_insert_texts(
+                project_id=effective_project_id,
+                user_id=user_id,
+                texts=texts,
+                file_paths=file_paths,
+                prompt=prompt,
+            )
+
+        workspace = result.get("workspace", "")
+        console.print(
+            f"\n[green]Done.[/green] "
+            f"inserted={result.get('inserted', len(texts))} document(s)"
+        )
+        if workspace:
+            console.print(f"[dim]Workspace: {workspace}[/dim]")
+        console.print(
+            "[dim]Set as default: pydantic-deep config set"
+            f" potpie_project_id {effective_project_id}[/dim]"
+        )
+
+    asyncio.run(_run())
+
+
+@spec_app.command("query")
+def spec_query(
+    query_text: Annotated[str | None, typer.Argument(help="Query text. Optional when --summarize is set.")] = None,
+    project_id: Annotated[
+        str | None,
+        typer.Option("--project-id", "-p", help="Project ID to query."),
+    ] = None,
+    project_name: Annotated[
+        str | None,
+        typer.Option(
+            "--project-name",
+            "-n",
+            help="Project name to query — looks up the project by name. Errors if not found.",
+        ),
+    ] = None,
+    user_id: Annotated[
+        str,
+        typer.Option("--user-id", help="User ID (default: from config)"),
+    ] = "defaultuser",
+    mode: Annotated[
+        str,
+        typer.Option(
+            "--mode",
+            "-m",
+            help="LightRAG query mode: local, global, hybrid (default), mix, naive, bypass.",
+        ),
+    ] = "hybrid",
+    summarize: Annotated[
+        bool,
+        typer.Option("--summarize", "-s", help="Query with a pre-defined hardware IP summary prompt."),
+    ] = False,
+    local: Annotated[
+        bool,
+        typer.Option("--local", help="Use direct PotpieRuntime instead of REST API"),
+    ] = False,
+) -> None:
+    """Query spec documentation for a project using LightRAG.
+
+    Modes (LightRAG):\n
+      local   — entity-centric, answers about specific items\n
+      global  — dataset-level, answers about overall themes\n
+      hybrid  — combines local + global (default)\n
+      mix     — integrated graph + vector search\n
+      naive   — plain vector similarity (no graph traversal)\n
+      bypass  — pass query directly to LLM without retrieval
+    """
+    if not project_name and not project_id:
+        typer.echo("Error: specify at least one of --project-name or --project-id.", err=True)
+        raise typer.Exit(1)
+
+    if not summarize and not query_text:
+        typer.echo("Error: query text is required unless --summarize is set.", err=True)
+        raise typer.Exit(1)
+
+    valid_modes = ("local", "global", "hybrid", "mix", "naive", "bypass")
+    if mode not in valid_modes:
+        typer.echo(f"Error: --mode must be one of {valid_modes}", err=True)
+        raise typer.Exit(1)
+
+    console = Console()
+
+    async def _run() -> None:
+        runtime = _make_code_graph_runtime()
+
+        effective_project_id = project_id
+        if project_name:
+            all_projects = await runtime.list_projects()
+            existing = next(
+                (p for p in all_projects if p.get("repo_name", p.get("project_name", "")) == project_name),
+                None,
+            )
+            if existing is None:
+                console.print(f"[red]Project '{project_name}' not found.[/red]")
+                raise typer.Exit(1)
+            found_id = existing.get("id", "")
+            if project_id and project_id != found_id:
+                console.print(
+                    f"[red]Error: --project-id '{project_id}' does not match the project "
+                    f"for '{project_name}' (ID: '{found_id}'). Remove one of the flags.[/red]"
+                )
+                raise typer.Exit(1)
+            effective_project_id = found_id
+
+        with console.status(f"[bold blue]Querying ({mode})…[/bold blue]"):
+            answer = await runtime.spec_query(
+                project_id=effective_project_id,
+                user_id=user_id,
+                query=query_text or "",
+                mode=mode,
+                summarize=summarize,
+            )
+        console.print(answer)
+
+    asyncio.run(_run())
+
+
+@spec_app.command("diff")
+def spec_diff(
+    project_names: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--project-name",
+            "-n",
+            help="Project name (repeat twice for base and new: --project-name ip-v1 --project-name ip-v2).",
+        ),
+    ] = None,
+    project_ids: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--project-id",
+            "-p",
+            help="Project ID (repeat twice for base and new: --project-id <id-a> --project-id <id-b>).",
+        ),
+    ] = None,
+    user_id: Annotated[
+        str,
+        typer.Option("--user-id", help="User ID (default: defaultuser)"),
+    ] = "defaultuser",
+    mode: Annotated[
+        str,
+        typer.Option(
+            "--mode",
+            "-m",
+            help="LightRAG query mode: local, global, hybrid (default), mix, naive, bypass.",
+        ),
+    ] = "hybrid",
+    summarize: Annotated[
+        bool,
+        typer.Option(
+            "--summarize/--no-summarize",
+            "-s",
+            help=(
+                "When set, produce a high-level feature summary grouped under broad headings. "
+                "Default (--no-summarize) gives signal-level detail: exact register/field/signal names, "
+                "bit widths, reset values, and precise behavioural differences."
+            ),
+        ),
+    ] = False,
+    local: Annotated[
+        bool,
+        typer.Option("--local", help="Use direct PotpieRuntime instead of REST API"),
+    ] = False,
+) -> None:
+    """Query delta features between two spec graphs.
+
+    With --summarize (default) outputs a high-level feature delta grouped under
+    broad headings.  With --no-summarize outputs signal-level detail including
+    exact register/field/signal names, bit widths, and behavioural differences.
+
+    Examples:\n
+        pydantic-deep spec diff --project-name ip-v1 --project-name ip-v2 --local\n
+        pydantic-deep spec diff --project-id <id-a> --project-id <id-b> --no-summarize --local
+    """
+    names = project_names or []
+    ids = project_ids or []
+
+    if not names and not ids:
+        typer.echo("Error: specify --project-name or --project-id (repeat twice for base and new).", err=True)
+        raise typer.Exit(1)
+    if names and len(names) != 2:
+        typer.echo(f"Error: --project-name must be specified exactly twice, got {len(names)}.", err=True)
+        raise typer.Exit(1)
+    if ids and len(ids) != 2:
+        typer.echo(f"Error: --project-id must be specified exactly twice, got {len(ids)}.", err=True)
+        raise typer.Exit(1)
+    if ids and names:
+        typer.echo("Error: specify either --project-name or --project-id, not both.", err=True)
+        raise typer.Exit(1)
+
+    valid_modes = ("local", "global", "hybrid", "mix", "naive", "bypass")
+    if mode not in valid_modes:
+        typer.echo(f"Error: --mode must be one of {valid_modes}", err=True)
+        raise typer.Exit(1)
+
+    console = Console()
+
+    async def _run() -> None:
+        runtime = _make_code_graph_runtime()
+        all_projects = await runtime.list_projects()
+
+        def _resolve(name: str | None) -> str:
+            existing = next(
+                (p for p in all_projects if p.get("repo_name", p.get("project_name", "")) == name),
+                None,
+            )
+            if existing is None:
+                console.print(f"[red]Project '{name}' not found.[/red]")
+                raise typer.Exit(1)
+            return existing.get("id", "")
+
+        name_a, name_b = (names[0], names[1]) if names else (None, None)
+        id_a, id_b = (ids[0], ids[1]) if ids else (None, None)
+        if ids:
+            eff_id_a, eff_id_b = id_a, id_b
+        else:
+            eff_id_a = _resolve(name_a)
+            eff_id_b = _resolve(name_b)
+
+        label_a = eff_id_a
+        label_b = eff_id_b
+
+        detail_label = "summary" if summarize else "signal-level detail"
+        with console.status(f"[bold blue]Querying both specs ({mode}, {detail_label})…[/bold blue]"):
+            delta = await runtime.spec_diff(
+                project_id_a=eff_id_a,
+                project_id_b=eff_id_b,
+                user_id=user_id,
+                mode=mode,
+                summarize=summarize,
+            )
+
+        console.print(delta)
+
+    asyncio.run(_run())
+
+
 def main() -> None:
     """Entry point for the CLI."""
     app()

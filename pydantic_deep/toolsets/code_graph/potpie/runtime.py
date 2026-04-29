@@ -244,6 +244,34 @@ class PotpieRuntime:
 
     # ── Parsing ───────────────────────────────────────────────────────────
 
+    async def register_project(
+        self,
+        project_name: str,
+        branch: str = "main",
+    ) -> dict:
+        """Register a named project without parsing any repository.
+
+        Creates a project record keyed by *project_name* and *branch*.  No
+        graph parsing or embedding is performed, so the project can be used
+        immediately as a LightRAG workspace target (e.g. for ``spec index``).
+
+        Args:
+            project_name: Human-readable name for the project.
+            branch: Branch label stored with the project (default ``"main"``).
+
+        Returns:
+            ``{"project_id": str, "status": str}``
+        """
+        rt = await self._get_runtime()
+        project_id = await rt.projects.register(
+            repo_name=project_name,
+            branch_name=branch,
+            user_id=self._user_id,
+            repo_path=None,
+            commit_id=None,
+        )
+        return {"project_id": project_id, "status": "REGISTERED"}
+
     async def parse(
         self,
         repo_path: str | None,
@@ -429,6 +457,103 @@ class PotpieRuntime:
             return removed
         finally:
             session.close()
+
+    # ── Spec documentation (LightRAG) ─────────────────────────────────────
+
+    async def spec_insert_texts(
+        self,
+        project_id: str,
+        user_id: str,
+        texts: list[str],
+        file_paths: list[str] | None = None,
+        prompt: str | None = None,
+    ) -> dict:
+        """Insert raw text documents directly into the LightRAG workspace.
+
+        The caller provides the document texts to index; the result shares the
+        same workspace so ``spec_query`` can read it.
+
+        Args:
+            project_id: Potpie project UUID (used to derive workspace name).
+            user_id: User ID (used to derive workspace name).
+            texts: List of document text strings to insert.
+            file_paths: List of file paths corresponding to the texts.
+            prompt: Additional user prompt for LightRAG entity extraction.
+
+        Returns:
+            ``{"inserted": int, "workspace": str}``
+        """
+        from app.core.config_provider import config_provider
+        from app.modules.parsing.lightrag_sync.lightrag_ingest_service import (
+            LightRAGIngestService,
+        )
+        svc = LightRAGIngestService.from_config(config_provider.get_neo4j_config())
+        return await svc.insert_texts(project_id=project_id, user_id=user_id, texts=texts, file_paths=file_paths, prompt=prompt)
+
+    async def spec_query(
+        self,
+        project_id: str,
+        user_id: str,
+        query: str,
+        mode: str = "hybrid",
+        summarize: bool = False,
+    ) -> str:
+        """Query the LightRAG workspace for *project_id* with natural language.
+
+        Args:
+            project_id: Potpie project UUID.
+            user_id: User ID.
+            query: Natural language query string.
+            mode: LightRAG query mode — ``local``, ``global``, ``hybrid``,
+                  ``mix``, ``naive``, or ``bypass``.  Default ``hybrid``.
+
+        Returns:
+            Answer string from LightRAG.
+        """
+        from app.modules.parsing.lightrag_sync.lightrag_query_service import (
+            LightRAGQueryService,
+        )
+        svc = LightRAGQueryService()
+        return await svc.query(project_id=project_id, user_id=user_id, question=query, mode=mode, summarize=summarize)
+
+    async def spec_diff(
+        self,
+        project_id_a: str,
+        project_id_b: str,
+        user_id: str,
+        mode: str = "hybrid",
+        summarize: bool = False,
+    ) -> str:
+        """Query two LightRAG workspaces and return an LLM-generated delta.
+
+        Traverses both knowledge graphs directly, computes the structural delta,
+        then asks the LLM to narrate the changes.
+
+        Args:
+            project_id_a: Potpie project UUID for the base (first) spec.
+            project_id_b: Potpie project UUID for the new (second) spec.
+            user_id: User ID shared by both workspaces.
+            mode: LightRAG query mode.  Default ``hybrid``.
+            summarize: When ``True`` (default) produce a high-level feature
+                summary grouped under broad headings.  When ``False`` produce
+                signal-level detail: exact register/field/signal names, bit
+                widths, reset values, and precise behavioural differences.
+
+        Returns:
+            LLM-generated delta string comparing the two specs.
+        """
+        from app.modules.parsing.lightrag_sync.lightrag_query_service import (
+            LightRAGQueryService,
+        )
+
+        svc = LightRAGQueryService()
+        return await svc.diff(
+            user_id=user_id,
+            project_id_a=project_id_a,
+            project_id_b=project_id_b,
+            mode=mode,
+            summarize=summarize,
+        )
 
 
 __all__ = ["PotpieRuntime"]

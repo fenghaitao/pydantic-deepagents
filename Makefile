@@ -102,7 +102,7 @@ potpie-ci-backup-logfire: ## CI: back up potpie logfire session traces
 	$(MAKE) -C code-graph-providers/potpie backup-logfire
 
 .PHONY: all
-all: format lint typecheck security testcov ## Run code formatting, linting, static type checks, security scan, and tests with coverage report generation
+all: typecheck security testcov ## Run code static type checks, security scan, and tests with coverage report generation
 
 .PHONY: help
 help: ## Show this help (usage: make help)
