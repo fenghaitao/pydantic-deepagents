@@ -94,13 +94,15 @@ browser = [
 acp = ["agent-client-protocol>=0.8.0"]
 # Logfire tracing support
 logfire = ["logfire>=4.0"]
+# Vector OTLP tracing support (uses logfire as the OTel bridge)
+vector = ["logfire>=4.0", "ports-allocator"]
 # Potpie KG (knowledge-graph) code intelligence — requires Python 3.13
 potpie = ["potpie"]
 # CodeGraphContext (CGC) provider — tree-sitter-based code graph, multi-language
 cgc = ["codegraphcontext", "kuzu>=0.11.3"]
 # All optional dependencies
 all = [
-    "pydantic-deep[sandbox,cli,web,yaml,acp,logfire,browser,potpie,cgc]",
+    "pydantic-deep[sandbox,cli,web,yaml,acp,logfire,vector,browser,potpie,cgc]",
 ]
 
 [project.urls]

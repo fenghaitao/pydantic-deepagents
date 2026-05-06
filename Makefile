@@ -81,6 +81,17 @@ docs: ## Build the documentation
 docs-serve: ## Build and serve the documentation
 	uv run mkdocs serve
 
+.PHONY: backend-start
+backend-start: potpie-start ## Start potpie backend + observability stack (Vector/VictoriaMetrics/VictoriaLogs/Tempo/Grafana)
+	bash scripts/vector/observability.sh start
+
+.PHONY: backend-stop
+backend-stop: ## Stop observability stack and force-stop potpie backend (clears stale locks)
+	-bash scripts/vector/observability.sh stop 2>/dev/null || true
+	$(MAKE) potpie-stop-force
+	@# Remove stale NFS flock files left by VictoriaMetrics/VictoriaLogs after unclean shutdown.
+	@-find scripts/vector/data -name "flock.lock" -delete 2>/dev/null || true
+
 .PHONY: potpie-start
 potpie-start: ## Start the potpie backend
 	$(MAKE) -C code-graph-providers/potpie start

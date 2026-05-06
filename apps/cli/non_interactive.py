@@ -136,6 +136,7 @@ async def run_non_interactive(  # noqa: C901
     session_id = uuid.uuid4().hex[:12]
 
     _print_diagnostics(err_console, model, working_dir, sandbox, runtime, effective_quiet)
+    logger.warning("Task started: %s", _truncate(message))
 
     # Start a root OTEL span so all child spans are nested under this session
     try:
@@ -234,6 +235,7 @@ async def run_non_interactive(  # noqa: C901
         if response_text:
             _write_output(out_console, response_text, output_format)
 
+        logger.warning("Task completed: %s", _truncate(message))
         if not effective_quiet:
             err_console.print()
             err_console.print(f"[{theme.success}]{glyphs.success} Task completed[/{theme.success}]")
@@ -246,6 +248,7 @@ async def run_non_interactive(  # noqa: C901
     except Exception as e:
         import traceback
 
+        logger.error("Task failed: %s: %s", type(e).__name__, e)
         _print_api_error(e, err_console)
         if not _is_api_key_error(e):
             err_console.print(f"[dim]{traceback.format_exc()}[/dim]")

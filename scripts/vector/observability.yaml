@@ -1,0 +1,102 @@
+# Vector configuration: routes HTTP logs to VictoriaLogs and proxies OTLP
+# traces to Tempo.
+#
+# Port env vars (set by observability.sh):
+#   VECTOR_INGEST_PORT       — HTTP JSON log ingestion
+#   VECTOR_API_PORT          — Vector API
+#   VECTOR_OTLP_HTTP_PORT    — OTLP HTTP trace proxy (app sends here)
+#   TEMPO_OTLP_HTTP_PORT     — Tempo OTLP receiver (Vector forwards here)
+#   VICTORIA_LOGS_SINK_URL   — VictoriaLogs localhost URL (for Vector sink)
+#
+# Trace flow: app → Vector :${VECTOR_OTLP_HTTP_PORT} → Tempo :${TEMPO_OTLP_HTTP_PORT}
+#
+# Vector receives raw OTLP protobuf bytes using framing.method=bytes (critical:
+# without this, Vector splits on 0x0a newline bytes which are common in protobufs,
+# corrupting the payload). The bytes are forwarded unchanged via raw_message codec.
+
+api:
+  enabled: true
+  address: "0.0.0.0:${VECTOR_API_PORT}"
+
+# ─── Sources ──────────────────────────────────────────────────────────────────
+
+sources:
+  # HTTP JSON logs from the app (manual push or Python logging handler)
+  app_logs_http:
+    type: http
+    address: "0.0.0.0:${VECTOR_INGEST_PORT}"
+    decoding:
+      codec: json
+
+  # OTLP HTTP traces from the app — raw bytes passthrough to Tempo.
+  # IMPORTANT: framing.method=bytes prevents splitting on 0x0a (newline) bytes,
+  # which would corrupt OTLP protobuf payloads where 0x0a is a common field tag.
+  otlp_traces_http:
+    type: http
+    address: "0.0.0.0:${VECTOR_OTLP_HTTP_PORT}"
+    path: /v1/traces
+    framing:
+      method: bytes
+    decoding:
+      codec: bytes
+
+# ─── Transforms ───────────────────────────────────────────────────────────────
+
+transforms:
+  # Enrich HTTP JSON logs before sending to VictoriaLogs
+  enrich_logs:
+    type: remap
+    inputs: [app_logs_http]
+    source: |
+      if !exists(.timestamp) {
+        .timestamp = now()
+      }
+      # VictoriaLogs requires the message in the _msg field.
+      if exists(.message) {
+        ._msg = del(.message)
+      }
+      # Use service from payload; fall back to SERVICE_NAME env var.
+      if !exists(.service) || .service == "" {
+        .service = get_env_var("SERVICE_NAME") ?? "unknown"
+      }
+
+# ─── Sinks ────────────────────────────────────────────────────────────────────
+
+sinks:
+  # HTTP JSON logs → VictoriaLogs via its native JSON Lines endpoint.
+  # Each event is a newline-delimited JSON object; _msg is the message field.
+  # _stream_fields tells VictoriaLogs which fields to treat as stream labels.
+  victoria_logs:
+    type: http
+    inputs: [enrich_logs]
+    uri: "${VICTORIA_LOGS_SINK_URL}/insert/jsonline?_stream_fields=service,level"
+    method: post
+    encoding:
+      codec: json
+    framing:
+      method: newline_delimited
+    request:
+      headers:
+        Content-Type: application/stream+json
+    healthcheck:
+      enabled: false
+
+  # Traces → Tempo (raw OTLP protobuf passthrough).
+  # batch.max_events=1 ensures each protobuf is forwarded as a single HTTP
+  # request. framing.method=bytes keeps the payload intact (no newline splits).
+  tempo_traces:
+    type: http
+    inputs: [otlp_traces_http]
+    uri: "http://localhost:${TEMPO_OTLP_HTTP_PORT}/v1/traces"
+    method: post
+    encoding:
+      codec: raw_message
+    framing:
+      method: bytes
+    batch:
+      max_events: 1
+    request:
+      headers:
+        Content-Type: "application/x-protobuf"
+    healthcheck:
+      enabled: false

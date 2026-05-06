@@ -169,6 +169,194 @@ def _setup_logfire() -> None:
         raise SystemExit(2) from None
 
 
+def _setup_vector() -> None:
+    """Configure OTLP tracing to Vector (or any OTLP-compatible backend).
+
+    Uses logfire with ``send_to_logfire=False`` so spans are exported only
+    via the standard OpenTelemetry OTLP exporter.  The endpoint is resolved
+    in priority order:
+
+    1. ``VECTOR_OTLP_ENDPOINT`` environment variable (explicit override).
+    2. Potpie Discovery Server — reads the dynamically allocated
+       ``tempo_otlp_http`` port for the current user@host session.
+    3. Hardcoded default ``http://localhost:4318``.
+
+    Metrics are exported directly to VictoriaMetrics via OTLP HTTP
+    (``/opentelemetry/v1/metrics``) using a ``PeriodicExportingMetricReader``.
+    """
+    try:
+        import logfire
+    except ImportError:
+        import sys
+
+        print(
+            "Logfire not installed. Run: pip install pydantic-deep[logfire]",
+            file=sys.stderr,
+        )
+        raise SystemExit(2) from None
+
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+
+    # Resolve endpoint in priority order:
+    # 1. TEMPO_OTLP_LOCAL / VECTOR_OTLP_ENDPOINT — explicit user override only.
+    #    NOTE: these are NOT set in the user's shell by observability.sh (it runs
+    #    as a subshell), so if they appear in the environment they are intentional.
+    #    However, to guard against stale values from a previous session we prefer
+    #    the live PortManager value first.
+    # 2. PortManager — authoritative live allocation for this machine.
+    # 3. Hardcoded fallback (Vector proxy port 4328).
+    endpoint = (
+        _resolve_vector_otlp_endpoint()
+        or os.environ.get("TEMPO_OTLP_LOCAL")
+        or os.environ.get("VECTOR_OTLP_ENDPOINT")
+        or "http://localhost:4328"
+    )
+    service_name = os.environ.get("OTEL_SERVICE_NAME", "pydantic-deep")
+
+    # Explicitly build the OTLP exporter — logfire.configure(send_to_logfire=False)
+    # does NOT auto-consume OTEL_EXPORTER_OTLP_TRACES_ENDPOINT, so we must wire
+    # it ourselves via additional_span_processors.
+    # Use SimpleSpanProcessor (synchronous) so spans are sent before the CLI exits;
+    # BatchSpanProcessor would lose buffered spans on process exit.
+    otlp_exporter = OTLPSpanExporter(endpoint=endpoint.rstrip("/") + "/v1/traces")
+
+    # Resolve VictoriaMetrics endpoint for OTLP metrics export.
+    # VictoriaMetrics accepts OTLP at /opentelemetry/v1/metrics directly.
+    metrics_port: str | None = os.environ.get("VICTORIA_METRICS_PORT")
+    if not metrics_port:
+        try:
+            from ports_allocator import PortManager
+            from pathlib import Path as _Path
+            _pm_port = PortManager().get("obs.victoria_metrics", workspace=str(_Path.cwd().resolve()))
+            if _pm_port:
+                metrics_port = str(_pm_port)
+        except Exception:
+            pass
+    metrics_endpoint = f"http://localhost:{metrics_port or '8428'}/opentelemetry/v1/metrics"
+
+    from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+    from opentelemetry.sdk.resources import Resource
+
+    resource = Resource.create({"service.name": service_name})
+    metric_reader = PeriodicExportingMetricReader(
+        OTLPMetricExporter(endpoint=metrics_endpoint),
+        export_interval_millis=5000,
+    )
+    meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
+    from opentelemetry import metrics as otel_metrics
+    otel_metrics.set_meter_provider(meter_provider)
+    # Flush pending metrics on process exit — PeriodicExportingMetricReader fires
+    # every 5 s, so short-lived CLI runs would otherwise exit before the first
+    # export.  shutdown() performs a synchronous final collection + export.
+    import atexit
+    atexit.register(meter_provider.shutdown)
+
+    logfire.configure(
+        send_to_logfire=False,
+        service_name=service_name,
+        additional_span_processors=[SimpleSpanProcessor(otlp_exporter)],
+    )
+    logfire.instrument_pydantic_ai()
+
+    # Also forward Python log records to Vector's HTTP JSON ingest so they
+    # appear in VictoriaLogs / Grafana alongside the traces.
+    _setup_vector_log_handler(service_name)
+
+
+def _resolve_vector_otlp_endpoint() -> str:
+    """Return the Vector OTLP HTTP proxy URL for the current machine.
+
+    Resolution order:
+    1. PortManager.get() — reads the ports_allocator session for this machine.
+    2. Hardcoded default http://localhost:4328 (Vector proxy port).
+
+    Always returns a localhost URL so corporate proxies don't intercept it.
+    """
+    from pathlib import Path
+
+    workspace = str(Path.cwd().resolve())
+
+    try:
+        from ports_allocator import PortManager
+        port = PortManager().get("obs.vector_otlp_http", workspace=workspace)
+        if port:
+            return f"http://localhost:{port}"
+    except Exception:
+        pass
+
+    return "http://localhost:4328"
+
+
+def _setup_vector_log_handler(service_name: str) -> None:
+    """Attach a Python logging handler that POSTs JSON log records to Vector.
+
+    Vector listens on VECTOR_INGEST_PORT for HTTP JSON; this forwards all
+    root-logger records so they appear in VictoriaLogs / Grafana.
+    """
+    import json
+    import logging
+    from pathlib import Path
+    from urllib.request import Request, urlopen
+
+    # Resolve Vector ingest URL (always localhost — corporate proxies intercept
+    # hostname-based URLs). Resolution order:
+    # 1. VECTOR_INGEST_LOCAL / VECTOR_INGEST_PORT env vars (explicit override)
+    # 2. PortManager.get() — same machine, reads ~/.ports-allocator/ directly
+    # 3. Hardcoded default
+    ingest_url: str | None = os.environ.get("VECTOR_INGEST_LOCAL") or (
+        f"http://localhost:{os.environ['VECTOR_INGEST_PORT']}" if os.environ.get("VECTOR_INGEST_PORT") else None
+    )
+    if not ingest_url:
+        try:
+            from ports_allocator import PortManager
+            port = PortManager().get("obs.vector_ingest", workspace=str(Path.cwd().resolve()))
+            if port:
+                ingest_url = f"http://localhost:{port}"
+        except Exception:
+            pass
+    if not ingest_url:
+        ingest_url = "http://localhost:9880"
+
+    class VectorHandler(logging.Handler):
+        def __init__(self, url: str, svc: str) -> None:
+            super().__init__()
+            self._url = url
+            self._svc = svc
+
+        def emit(self, record: logging.LogRecord) -> None:
+            try:
+                payload = json.dumps({
+                    "message": self.format(record),
+                    "level": record.levelname.lower(),
+                    "service": self._svc,
+                    "logger": record.name,
+                }).encode()
+                req = Request(self._url, data=payload,
+                              headers={"Content-Type": "application/json"})
+                urlopen(req, timeout=1)  # noqa: S310
+            except Exception:
+                pass  # Never let logging errors crash the agent
+
+    handler = VectorHandler(ingest_url, service_name)
+    handler.setLevel(logging.INFO)
+    # Python's root logger defaults to WARNING; lower it so INFO records can
+    # propagate to our handler.  Only lower — never raise it if caller already
+    # set a more verbose level.
+    root_logger = logging.getLogger()
+    if root_logger.level == logging.NOTSET or root_logger.level > logging.INFO:
+        root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(handler)
+    # Also attach directly to the CLI's structured logger (pydantic_deep.tui),
+    # which has propagate=False so it never reaches the root logger.
+    tui_logger = logging.getLogger("pydantic_deep.tui")
+    if tui_logger.level == logging.NOTSET or tui_logger.level > logging.INFO:
+        tui_logger.setLevel(logging.INFO)
+    tui_logger.addHandler(handler)
+
+
 @app.callback(invoke_without_command=True)
 def _main_callback(
     ctx: typer.Context,
@@ -190,6 +378,10 @@ def _main_callback(
         bool,
         typer.Option("--phoenix/--no-phoenix", help="Send traces to Arize Phoenix (reads PHOENIX_PORT from .env, defaults to 6006)"),
     ] = False,
+    vector_enabled: Annotated[
+        bool,
+        typer.Option("--vector/--no-vector", help="Enable Vector OTLP tracing"),
+    ] = False,
 ) -> None:
     """Deep Agent CLI — AI coding assistant powered by pydantic-ai."""
     try:
@@ -202,17 +394,22 @@ def _main_callback(
     except ImportError:  # pragma: no cover
         pass
 
-    if logfire_enabled is None:
+    if logfire_enabled is None or not vector_enabled:
         # Flag not explicitly passed — fall back to config/env var.
         from apps.cli.config import load_config
 
         config = load_config()
-        logfire_enabled = config.logfire
+        if logfire_enabled is None:
+            logfire_enabled = config.logfire
+        if not vector_enabled:
+            vector_enabled = config.vector
     # If --logfire or --no-logfire was explicitly passed it takes full precedence
     # over the PYDANTIC_DEEP_LOGFIRE env var.
 
     if logfire_enabled:
         _setup_logfire()
+    elif vector_enabled:
+        _setup_vector()
 
     if phoenix_enabled:
         phoenix_port = os.environ.get("PHOENIX_PORT", "6006")

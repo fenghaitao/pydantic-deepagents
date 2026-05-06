@@ -114,3 +114,9 @@ lightrag_storage/
 
 # API keys (pydantic-deep TUI)
 keys.toml
+
+# Vector observability stack runtime artifacts
+scripts/vector/bin/
+scripts/vector/data/
+scripts/vector/logs/
+scripts/vector/pids/

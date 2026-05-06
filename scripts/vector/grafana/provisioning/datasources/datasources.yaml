@@ -1,0 +1,45 @@
+apiVersion: 1
+
+# Port placeholders are substituted at startup by observability.sh using envsubst.
+# Variables: TEMPO_HTTP_PORT, VICTORIA_METRICS_PORT, VICTORIA_LOGS_PORT.
+# Default values (used if envsubst is skipped): 3200, 8428, 9428.
+
+datasources:
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    url: http://localhost:${TEMPO_HTTP_PORT}
+    access: proxy
+    isDefault: false
+    jsonData:
+      httpMethod: GET
+      serviceMap:
+        datasourceUid: prometheus
+      nodeGraph:
+        enabled: true
+      search:
+        hide: false
+      lokiSearch:
+        datasourceUid: loki
+      traceQuery:
+        timeShiftEnabled: true
+        spanStartTimeShift: -30m
+        spanEndTimeShift: 30m
+
+  - name: VictoriaMetrics
+    type: prometheus
+    uid: prometheus
+    url: http://localhost:${VICTORIA_METRICS_PORT}
+    access: proxy
+    isDefault: true
+    jsonData:
+      httpMethod: POST
+
+  - name: VictoriaLogs
+    type: victoriametrics-logs-datasource
+    uid: loki
+    url: http://localhost:${VICTORIA_LOGS_PORT}
+    access: proxy
+    isDefault: false
+    jsonData:
+      maxLines: 1000
