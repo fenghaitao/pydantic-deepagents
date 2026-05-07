@@ -59,6 +59,10 @@ jobs:
       # point to a KDE temp dir on self-hosted runners, causing cache corruption).
       # /tmp is machine-local so different runners never share this path.
       UV_CACHE_DIR: /tmp/uv-cache
+      UV_HTTP_TIMEOUT: 120
+      # Cache the HuggingFace sentence-transformers model in /tmp so it
+      # persists across steps and avoids re-downloading on every job.
+      HF_HOME: /tmp/hf-cache
       PYDANTIC_DEEP_LOGFIRE: ${{ vars.CI_LOGFIRE_ENABLED }}
       PYDANTIC_DEEP_LOG_LEVEL: ${{ vars.CI_LOGFIRE_LEVEL }}
       CI_LOGFIRE_ENABLED: ${{ vars.CI_LOGFIRE_ENABLED }}
@@ -135,6 +139,19 @@ jobs:
         # PHOENIX_PORT and PHOENIX_GRPC_PORT are written to GITHUB_ENV.
         run: bash scripts/phoenix.sh start
 
+      - name: Pre-warm HuggingFace embedding model cache
+        # The Celery parsing worker loads all-MiniLM-L6-v2 on first parse.
+        # Downloading it here (before the backend starts) avoids a slow/throttled
+        # download inside the worker which causes "Sub-job killed" panics in the
+        # DML language server when the embedding step stalls.
+        run: |
+          uv run --no-sync python -c "
+          from sentence_transformers import SentenceTransformer
+          print('Pre-warming all-MiniLM-L6-v2 ...')
+          SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
+          print('Model cached at \$HF_HOME.')
+          "
+
       - name: Ensure backend services are healthy
         working-directory: code-graph-providers/potpie
         run: make ensure-healthy
@@ -142,9 +159,12 @@ jobs:
       - name: Run scip_dml integration test
         # Runs from the pydantic-deepagents root.  make targets use -C to
         # operate on the potpie submodule without changing the shell cwd.
-        timeout-minutes: 15
+        # cargo build --release can take 20+ min on a cold cache; 60 min is safe.
+        timeout-minutes: 60
         run: |
-          eval "$(make -C code-graph-providers/potpie --no-print-directory export-ports)"
+          make -C code-graph-providers/potpie --no-print-directory export-ports > tmp-ports.env
+          # shellcheck disable=SC1091  # file is generated at runtime
+          source tmp-ports.env
           make -C code-graph-providers/potpie check-health HEALTH_FLAGS="--api-retries 15"
 
           export PATH="$HOME/.cargo/bin:$PATH"

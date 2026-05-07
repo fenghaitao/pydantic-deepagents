@@ -109,7 +109,7 @@ download() {
     return
   fi
   log "Downloading $(basename "$dest") ..."
-  curl -fsSL "$url" -o "$dest"
+  curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors "$url" -o "$dest"
   ok "Downloaded $(basename "$dest")"
 }
 
