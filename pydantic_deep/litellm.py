@@ -7,6 +7,7 @@ LiteLLM providers.
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -36,6 +37,17 @@ except ImportError as e:  # pragma: no cover
     raise ImportError(
         "The `litellm` package is required by pydantic-deep but failed to import."
     ) from e
+
+# LiteLLM's internal telemetry calls model_dump() on responses that contain raw
+# OpenAI SDK objects instead of LiteLLM's own Pydantic types, causing a schema
+# mismatch warning. Suppress it here since it is harmless and originates entirely
+# within LiteLLM's logging code, not in our response processing.
+warnings.filterwarnings(
+    "ignore",
+    message="Pydantic serializer warnings",
+    category=UserWarning,
+    module="pydantic",
+)
 
 #: Sensible default when using GitHub Copilot through LiteLLM (see LiteLLM model catalog).
 DEFAULT_GITHUB_COPILOT_LITELLM_MODEL = "github_copilot/gpt-4o"
