@@ -126,3 +126,4 @@ Pydantic Deep Agents supports the [llms.txt](https://llmstxt.org/) standard. Acc
 - [API Reference](api/index.md) - Complete API documentation
 - [Getting Help](getting-help.md) - Report bugs or request features
 - [Contributing](contributing.md) - How to contribute code or documentation
+- [PR Merge Guideline](PR-merge-guideline.md) - How pull requests are reviewed and merged
