@@ -144,7 +144,7 @@ packages = ["pydantic_deep", "apps"]
 # Dependency groups for development
 [dependency-groups]
 dev = [
-    "pydantic-deep[all]",
+    "pydantic-deep[sandbox,cli,web,yaml,acp,logfire,vector]",
     "pytest>=9.0.0",
     "pytest-asyncio>=0.23.0",
     "coverage>=7.0.0",
@@ -166,6 +166,14 @@ docs = [
     "mkdocstrings>=0.26.0",
     "mkdocstrings-python>=1.12.0",
     "mkdocs-llmstxt>=0.5.0",
+]
+integration = [
+    # Required by tests/integration-tests/test_scip_dml.py to query Neo4j
+    # directly (potpie uses Neo4j as its knowledge graph).
+    "neo4j>=5.0.0",
+    # Required by pydantic-deep parse/projects commands used in integration
+    # tests — PotpieRuntime imports the potpie package in-process.
+    "pydantic-deep[potpie]",
 ]
 
 # Ruff configuration
@@ -204,6 +212,7 @@ quote-style = "double"
 asyncio_mode = "auto"
 testpaths = ["tests"]
 asyncio_default_fixture_loop_scope = "function"
+addopts = "--ignore=tests/integration-tests"
 
 # Coverage configuration
 [tool.coverage.run]

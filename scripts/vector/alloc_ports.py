@@ -47,6 +47,8 @@ PORT_KEYS: list[str] = [
     "tempo_otlp_http",
     "tempo_internal_grpc",
     "grafana",
+    "phoenix",
+    "phoenix_grpc",
 ]
 
 # Shell variable name for each key (consumed by observability.sh and callers).
@@ -61,6 +63,8 @@ ENV_VAR: dict[str, str] = {
     "tempo_otlp_http":      "TEMPO_OTLP_HTTP_PORT",
     "tempo_internal_grpc":  "TEMPO_INTERNAL_GRPC_PORT",
     "grafana":              "GRAFANA_PORT",
+    "phoenix":              "PHOENIX_PORT",
+    "phoenix_grpc":         "PHOENIX_GRPC_PORT",
 }
 
 # Service names passed to PortManager (namespaced to avoid potpie collisions).

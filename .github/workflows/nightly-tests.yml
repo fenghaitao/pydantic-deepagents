@@ -20,18 +20,14 @@ jobs:
   # cross-version regressions without slowing down PR feedback.
   # ---------------------------------------------------------------------------
   test-all-python:
-    name: Full Tests / Python ${{ matrix.python-version }}
+    name: Full Tests / Python 3.13
     runs-on: self-hosted
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.13"]
     steps:
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup-uv
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.13"
           uv-sync-args: "--all-extras --group dev"
 
       - name: Run tests

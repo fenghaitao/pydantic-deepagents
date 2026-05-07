@@ -39,15 +39,16 @@ from pydantic_ai.toolsets import FunctionToolset
 try:
     import playwright  # noqa: F401
 
-    _HAS_PLAYWRIGHT = True
+    _HAS_PLAYWRIGHT = True  # pragma: no cover
 except ImportError:  # pragma: no cover
     _HAS_PLAYWRIGHT = False
 
 try:
     import html2text as _html2text_module
 
-    _HAS_HTML2TEXT = True
+    _HAS_HTML2TEXT = True  # pragma: no cover
 except ImportError:  # pragma: no cover
+    _html2text_module = None  # type: ignore[assignment]
     _HAS_HTML2TEXT = False
 
 if TYPE_CHECKING:

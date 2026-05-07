@@ -205,9 +205,9 @@ cmd_install_and_start() {
   VECTOR_BIN="$BIN_DIR/vector"
   if [[ ! -f "$VECTOR_BIN" ]]; then
     if [[ "$OS" == "linux" ]]; then
-      VECTOR_URL="https://packages.timber.io/vector/${VECTOR_VERSION}/vector-${VECTOR_VERSION}-${ARCH_VECTOR}-unknown-linux-musl.tar.gz"
+      VECTOR_URL="https://github.com/vectordotdev/vector/releases/download/v${VECTOR_VERSION}/vector-${VECTOR_VERSION}-${ARCH_VECTOR}-unknown-linux-musl.tar.gz"
     else
-      VECTOR_URL="https://packages.timber.io/vector/${VECTOR_VERSION}/vector-${VECTOR_VERSION}-${ARCH_VECTOR}-apple-darwin.tar.gz"
+      VECTOR_URL="https://github.com/vectordotdev/vector/releases/download/v${VECTOR_VERSION}/vector-${VECTOR_VERSION}-${ARCH_VECTOR}-apple-darwin.tar.gz"
     fi
     VECTOR_ARCHIVE="$BIN_DIR/vector.tar.gz"
     download "$VECTOR_URL" "$VECTOR_ARCHIVE"
