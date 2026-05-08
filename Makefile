@@ -24,6 +24,43 @@ install-all-python: ## Install and synchronize an interpreter for every python v
 sync: .uv ## Update local packages and uv.lock
 	uv sync --all-extras --group dev --group lint --group docs
 
+# ── Deterministic dependency management ────────────────────────────────────────
+# Why this matters:
+#   uv resolves and records environment markers (os, arch, Python version) in
+#   uv.lock.  Running `uv lock` on macOS or Windows inserts platform-specific
+#   markers that differ from the Linux x86_64 CI environment, causing spurious
+#   diff churn and potential runtime errors in CI.
+#
+#   pyproject.toml already constrains resolution via [tool.uv].required-environments
+#   to "linux x86_64", but the lock file still encodes the *generating* platform
+#   unless it is produced on that same platform.
+#
+#   Rules of thumb:
+#     • Day-to-day:          make uv-sync        (never modify uv.lock)
+#     • Adding a dependency: make uv-lock-update  (Linux x86_64 only, or via Docker)
+#     • CI:                  uv sync --locked     (validate lock, abort on drift)
+# ───────────────────────────────────────────────────────────────────────────────
+
+.PHONY: uv-sync
+uv-sync: .uv ## Install deps from the frozen lock file — never modifies uv.lock
+	uv sync --locked --all-groups
+
+.PHONY: uv-lock-update
+uv-lock-update: .uv ## Regenerate uv.lock (Linux x86_64 + Python 3.13) and sync to it; use this when adding/upgrading dependencies, never for day-to-day syncing
+	@# Guard: lock must be generated on Linux x86_64 to avoid platform marker drift.
+	@if [ "$$(uname -s)" != "Linux" ] || [ "$$(uname -m)" != "x86_64" ]; then \
+		echo ""; \
+		echo "ERROR: uv-lock-update must run on Linux x86_64 (current: $$(uname -s)/$$(uname -m))."; \
+		echo ""; \
+		exit 1; \
+	fi
+	uv lock --python 3.13
+	uv sync --locked --all-groups
+
+.PHONY: uv-lock-check
+uv-lock-check: .uv ## Verify uv.lock is up-to-date and consistent (used in CI)
+	uv lock --check
+
 .PHONY: format
 format: ## Format the code
 	uv run ruff format

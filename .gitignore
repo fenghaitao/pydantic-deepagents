@@ -92,9 +92,6 @@ dmypy.json
 # MkDocs documentation
 site/
 
-# UV
-uv.lock
-
 # Coverage directory
 .coverage/
 

@@ -144,7 +144,7 @@ packages = ["pydantic_deep", "apps"]
 # Dependency groups for development
 [dependency-groups]
 dev = [
-    "pydantic-deep[sandbox,cli,web,yaml,acp,logfire,vector,potpie]",
+    "pydantic-deep[sandbox,cli,web,yaml,acp,logfire,vector]",
     "pytest>=9.0.0",
     "pytest-asyncio>=0.23.0",
     "coverage>=7.0.0",

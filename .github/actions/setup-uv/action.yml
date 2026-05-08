@@ -11,7 +11,7 @@ inputs:
   uv-sync-args:
     description: Extra arguments forwarded verbatim to `uv sync`
     required: false
-    default: "--all-extras --group dev"
+    default: "--locked --all-groups"
 
 runs:
   using: composite
