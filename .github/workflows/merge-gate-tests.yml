@@ -44,7 +44,7 @@ jobs:
         run: make test
 
       - name: Generate lcov report
-        run: uv run coverage lcov -o coverage.lcov
+        run: uv run --no-sync coverage lcov -o coverage.lcov
 
   # ---------------------------------------------------------------------------
   # Potpie submodule tests — copied from potpie/.github/workflows/unit-tests.yml
@@ -63,6 +63,10 @@ jobs:
       # /tmp is machine-local so different runners never share this path.
       UV_CACHE_DIR: /tmp/uv-cache
       UV_HTTP_TIMEOUT: 120
+      # Skip dependency resolution for every `uv run` call (including inside
+      # submodule scripts such as singularity/start.sh) — the lock file is the
+      # source of truth and the restricted Intel mirror has no mistralai package.
+      UV_FROZEN: "1"
       # Cache the HuggingFace sentence-transformers model in /tmp so it
       # persists across steps and avoids re-downloading on every job.
       HF_HOME: /tmp/hf-cache
@@ -103,23 +107,23 @@ jobs:
         working-directory: code-graph-providers/potpie
         run: |
           set -euo pipefail
-          uv python install "${UV_PYTHON}"
+          uv python install "${UV_PYTHON}" || true
           test -d .venv || uv venv --python "${UV_PYTHON}" .venv
-          uv sync --group dev
-          uv run python -V
-          uv run pytest --version
+          uv sync --frozen --group dev
+          uv run --no-sync python -V
+          uv run --no-sync pytest --version
           cp .env.template .env
           mkdir -p test-results
 
       - name: Prepare pydantic-deepagents venv (for integration tests)
         run: |
           set -euo pipefail
-          uv sync --python "${UV_PYTHON}" --all-groups
+          uv sync --frozen --python "${UV_PYTHON}" --all-groups
 
       - name: Run tests/unit-tests
         working-directory: code-graph-providers/potpie
         run: |
-          uv run pytest tests/unit-tests \
+          uv run --no-sync pytest tests/unit-tests \
             -m "not integration" \
             -v \
             --tb=short \
@@ -346,7 +350,7 @@ jobs:
           # Collect any tests tagged with observability-related keywords.
           # pytest exits 5 when no tests match; treat that as success (placeholder
           # until dedicated observability test files are added).
-          uv run pytest tests/ \
+          uv run --no-sync pytest tests/ \
             -k "vector or tempo or victoria or observab" \
             -v --tb=short \
             --ignore=code-graph-providers \
