@@ -28,7 +28,7 @@ jobs:
       - uses: ./.github/actions/setup-uv
         with:
           python-version: "3.13"
-          uv-sync-args: "--all-extras --group dev"
+          uv-sync-args: "--frozen --group dev"
 
       - name: Run tests
         run: make test
@@ -46,7 +46,7 @@ jobs:
   #       - uses: ./.github/actions/setup-uv
   #         with:
   #           python-version: "3.13"
-  #           uv-sync-args: "--all-extras --group dev"
+  #           uv-sync-args: "--frozen --group dev"
   #       - name: Run <description>
   #         run: <command>
   # ---------------------------------------------------------------------------

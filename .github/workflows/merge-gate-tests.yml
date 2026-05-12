@@ -35,7 +35,7 @@ jobs:
       - uses: ./.github/actions/setup-uv
         with:
           python-version: "3.13"
-          uv-sync-args: "--locked --group dev --group lint"
+          uv-sync-args: "--frozen --group dev --group lint"
 
       - name: Verify uv.lock is consistent
         run: make uv-lock-check
@@ -269,7 +269,7 @@ jobs:
         uses: ./.github/actions/setup-uv
         with:
           python-version: "3.13"
-          uv-sync-args: "--locked --all-groups"
+          uv-sync-args: "--frozen --group dev --group lint"
 
       - name: Start observability stack
         run: bash scripts/vector/observability.sh start
