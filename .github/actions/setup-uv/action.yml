@@ -23,8 +23,14 @@ runs:
 
     - name: Install Python ${{ inputs.python-version }}
       shell: bash
+      env:
+        # Use OS-native TLS (OpenSSL) so uv trusts the system CA store,
+        # which includes Intel's corporate proxy root CA on self-hosted runners.
+        UV_NATIVE_TLS: "1"
       run: uv python install ${{ inputs.python-version }}
 
     - name: Install project dependencies
       shell: bash
+      env:
+        UV_NATIVE_TLS: "1"
       run: uv sync --python ${{ inputs.python-version }} ${{ inputs.uv-sync-args }}

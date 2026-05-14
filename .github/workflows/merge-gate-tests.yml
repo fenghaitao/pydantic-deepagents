@@ -16,6 +16,18 @@ concurrency:
 
 env:
   COLUMNS: 150
+  # uv uses a bundled Rust TLS stack that does not trust the system CA store by
+  # default.  On Intel self-hosted runners the corporate proxy presents a cert
+  # signed by the Intel Proxy Root CA, which causes "invalid peer certificate:
+  # UnknownIssuer" errors.  UV_NATIVE_TLS=1 switches uv to OpenSSL, which
+  # already has the Intel CA anchors in its trust store.
+  UV_NATIVE_TLS: "1"
+  # Node.js (used by npm / lerna / setup-uv action) also has a bundled CA store
+  # and ignores the system store by default.  Setting NODE_EXTRA_CA_CERTS makes
+  # every node process in every step trust the system bundle, which includes
+  # the Intel Proxy Root CA — fixing "unable to get local issuer certificate"
+  # errors in npm install / lerna bootstrap on fresh self-hosted runners.
+  NODE_EXTRA_CA_CERTS: /etc/ssl/ca-bundle.pem
 
 jobs:
   # ---------------------------------------------------------------------------

@@ -14,10 +14,7 @@ install: .uv .pre-commit ## Install the package, dependencies, and pre-commit fo
 	uv run pre-commit install --install-hooks
 
 .PHONY: install-all-python
-install-all-python: ## Install and synchronize an interpreter for every python version
-	UV_PROJECT_ENVIRONMENT=.venv310 uv sync --python 3.10 --frozen --all-extras --group dev --group lint --group docs
-	UV_PROJECT_ENVIRONMENT=.venv311 uv sync --python 3.11 --frozen --all-extras --group dev --group lint --group docs
-	UV_PROJECT_ENVIRONMENT=.venv312 uv sync --python 3.12 --frozen --all-extras --group dev --group lint --group docs
+install-all-python: ## Install and synchronize an interpreter for Python 3.13
 	UV_PROJECT_ENVIRONMENT=.venv313 uv sync --python 3.13 --frozen --all-extras --group dev --group lint --group docs
 
 .PHONY: sync
