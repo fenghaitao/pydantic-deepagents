@@ -35,9 +35,9 @@ storage:
   trace:
     backend: local
     local:
-      path: /tmp/tempo/blocks
+      path: ${DATA_DIR}/tempo/blocks
     wal:
-      path: /tmp/tempo/wal
+      path: ${DATA_DIR}/tempo/wal
 
 querier: {}
 
@@ -57,7 +57,7 @@ metrics_generator:
     external_labels:
       source: tempo
   storage:
-    path: /tmp/tempo/generator/wal
+    path: ${DATA_DIR}/tempo/generator/wal
     remote_write:
       - url: http://localhost:${VICTORIA_METRICS_PORT}/api/v1/write
         send_exemplars: true

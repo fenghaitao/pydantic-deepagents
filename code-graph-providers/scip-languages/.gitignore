@@ -1,0 +1,3 @@
+# Downloaded or built scip-clang binary — not committed to the repo.
+# Run setup-scip-clang.sh to populate this directory.
+bin/

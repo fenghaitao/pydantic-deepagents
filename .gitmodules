@@ -7,3 +7,6 @@
 [submodule "code-graph-providers/CodeGraphContext"]
 	path = code-graph-providers/CodeGraphContext
 	url = https://github.com/intel-sandbox/CodeGraphContext.git
+[submodule "code-graph-providers/scip-languages/scip-clang"]
+	path = code-graph-providers/scip-languages/scip-clang
+	url = https://github.com/intel-sandbox/scip-clang

@@ -23,7 +23,7 @@ GRAFANA_VERSION="${GRAFANA_VERSION:-12.0.0}"
 # ─── Dirs ─────────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN_DIR="$SCRIPT_DIR/bin"
-DATA_DIR="$SCRIPT_DIR/data"
+export DATA_DIR="$SCRIPT_DIR/data"
 LOG_DIR="$SCRIPT_DIR/logs"
 PID_DIR="$SCRIPT_DIR/pids"
 
@@ -321,7 +321,7 @@ cmd_install_and_start() {
 
   # Render tempo.yaml with actual port values (Tempo doesn't support env-var substitution).
   TEMPO_RENDERED="$PID_DIR/tempo-rendered.yaml"
-  envsubst '${TEMPO_HTTP_PORT} ${TEMPO_INTERNAL_GRPC_PORT} ${TEMPO_OTLP_GRPC_PORT} ${TEMPO_OTLP_HTTP_PORT} ${VICTORIA_METRICS_PORT}' \
+  envsubst '${TEMPO_HTTP_PORT} ${TEMPO_INTERNAL_GRPC_PORT} ${TEMPO_OTLP_GRPC_PORT} ${TEMPO_OTLP_HTTP_PORT} ${VICTORIA_METRICS_PORT} ${DATA_DIR}' \
     < "$SCRIPT_DIR/tempo.yaml" > "$TEMPO_RENDERED"
 
   start_service "tempo" \

@@ -146,6 +146,16 @@ potpie-ci-ensure-backend: ## CI: verify all potpie backend services healthy; sta
 potpie-ci-backup-logfire: ## CI: back up potpie logfire session traces
 	$(MAKE) -C code-graph-providers/potpie backup-logfire
 
+# ── scip-clang ────────────────────────────────────────────────────────────────
+
+.PHONY: setup-scip-clang
+setup-scip-clang: ## Download pre-built scip-clang binary (default, v0.3.3)
+	bash code-graph-providers/scip-languages/setup-scip-clang.sh
+
+.PHONY: setup-scip-clang-build
+setup-scip-clang-build: ## Build scip-clang from source (requires Bazel/npm)
+	bash code-graph-providers/scip-languages/setup-scip-clang.sh --build
+
 .PHONY: all
 all: typecheck security testcov ## Run code static type checks, security scan, and tests with coverage report generation
 

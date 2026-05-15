@@ -397,12 +397,13 @@ jobs:
           rm -rf scripts/vector/data scripts/vector/pids scripts/vector/logs
 
   # ---------------------------------------------------------------------------
-  # Gate: the committed potpie submodule SHA must equal the current HEAD of
-  # the remote main branch.  This enforces the policy that potpie changes are
-  # merged into potpie/main BEFORE this repo is updated to reference them.
+  # Gate: every submodule whose pointer was updated in this PR/push must be
+  # pinned to the current HEAD of its remote main branch.  This enforces the
+  # policy that submodule changes are merged upstream BEFORE this repo is
+  # updated to reference them.
   # ---------------------------------------------------------------------------
-  check-potpie-submodule-sha:
-    name: Check / Potpie submodule SHA matches remote main HEAD
+  check-submodule-shas:
+    name: Check / Submodule SHAs match remote main HEAD
     runs-on: self-hosted
     steps:
       - name: Checkout parent repo (no submodule clone needed)
@@ -412,7 +413,7 @@ jobs:
           token: ${{ secrets.GH_PAT }}
           fetch-depth: 0
 
-      - name: Validate potpie submodule SHA matches remote main HEAD
+      - name: Validate updated submodule SHAs match remote main HEAD
         run: |
           set -euo pipefail
 
@@ -426,46 +427,114 @@ jobs:
             BASE_SHA="${{ github.event.before }}"
           fi
 
-          # If the submodule path was not touched in this PR/push, skip the
-          # remote-tip check — there is nothing new to validate.
-          SUBMODULE_CHANGED=""
-          if [ -n "${BASE_SHA}" ] && \
-             [ "${BASE_SHA}" != "0000000000000000000000000000000000000000" ] && \
-             git cat-file -t "${BASE_SHA}" >/dev/null 2>&1; then
-            SUBMODULE_CHANGED=$(git diff --name-only "${BASE_SHA}" HEAD \
-              -- code-graph-providers/potpie || true)
-          fi
+          # Read submodule paths and URLs directly from .gitmodules so this
+          # step stays correct automatically when submodules are added/removed.
+          FAILED=0
 
-          if [ -z "${SUBMODULE_CHANGED}" ]; then
-            echo "Potpie submodule SHA was not changed in this PR/push — skipping SHA validation."
-            exit 0
-          fi
+          while IFS= read -r entry; do
+            NAME="${entry%%=*}"
+            SUBMODULE_PATH="${entry#*=}"
+            URL=$(git config -f .gitmodules "submodule.${NAME}.url")
 
-          echo "Potpie submodule was updated — validating SHA against remote main..."
+            # Check whether this submodule pointer was touched in this PR/push.
+            CHANGED=""
+            if [ -n "${BASE_SHA}" ] && \
+               [ "${BASE_SHA}" != "0000000000000000000000000000000000000000" ] && \
+               git cat-file -t "${BASE_SHA}" >/dev/null 2>&1; then
+              CHANGED=$(git diff --name-only "${BASE_SHA}" HEAD \
+                -- "${SUBMODULE_PATH}" || true)
+            fi
 
-          # Read the committed submodule SHA directly from the git tree object.
-          # This is cleaner than `git submodule status` which requires submodule
-          # state and emits status-prefix characters (+, -, U) that need stripping.
-          SUBMODULE_SHA=$(git ls-tree HEAD code-graph-providers/potpie | awk '{print $3}')
-          REMOTE_SHA=$(git ls-remote https://github.com/intel-sandbox/potpie \
-            refs/heads/main | awk '{print $1}')
+            if [ -z "${CHANGED}" ]; then
+              echo "SKIP  ${SUBMODULE_PATH} — pointer not changed in this PR/push."
+              continue
+            fi
 
-          echo "Committed submodule SHA : ${SUBMODULE_SHA}"
-          echo "Remote main HEAD        : ${REMOTE_SHA}"
+            echo "CHECK ${SUBMODULE_PATH} — validating SHA against remote main..."
 
-          if [ -z "${REMOTE_SHA}" ]; then
-            echo "ERROR: Could not retrieve the latest SHA from the remote repository."
-            exit 1
-          fi
+            SUBMODULE_SHA=$(git ls-tree HEAD "${SUBMODULE_PATH}" | awk '{print $3}')
+            REMOTE_SHA=$(git ls-remote "${URL}" refs/heads/main | awk '{print $1}')
 
-          if [ "${SUBMODULE_SHA}" != "${REMOTE_SHA}" ]; then
+            echo "  Committed SHA : ${SUBMODULE_SHA}"
+            echo "  Remote HEAD   : ${REMOTE_SHA}"
+
+            if [ -z "${REMOTE_SHA}" ]; then
+              echo "  ERROR: Could not retrieve the latest SHA from ${URL}."
+              FAILED=1
+              continue
+            fi
+
+            if [ "${SUBMODULE_SHA}" != "${REMOTE_SHA}" ]; then
+              echo ""
+              echo "  ERROR: ${SUBMODULE_PATH} is not pinned to the current HEAD of remote main."
+              echo "  Merge your changes into the submodule's main branch first, then update:"
+              echo "    git submodule update --remote ${SUBMODULE_PATH}"
+              echo "    git add ${SUBMODULE_PATH}"
+              echo "    git commit -m 'chore: update ${SUBMODULE_PATH} submodule to latest main'"
+              FAILED=1
+            else
+              echo "  OK"
+            fi
+          done < <(git config -f .gitmodules --get-regexp 'submodule\..*\.path' \
+                   | awk '{sub(/^submodule\./, "", $1); sub(/\.path$/, "", $1); print $1"="$2}')
+
+          if [ "${FAILED}" -ne 0 ]; then
             echo ""
-            echo "ERROR: The potpie submodule is not pinned to the current HEAD of remote main."
-            echo "Merge your potpie changes into potpie/main first, then update this repo:"
-            echo "  git submodule update --remote code-graph-providers/potpie"
-            echo "  git add code-graph-providers/potpie"
-            echo "  git commit -m 'chore: update potpie submodule to latest main'"
+            echo "One or more submodules are not pinned to the current HEAD of their remote main branch."
             exit 1
           fi
 
-          echo "OK: potpie submodule SHA matches the current HEAD of remote main."
+          echo "All updated submodules are pinned to the current HEAD of their remote main branch."
+
+  # ---------------------------------------------------------------------------
+  # scip-clang integration tests — indexes sample-cpp and simics-c++-device
+  # with scip-clang and verifies that File, Class, and Repository nodes are
+  # present in the resulting KuzuDB knowledge graphs.
+  # ---------------------------------------------------------------------------
+  scip-clang:
+    name: Integration tests / scip-clang
+    runs-on: self-hosted
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GH_PAT }}
+
+      - uses: ./.github/actions/setup-uv
+        with:
+          python-version: "3.13"
+          uv-sync-args: "--frozen --group dev --extra cgc"
+
+      - name: Download scip-clang binary
+        run: make setup-scip-clang
+
+      - name: Generate compile_commands.json for sample-cpp
+        working-directory: tests/integration-tests/sample-cpp
+        run: bash gen-compile-commands.sh
+
+      - name: Run scip-clang / sample-cpp integration test
+        run: |
+          mkdir -p test-results
+          uv run --no-sync pytest tests/integration-tests/test_scip_clang_sample_cpp.py \
+            -v -s \
+            --tb=short \
+            --junitxml=test-results/junit-int-scip-clang-sample-cpp.xml
+
+      - name: Set up Simics project scaffold
+        working-directory: tests/integration-tests/simics-c++-device
+        run: |
+          /nfs/site/disks/ssg_stc_simics_base-packages-release/simics-7/1000/7.79.0/bin/project-setup \
+            --ignore-existing-files .
+
+      - name: Generate compile_commands.json for simics-c++-device
+        working-directory: tests/integration-tests/simics-c++-device
+        run: bash gen-compile-commands.sh
+
+      - name: Run scip-clang / simics-c++-device integration test
+        run: |
+          mkdir -p test-results
+          uv run --no-sync pytest tests/integration-tests/test_scip_clang_simics_device.py \
+            -v -s \
+            --tb=short \
+            --junitxml=test-results/junit-int-scip-clang-simics-device.xml

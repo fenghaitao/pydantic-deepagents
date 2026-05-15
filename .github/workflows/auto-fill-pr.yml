@@ -4,6 +4,9 @@ on:
   pull_request:
     types: [opened, synchronize]
 
+env:
+  NODE_EXTRA_CA_CERTS: /etc/ssl/ca-bundle.pem
+
 jobs:
   fill-pr:
     name: Auto-fill PR description
