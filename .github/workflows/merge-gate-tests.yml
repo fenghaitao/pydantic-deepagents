@@ -180,6 +180,13 @@ jobs:
         # operate on the potpie submodule without changing the shell cwd.
         # cargo build --release can take 20+ min on a cold cache; 60 min is safe.
         timeout-minutes: 60
+        env:
+          # Enable Rust-level logging so dfa/dls emit progress to stderr.
+          # "info" gives stage markers without flooding the log; use "debug"
+          # for deeper tracing if "info" is still insufficient.
+          RUST_LOG: info
+          # Print a full backtrace on any Rust panic (e.g. DLS sub-job kills).
+          RUST_BACKTRACE: "1"
         run: |
           make -C code-graph-providers/potpie --no-print-directory export-ports > tmp-ports.env
           # shellcheck disable=SC1091  # file is generated at runtime

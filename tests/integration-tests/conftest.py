@@ -11,6 +11,7 @@ import os
 import re
 import subprocess
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -123,23 +124,47 @@ def _make_runner(cmd_prefix: list[str], default_cwd: str) -> object:
         def _stream() -> None:
             assert proc.stderr is not None
             for line in proc.stderr:
+                ts = datetime.now().strftime("%H:%M:%S")
                 line = line.rstrip("\n")
-                print(f"  [stderr] {line}", flush=True)
+                print(f"  [{ts}][stderr] {line}", flush=True)
                 stderr_lines.append(line)
 
+        def _heartbeat() -> None:
+            """Print a liveness ping every 30 s so CI logs never go silent."""
+            start = time.monotonic()
+            while proc.poll() is None:
+                time.sleep(30)
+                if proc.poll() is None:
+                    elapsed = int(time.monotonic() - start)
+                    ts = datetime.now().strftime("%H:%M:%S")
+                    print(
+                        f"  [{ts}][heartbeat] command still running "
+                        f"({elapsed}s elapsed) …",
+                        flush=True,
+                    )
+
         t = threading.Thread(target=_stream, daemon=True)
+        hb = threading.Thread(target=_heartbeat, daemon=True)
         t.start()
+        hb.start()
         try:
             stdout, _ = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
             proc.kill()
-            proc.communicate()
+            # Use wait() instead of a second communicate() call.
+            # communicate() opens a raw-FD reader on proc.stderr while _stream
+            # is still blocking on readline() on the same pipe; the two compete
+            # on the same OS buffer and can deadlock for tens of minutes.
+            # wait() just reaps the zombie without touching the pipes.
+            proc.wait()
             t.join(timeout=5)
+            hb.join(timeout=1)
             raise subprocess.TimeoutExpired(
                 cmd, timeout, output=None, stderr="\n".join(stderr_lines)
             )
         finally:
             t.join(timeout=5)
+            hb.join(timeout=1)
 
         stderr_text = "\n".join(stderr_lines)
         ts = datetime.now().strftime("%H:%M:%S")
