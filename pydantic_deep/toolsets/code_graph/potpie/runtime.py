@@ -317,6 +317,9 @@ class PotpieRuntime:
         else:
             raise ValueError("Either repo_path or repo_name must be provided.")
 
+        import sys
+        import time
+
         print(f"[kg] Starting parse: repo='{canonical_name}' branch='{branch}' commit='{effective_commit or 'unspecified'}'...")
         project_id = await rt.projects.register(
             repo_name=canonical_name,
@@ -326,13 +329,45 @@ class PotpieRuntime:
             commit_id=effective_commit,
         )
 
-        result = await rt.parsing.parse_project(
-            project_id=project_id,
-            user_id=self._user_id,
-            user_email=f"{self._user_id}@cli.local",
-            cleanup_graph=True,
-            commit_id=effective_commit,
-        )
+        parse_start = time.monotonic()
+
+        async def _status_heartbeat() -> None:
+            """Emit a stderr heartbeat every 30 s with the current project status.
+
+            Writes to stderr so it is always visible in CI log streams regardless
+            of how the loguru sink is configured (loguru writes to stdout).
+            """
+            interval = 30
+            while True:
+                await asyncio.sleep(interval)
+                elapsed = int(time.monotonic() - parse_start)
+                try:
+                    st = await rt.parsing.get_status(project_id)
+                    status_val = st.value if hasattr(st, "value") else str(st)
+                except Exception as exc:
+                    status_val = f"<error fetching status: {exc}>"
+                msg = (
+                    f"[kg][heartbeat] parse still running "
+                    f"({elapsed}s elapsed) project_id={project_id} status={status_val}\n"
+                )
+                sys.stderr.write(msg)
+                sys.stderr.flush()
+
+        heartbeat_task = asyncio.ensure_future(_status_heartbeat())
+        try:
+            result = await rt.parsing.parse_project(
+                project_id=project_id,
+                user_id=self._user_id,
+                user_email=f"{self._user_id}@cli.local",
+                cleanup_graph=True,
+                commit_id=effective_commit,
+            )
+        finally:
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except asyncio.CancelledError:
+                pass
 
         status = "READY" if result.success else "ERROR"
         return {

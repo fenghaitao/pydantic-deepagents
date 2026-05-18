@@ -120,14 +120,23 @@ def _make_runner(cmd_prefix: list[str], default_cwd: str) -> object:
             cwd=effective_cwd,
         )
         stderr_lines: list[str] = []
+        stdout_lines: list[str] = []
 
-        def _stream() -> None:
+        def _stream_stderr() -> None:
             assert proc.stderr is not None
             for line in proc.stderr:
                 ts = datetime.now().strftime("%H:%M:%S")
                 line = line.rstrip("\n")
                 print(f"  [{ts}][stderr] {line}", flush=True)
                 stderr_lines.append(line)
+
+        def _stream_stdout() -> None:
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                ts = datetime.now().strftime("%H:%M:%S")
+                line = line.rstrip("\n")
+                print(f"  [{ts}][stdout] {line}", flush=True)
+                stdout_lines.append(line)
 
         def _heartbeat() -> None:
             """Print a liveness ping every 30 s so CI logs never go silent."""
@@ -143,12 +152,14 @@ def _make_runner(cmd_prefix: list[str], default_cwd: str) -> object:
                         flush=True,
                     )
 
-        t = threading.Thread(target=_stream, daemon=True)
+        t = threading.Thread(target=_stream_stderr, daemon=True)
+        ts_out = threading.Thread(target=_stream_stdout, daemon=True)
         hb = threading.Thread(target=_heartbeat, daemon=True)
         t.start()
+        ts_out.start()
         hb.start()
         try:
-            stdout, _ = proc.communicate(timeout=timeout)
+            proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             proc.kill()
             # Use wait() instead of a second communicate() call.
@@ -158,21 +169,24 @@ def _make_runner(cmd_prefix: list[str], default_cwd: str) -> object:
             # wait() just reaps the zombie without touching the pipes.
             proc.wait()
             t.join(timeout=5)
+            ts_out.join(timeout=5)
             hb.join(timeout=1)
             raise subprocess.TimeoutExpired(
                 cmd, timeout, output=None, stderr="\n".join(stderr_lines)
             )
         finally:
             t.join(timeout=5)
+            ts_out.join(timeout=5)
             hb.join(timeout=1)
 
         stderr_text = "\n".join(stderr_lines)
+        stdout_text = "\n".join(stdout_lines)
         ts = datetime.now().strftime("%H:%M:%S")
         print(f"[{ts}] Command finished (exit={proc.returncode})", flush=True)
         result = subprocess.CompletedProcess(
             args=cmd,
             returncode=proc.returncode,
-            stdout=stdout,
+            stdout=stdout_text,
             stderr=stderr_text,
         )
         if check and result.returncode != 0:

@@ -45,6 +45,12 @@ def _run(
     if result.stderr:
         for line in result.stderr.strip().splitlines():
             print(f"  [stderr] {line}", flush=True)
+    # Always print stdout so CI logs show the agent's actual response.
+    if result.stdout:
+        preview = result.stdout[:3000]
+        suffix = f"\n  ...(truncated, {len(result.stdout)} chars total)" if len(result.stdout) > 3000 else ""
+        for line in (preview + suffix).splitlines():
+            print(f"  [stdout] {line}", flush=True)
     return result
 
 
@@ -172,7 +178,7 @@ EXPECTED_CGC_TOOLS = sorted([
 
 
 class TestPotpieMCP:
-    """Test potpie MCP server connection via SSE transport."""
+    """Test potpie MCP server connection via streamable-http transport."""
 
     @pytest.fixture(scope="class", autouse=True)
     def potpie_mcp_server(self):
@@ -228,6 +234,31 @@ class TestPotpieMCP:
             )
         print(f"  Potpie MCP server is accepting connections on port {port}", flush=True)
 
+        # Wait for the background server to finish initializing ToolService tools.
+        # The server log (stdout+stderr redirected) shows either
+        # "Registered N ToolService tools." or "Warning: ToolService init failed:".
+        _log = _REPO_ROOT / "code-graph-providers" / "potpie" / ".mcp_server.log"
+        _log_deadline = time.time() + 30
+        while time.time() < _log_deadline:
+            if _log.exists():
+                _log_text = _log.read_text()
+                if "Registered" in _log_text or "ToolService init failed" in _log_text:
+                    break
+            time.sleep(1)
+        if _log.exists():
+            _log_text = _log.read_text()
+            _match = re.search(r"Registered (\d+) ToolService tools", _log_text)
+            if _match:
+                _n = int(_match.group(1))
+                print(f"  potpie-mcp registered {_n} ToolService tools.", flush=True)
+                if _n == 0:
+                    print("  WARNING: potpie-mcp has 0 tools — ToolService may have failed.", flush=True)
+            elif "ToolService init failed" in _log_text:
+                print("  WARNING: ToolService init failed — agent will have no potpie tools.", flush=True)
+            # Show the last few lines of the log for context.
+            for _line in _log_text.splitlines()[-10:]:
+                print(f"  [mcp-server-log] {_line}", flush=True)
+
         # Set kg.provider to potpie
         _run("config", "set", "kg.provider", "potpie")
 
@@ -247,7 +278,14 @@ class TestPotpieMCP:
     def test_potpie_mcp_tools(self, potpie_mcp_server: str):
         """Verify all expected potpie-prefixed tools are available via MCP."""
         result = _run(
-            "run", "list all tools with potpie prefix", "--mcp", "--no-browser",
+            "run",
+            # Ask the agent to list tools by their exact full name, including the
+            # potpie_ prefix, so the regex extractor can find them in stdout.
+            "List every tool available to you whose name begins with 'potpie_'. "
+            "Output each tool's complete name exactly as defined "
+            "(for example: potpie_verify_connections, potpie_get_code_from_node_id). "
+            "Do not omit the potpie_ prefix.",
+            "--mcp", "--no-browser",
             env={"POTPIE_MCP_PORT": potpie_mcp_server},
             timeout=300,
         )
@@ -263,6 +301,8 @@ class TestPotpieMCP:
             + "\n".join(f"  + {t}" for t in sorted(matched))
             + f"\n\nAll found ({len(found_tools)}):\n"
             + "\n".join(f"  {t}" for t in found_tools)
+            + f"\n\nFull stdout ({len(result.stdout)} chars):\n"
+            + result.stdout[:5000]
         )
 
 

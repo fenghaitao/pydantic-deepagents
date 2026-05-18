@@ -294,6 +294,63 @@ class TestPotpieRuntimeParsing:
         call_kwargs = mock_rt.projects.register.call_args[1]
         assert call_kwargs["branch_name"] == "main"
 
+    async def test_parse_heartbeat_fires(self, capsys) -> None:
+        """_status_heartbeat fires at least once and writes elapsed+status to stderr."""
+        import asyncio as _asyncio
+
+        b = PotpieRuntime()
+        mock_rt = _make_runtime()
+        _orig_sleep = _asyncio.sleep
+
+        async def instant_sleep(delay: float) -> None:
+            """Replace any asyncio.sleep with a single-iteration yield."""
+            await _orig_sleep(0)
+
+        async def slow_parse(*_, **__) -> MagicMock:
+            """Yield enough times for the heartbeat to complete one iteration."""
+            for _ in range(4):
+                await instant_sleep(0)
+            return MagicMock(success=True, error_message=None)
+
+        mock_rt.parsing.parse_project = slow_parse
+
+        with patch.dict("sys.modules", _potpie_modules(mock_rt)):
+            with patch.object(_asyncio, "sleep", new=instant_sleep):
+                result = await b.parse("/repo", "myrepo", "main")
+
+        assert result["status"] == "READY"
+        captured = capsys.readouterr()
+        assert "[kg][heartbeat]" in captured.err
+        assert "proj-new" in captured.err
+
+    async def test_parse_heartbeat_get_status_error(self, capsys) -> None:
+        """_status_heartbeat handles get_status exceptions and writes the error to stderr."""
+        import asyncio as _asyncio
+
+        b = PotpieRuntime()
+        mock_rt = _make_runtime()
+        mock_rt.parsing.get_status = AsyncMock(side_effect=RuntimeError("db error"))
+        _orig_sleep = _asyncio.sleep
+
+        async def instant_sleep(delay: float) -> None:
+            await _orig_sleep(0)
+
+        async def slow_parse(*_, **__) -> MagicMock:
+            for _ in range(4):
+                await instant_sleep(0)
+            return MagicMock(success=True, error_message=None)
+
+        mock_rt.parsing.parse_project = slow_parse
+
+        with patch.dict("sys.modules", _potpie_modules(mock_rt)):
+            with patch.object(_asyncio, "sleep", new=instant_sleep):
+                result = await b.parse("/repo", "myrepo", "main")
+
+        assert result["status"] == "READY"
+        captured = capsys.readouterr()
+        assert "error fetching status" in captured.err
+        assert "db error" in captured.err
+
 
 class TestPotpieRuntimeQuery:
     async def test_nl_query(self) -> None:

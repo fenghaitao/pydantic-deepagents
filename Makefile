@@ -139,10 +139,10 @@ potpie-stop-force: ## Force-stop the potpie backend
 	$(MAKE) -C code-graph-providers/potpie stop-force
 
 .PHONY: potpie-mcp-start
-potpie-mcp-start: ## Start the potpie MCP server (SSE) on a dynamically allocated port
+potpie-mcp-start: ## Start the potpie MCP server (streamable-http) on a dynamically allocated port
 	$(eval POTPIE_MCP_PORT := $(shell uv run python -c "from ports_allocator import PortManager; print(PortManager().allocate('potpie.mcp'))"))
 	@echo "Starting potpie-mcp on port $(POTPIE_MCP_PORT)..."
-	uv run potpie-mcp start -b -t sse -p $(POTPIE_MCP_PORT)
+	uv run potpie-mcp start -b -t streamable-http -p $(POTPIE_MCP_PORT)
 
 .PHONY: potpie-mcp-stop
 potpie-mcp-stop: ## Stop the potpie MCP server and release the allocated port

@@ -167,8 +167,8 @@ async def execute_headless(  # noqa: C901
         agent_kwargs["simics_dev_capability"] = simics_cap
 
     # Auto-connect to code-graph MCP server when --mcp is passed.
-    # The provider is determined by kg.provider in config: "potpie" (SSE) or "cgc" (stdio).
-    # Both use the toolset API (MCPServerSSE / MCPServerStdio) with tool_prefix and
+    # The provider is determined by kg.provider in config: "potpie" (streamable-http) or "cgc" (stdio).
+    # Both use the toolset API (MCPServerStreamableHTTP / MCPServerStdio) with tool_prefix and
     # process_tool_call for project_id injection.
     import asyncio as _asyncio
     import os as _os
@@ -205,7 +205,10 @@ async def execute_headless(  # noqa: C901
                 from pydantic_ai.capabilities import MCP
                 from pydantic_deep.capabilities.code_graph_mcp import CodeGraphMCPCapability
 
-                _mcp_url = f"http://{_potpie_mcp_host}:{_potpie_mcp_port}/sse"
+                # Use streamable-http transport (/mcp) — more reliable than SSE in CI/server envs.
+                # Override path via POTPIE_MCP_PATH env var if you're running an older SSE server.
+                _potpie_mcp_path = _os.environ.get("POTPIE_MCP_PATH", "/mcp")
+                _mcp_url = f"http://{_potpie_mcp_host}:{_potpie_mcp_port}{_potpie_mcp_path}"
                 _extra = list(agent_kwargs.get("extra_capabilities") or [])
                 _extra.append(CodeGraphMCPCapability(wrapped=MCP(url=_mcp_url), prefix="potpie", project_id=_pid))
                 agent_kwargs["extra_capabilities"] = _extra
@@ -218,7 +221,7 @@ async def execute_headless(  # noqa: C901
                 print(
                     f"Warning: --mcp: could not connect to Potpie MCP server at "
                     f"{_potpie_mcp_host}:{_potpie_mcp_port}. "
-                    "Start it with: potpie-mcp start --transport sse --background",
+                    "Start it with: potpie-mcp start --transport streamable-http --background",
                     file=sys.stderr,
                 )
             except Exception as _mcp_exc:
