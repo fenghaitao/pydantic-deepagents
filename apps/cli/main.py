@@ -599,6 +599,10 @@ def run(
         str | None,
         typer.Option("--user-id", help="Potpie user ID"),
     ] = None,
+    enable_mcp: Annotated[
+        bool,
+        typer.Option("--mcp/--no-mcp", help="Connect to code-graph MCP server (provider from kg.provider config)"),
+    ] = False,
 ) -> None:
     """Run a task non-interactively (headless mode).
 
@@ -671,6 +675,7 @@ def run(
             code_graph=code_graph,
             project_id=project_id,
             user_id=user_id,
+            enable_mcp=enable_mcp,
         )
     )
     raise typer.Exit(result)

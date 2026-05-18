@@ -130,7 +130,7 @@ jobs:
       - name: Prepare pydantic-deepagents venv (for integration tests)
         run: |
           set -euo pipefail
-          uv sync --frozen --python "${UV_PYTHON}" --all-groups
+          uv sync --frozen --python "${UV_PYTHON}" --all-groups --extra potpie --extra cgc
 
       - name: Run tests/unit-tests
         working-directory: code-graph-providers/potpie
@@ -214,6 +214,15 @@ jobs:
             -v -s \
             --tb=short \
             --junitxml=test-results/junit-int-scip-python.xml
+
+      - name: Run MCP integration tests
+        timeout-minutes: 20
+        run: |
+          mkdir -p test-results
+          uv run --no-sync pytest tests/integration-tests/test_mcp.py \
+            -v -s \
+            --tb=short \
+            --junitxml=test-results/junit-int-mcp.xml
 
       - name: Check phoenix health
         run: bash scripts/phoenix.sh health 10

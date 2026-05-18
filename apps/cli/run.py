@@ -44,6 +44,7 @@ async def execute_headless(  # noqa: C901
     code_graph: bool | None = None,
     project_id: str | None = None,
     user_id: str | None = None,
+    enable_mcp: bool = False,
 ) -> int:
     """Execute a task in headless mode and print the result.
 
@@ -156,14 +157,118 @@ async def execute_headless(  # noqa: C901
                 print(
                     "[yellow]Warning: --code-graph requested but no Simics device project found. "
                     "Pass --project-id <id> or set a default with: "
-                    "pydantic-deep config set simics.project_id <id>[/yellow]",
+                    "pydantic-deep config set kg.project_id <id>[/yellow]",
                     file=__import__("sys").stderr,
                 )
         except Exception as e:
             print(f"[yellow]Warning: could not load Potpie KG tools: {e}[/yellow]")
 
         agent_kwargs["kg_capability"] = cap
-        agent_kwargs["simics_capability"] = simics_cap
+        agent_kwargs["simics_dev_capability"] = simics_cap
+
+    # Auto-connect to code-graph MCP server when --mcp is passed.
+    # The provider is determined by kg.provider in config: "potpie" (SSE) or "cgc" (stdio).
+    # Both use the toolset API (MCPServerSSE / MCPServerStdio) with tool_prefix and
+    # process_tool_call for project_id injection.
+    import asyncio as _asyncio
+    import os as _os
+
+    if enable_mcp:
+        # Resolve provider from config
+        _kg_provider = "potpie"
+        try:
+            from apps.cli.config import load_config as _load_config
+            _cfg = _load_config(agent_kwargs.get("config_path"))
+            _kg_provider = _cfg.kg.provider or "potpie"
+        except Exception:
+            pass
+
+        # Resolve project_id: CLI --project-id > env var > config file kg.project_id
+        _pid = project_id or _os.environ.get("POTPIE_PROJECT_ID")
+        if not _pid:
+            try:
+                _pid = _cfg.kg.project_id or None  # type: ignore[possibly-undefined]
+            except Exception:
+                pass
+
+        if _kg_provider == "potpie":
+            _potpie_mcp_port = _os.environ.get("POTPIE_MCP_PORT", "13100")
+            _potpie_mcp_host = _os.environ.get("POTPIE_MCP_HOST", "127.0.0.1")
+            try:
+                _reader, _writer = await _asyncio.wait_for(
+                    _asyncio.open_connection(_potpie_mcp_host, int(_potpie_mcp_port)),
+                    timeout=1.0,
+                )
+                _writer.close()
+                await _writer.wait_closed()
+
+                from pydantic_ai.capabilities import MCP
+                from pydantic_deep.capabilities.code_graph_mcp import CodeGraphMCPCapability
+
+                _mcp_url = f"http://{_potpie_mcp_host}:{_potpie_mcp_port}/sse"
+                _extra = list(agent_kwargs.get("extra_capabilities") or [])
+                _extra.append(CodeGraphMCPCapability(wrapped=MCP(url=_mcp_url), prefix="potpie", project_id=_pid))
+                agent_kwargs["extra_capabilities"] = _extra
+                print(
+                    f"Potpie MCP connected: {_mcp_url}"
+                    + (f" (project_id={_pid})" if _pid else ""),
+                    file=sys.stderr,
+                )
+            except (_asyncio.TimeoutError, OSError):
+                print(
+                    f"Warning: --mcp: could not connect to Potpie MCP server at "
+                    f"{_potpie_mcp_host}:{_potpie_mcp_port}. "
+                    "Start it with: potpie-mcp start --transport sse --background",
+                    file=sys.stderr,
+                )
+            except Exception as _mcp_exc:
+                print(f"Warning: --mcp: unexpected error: {_mcp_exc}", file=sys.stderr)
+
+        elif _kg_provider == "cgc":
+            try:
+                import shutil
+                from pathlib import Path as _Path
+
+                from pydantic_ai.capabilities import MCP
+                from pydantic_ai.mcp import MCPServerStdio
+                from pydantic_deep.capabilities.code_graph_mcp import CodeGraphMCPCapability
+
+                # Resolve cgc command: prefer installed 'cgc' on PATH, otherwise
+                # invoke via the in-tree source with sys.executable + PYTHONPATH.
+                _cgc_bin = shutil.which("cgc")
+                if _cgc_bin:
+                    _cgc_cmd = _cgc_bin
+                    _cgc_args = ["mcp", "start"]
+                    # MCP SDK's default env only passes a small allowlist (HOME, PATH, etc.)
+                    # so we must explicitly pass the full environment for CGC_RUNTIME_DB_TYPE etc.
+                    _cgc_env = _os.environ.copy()
+                else:
+                    _cgc_src = str(
+                        _Path(__file__).resolve().parent.parent.parent
+                        / "code-graph-providers" / "CodeGraphContext" / "src"
+                    )
+                    _cgc_cmd = sys.executable
+                    _cgc_args = ["-m", "codegraphcontext", "mcp", "start"]
+                    _cgc_env = {**_os.environ, "PYTHONPATH": _cgc_src}
+
+                _cgc_stdio = MCPServerStdio(_cgc_cmd, _cgc_args, env=_cgc_env, timeout=30)
+                _extra = list(agent_kwargs.get("extra_capabilities") or [])
+                _extra.append(CodeGraphMCPCapability(
+                    wrapped=MCP(url="stdio://cgc", local=_cgc_stdio),
+                    prefix="cgc",
+                    project_id=_pid,
+                ))
+                agent_kwargs["extra_capabilities"] = _extra
+                print("CGC MCP server configured (stdio: cgc mcp start)", file=sys.stderr)
+            except Exception as _mcp_exc:
+                print(f"Warning: --mcp: unexpected error: {_mcp_exc}", file=sys.stderr)
+
+        else:
+            print(
+                f"Warning: --mcp: unsupported kg.provider '{_kg_provider}'. "
+                "Supported providers: potpie, cgc",
+                file=sys.stderr,
+            )
 
     agent, deps = create_cli_agent(**agent_kwargs)
 

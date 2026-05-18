@@ -10,6 +10,7 @@ from pydantic_deep.capabilities.context import ContextFilesCapability
 from pydantic_deep.capabilities.hooks import HooksCapability
 from pydantic_deep.capabilities.memory import MemoryCapability
 from pydantic_deep.capabilities.plan import PlanCapability
+from pydantic_deep.capabilities.code_graph_mcp import CodeGraphMCPCapability
 from pydantic_deep.capabilities.skills import SkillsCapability
 from pydantic_deep.capabilities.stuck_loop import StuckLoopDetection, StuckLoopError
 from pydantic_deep.capabilities.teams import TeamCapability
@@ -17,6 +18,7 @@ from pydantic_deep.capabilities.teams import TeamCapability
 __all__ = [
     "BrowserCapability",
     "PotpieCapability",
+    "CodeGraphMCPCapability",
     "ContextFilesCapability",
     "HooksCapability",
     "MemoryCapability",

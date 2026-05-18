@@ -104,6 +104,7 @@ async def run_non_interactive(  # noqa: C901
     lean: bool = False,
     project_id: str | None = None,
     user_id: str = "defaultuser",
+    mcp_urls: list[str] | None = None,
 ) -> int:
     """Run a single task non-interactively and exit.
 
@@ -205,6 +206,7 @@ async def run_non_interactive(  # noqa: C901
             session_id=session_id,
             kg_capability=cap,
             simics_dev_capability=simics_cap,
+            extra_capabilities=_build_mcp_capabilities(mcp_urls or [], err_console),
         )
 
         show_tools = not effective_quiet or verbose
@@ -264,6 +266,23 @@ async def run_non_interactive(  # noqa: C901
             end_session_span(session_id)
         except Exception:
             pass
+
+
+def _build_mcp_capabilities(urls: list[str], console: Console) -> list[Any]:
+    """Build MCP capability objects from a list of server URLs.
+
+    Each URL is connected as an MCP server (SSE or Streamable HTTP depending
+    on the server). Connection failures at agent startup are non-fatal —
+    the server is skipped with a warning.
+    """
+    if not urls:
+        return []
+    try:
+        from pydantic_ai.capabilities import MCP
+    except ImportError:
+        console.print("[yellow]Warning: pydantic-ai MCP support not available[/yellow]")
+        return []
+    return [MCP(url=url) for url in urls]
 
 
 def _write_output(console: Console, text: str, fmt: str) -> None:
