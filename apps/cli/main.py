@@ -1709,8 +1709,8 @@ spec_app = typer.Typer(
 )
 app.add_typer(spec_app)
 
-def _collect_spec_texts(path: str, extensions: list[str] | None) -> list[str]:
-    """Read text files under *path* and return their contents as a list.
+def _collect_spec_texts(path: str, extensions: list[str] | None) -> tuple[list[str], list[str]]:
+    """Read text files under *path* and return (texts, file_paths).
 
     If *extensions* is provided only files whose suffix (without the leading
     dot, e.g. ``"md"``) is in the set are included.  Both files and directories
@@ -1724,6 +1724,7 @@ def _collect_spec_texts(path: str, extensions: list[str] | None) -> list[str]:
     root = _Path(path)
     candidates = [root] if root.is_file() else list(root.rglob("*"))
     texts: list[str] = []
+    file_paths: list[str] = []
     for fp in candidates:
         if not fp.is_file():
             continue
@@ -1731,9 +1732,10 @@ def _collect_spec_texts(path: str, extensions: list[str] | None) -> list[str]:
             continue
         try:
             texts.append(fp.read_text(encoding="utf-8", errors="ignore"))
+            file_paths.append(str(fp))
         except OSError:
             pass
-    return texts
+    return texts, file_paths
 
 
 @spec_app.command("index")
@@ -1855,8 +1857,11 @@ def spec_index(
         texts: list[str] = []
         file_paths: list[str] = []
         for p in paths:
-            texts.extend(_collect_spec_texts(p, extensions))
-            file_paths.append(p) # TODO: let _collect_spec_texts also return the paths of the files it read, and include that in the console output here
+            p_texts, p_file_paths = _collect_spec_texts(p, extensions)
+            texts.extend(p_texts)
+            file_paths.extend(p_file_paths)
+        for fp in file_paths:
+            console.print(f"[dim]  {fp}[/dim]")
         if not texts:
             console.print(
                 f"[red]No readable files found under {paths}"
@@ -1882,6 +1887,16 @@ def spec_index(
         )
         if workspace:
             console.print(f"[dim]Workspace: {workspace}[/dim]")
+
+        # Purge stale query-cache entries so subsequent queries reflect the new index.
+        with console.status("[dim]Purging stale query cache…[/dim]"):
+            purged = await runtime.spec_purge_query_cache(
+                project_id=effective_project_id,
+                user_id=user_id,
+            )
+        if purged:
+            console.print(f"[dim]Purged {purged} stale query-cache entry(ies).[/dim]")
+
         console.print(
             "[dim]Set as default: pydantic-deep config set"
             f" potpie_project_id {effective_project_id}[/dim]"
@@ -1982,6 +1997,204 @@ def spec_query(
                 summarize=summarize,
             )
         console.print(answer)
+
+    asyncio.run(_run())
+
+
+@spec_app.command("list")
+def spec_list(
+    project_id: Annotated[
+        str | None,
+        typer.Option("--project-id", "-p", help="Project ID to list documents for."),
+    ] = None,
+    project_name: Annotated[
+        str | None,
+        typer.Option(
+            "--project-name",
+            "-n",
+            help="Project name — looks up the project by name.",
+        ),
+    ] = None,
+    user_id: Annotated[
+        str,
+        typer.Option("--user-id", help="User ID for the LightRAG workspace (default: defaultuser)"),
+    ] = "defaultuser",
+    output_json: Annotated[bool, typer.Option("--json", help="Output raw JSON")] = False,
+    local: Annotated[
+        bool,
+        typer.Option("--local", help="Use direct PotpieRuntime instead of REST API (required)"),
+    ] = False,
+) -> None:
+    """List all documents indexed in the LightRAG workspace for a project."""
+    if not project_name and not project_id:
+        typer.echo("Error: specify at least one of --project-name or --project-id.", err=True)
+        raise typer.Exit(1)
+
+    console = Console()
+
+    async def _run() -> None:
+        runtime = _make_code_graph_runtime()
+
+        effective_project_id = project_id
+        if project_name:
+            all_projects = await runtime.list_projects()
+            existing = next(
+                (p for p in all_projects if p.get("repo_name", p.get("project_name", "")) == project_name),
+                None,
+            )
+            if existing is None:
+                console.print(f"[red]Project '{project_name}' not found.[/red]")
+                raise typer.Exit(1)
+            found_id = existing.get("id", "")
+            if project_id and project_id != found_id:
+                console.print(
+                    f"[red]Error: --project-id '{project_id}' does not match the project "
+                    f"for '{project_name}' (ID: '{found_id}'). Remove one of the flags.[/red]"
+                )
+                raise typer.Exit(1)
+            effective_project_id = found_id
+
+        docs = await runtime.spec_list_docs(
+            project_id=effective_project_id,
+            user_id=user_id,
+        )
+
+        if output_json:
+            import json
+            console.print(json.dumps(docs, indent=2))
+            return
+
+        if not docs:
+            console.print("[dim]No indexed documents found.[/dim]")
+            return
+
+        from rich.table import Table
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("#", style="dim", width=4)
+        table.add_column("Doc ID", style="dim")
+        table.add_column("File Path")
+        table.add_column("Status")
+        table.add_column("Chunks", justify="right")
+        table.add_column("Size", justify="right")
+        table.add_column("Indexed At")
+        for i, doc in enumerate(docs, 1):
+            table.add_row(
+                str(i),
+                doc["doc_id"],
+                doc["file_path"] or "",
+                doc["status"],
+                str(doc["chunks_count"]),
+                str(doc["content_length"]),
+                doc["created_at"][:19] if doc["created_at"] else "",
+            )
+        console.print(table)
+        console.print(f"[dim]Total: {len(docs)} document(s)[/dim]")
+
+    asyncio.run(_run())
+
+
+@spec_app.command("del")
+def spec_del(
+    doc_ids: Annotated[
+        list[str],
+        typer.Argument(help="Document ID(s) to delete (e.g. doc-2fe649…). Repeat for multiple."),
+    ],
+    project_id: Annotated[
+        str | None,
+        typer.Option("--project-id", "-p", help="Project ID the document belongs to."),
+    ] = None,
+    project_name: Annotated[
+        str | None,
+        typer.Option(
+            "--project-name",
+            "-n",
+            help="Project name — looks up the project by name.",
+        ),
+    ] = None,
+    user_id: Annotated[
+        str,
+        typer.Option("--user-id", help="User ID for the LightRAG workspace (default: defaultuser)"),
+    ] = "defaultuser",
+    delete_llm_cache: Annotated[
+        bool,
+        typer.Option("--delete-cache", help="Also delete cached LLM extraction results for the document."),
+    ] = False,
+    force: Annotated[bool, typer.Option("--force", "-f", help="Skip confirmation prompt.")] = False,
+    local: Annotated[
+        bool,
+        typer.Option("--local", help="Use direct PotpieRuntime instead of REST API (required)"),
+    ] = False,
+) -> None:
+    """Delete document(s) and all their entities/edges from the LightRAG index.
+
+    Use `pydantic-deep spec list` to find document IDs.\n
+    Example:\n
+        pydantic-deep spec del doc-2fe649… --project-name my-spec --local
+    """
+    if not project_name and not project_id:
+        typer.echo("Error: specify at least one of --project-name or --project-id.", err=True)
+        raise typer.Exit(1)
+
+    console = Console()
+
+    async def _run() -> None:
+        runtime = _make_code_graph_runtime()
+
+        effective_project_id = project_id
+        if project_name:
+            all_projects = await runtime.list_projects()
+            existing = next(
+                (p for p in all_projects if p.get("repo_name", p.get("project_name", "")) == project_name),
+                None,
+            )
+            if existing is None:
+                console.print(f"[red]Project '{project_name}' not found.[/red]")
+                raise typer.Exit(1)
+            found_id = existing.get("id", "")
+            if project_id and project_id != found_id:
+                console.print(
+                    f"[red]Error: --project-id '{project_id}' does not match the project "
+                    f"for '{project_name}' (ID: '{found_id}'). Remove one of the flags.[/red]"
+                )
+                raise typer.Exit(1)
+            effective_project_id = found_id
+
+        if not force:
+            confirm = typer.confirm(
+                f"Delete {len(doc_ids)} document(s) from project '{effective_project_id}'?"
+            )
+            if not confirm:
+                console.print("[dim]Aborted.[/dim]")
+                raise typer.Exit(0)
+
+        for doc_id in doc_ids:
+            with console.status(f"[bold blue]Deleting {doc_id}…[/bold blue]"):
+                result = await runtime.spec_delete_doc(
+                    project_id=effective_project_id,
+                    user_id=user_id,
+                    doc_id=doc_id,
+                    delete_llm_cache=delete_llm_cache,
+                )
+            status = result["status"]
+            msg = result.get("message", "")
+            file_path = result.get("file_path") or ""
+            label = f"{doc_id}" + (f" ({file_path})" if file_path else "")
+            if status == "success":
+                console.print(f"[green]Deleted:[/green] {label}")
+            elif status == "not_found":
+                console.print(f"[yellow]Not found:[/yellow] {label} — {msg}")
+            else:
+                console.print(f"[red]Failed:[/red] {label} — {msg}")
+
+        # After all deletions, purge stale query-cache entries so subsequent
+        # spec query calls hit the updated knowledge graph.
+        with console.status("[dim]Purging stale query cache…[/dim]"):
+            purged = await runtime.spec_purge_query_cache(
+                project_id=effective_project_id,
+                user_id=user_id,
+            )
+        if purged:
+            console.print(f"[dim]Purged {purged} stale query-cache entry(ies).[/dim]")
 
     asyncio.run(_run())
 

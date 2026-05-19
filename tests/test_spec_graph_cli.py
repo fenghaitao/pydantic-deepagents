@@ -18,6 +18,9 @@ def _make_runtime(
     register_result: dict | None = None,
     insert_result: dict | None = None,
     query_result: str = "the answer",
+    list_docs_result: list[dict] | None = None,
+    delete_doc_result: dict | None = None,
+    purge_query_cache_result: int = 0,
 ) -> MagicMock:
     rt = MagicMock()
     rt.list_projects = AsyncMock(return_value=projects or [])
@@ -27,6 +30,12 @@ def _make_runtime(
         or {"inserted": 1, "workspace": "defaultuser__new-id"}
     )
     rt.spec_query = AsyncMock(return_value=query_result)
+    rt.spec_list_docs = AsyncMock(return_value=list_docs_result if list_docs_result is not None else [])
+    rt.spec_delete_doc = AsyncMock(
+        return_value=delete_doc_result
+        or {"status": "success", "doc_id": "doc-abc", "message": "Deleted.", "status_code": 200, "file_path": "foo.md"}
+    )
+    rt.spec_purge_query_cache = AsyncMock(return_value=purge_query_cache_result)
     return rt
 
 
@@ -578,3 +587,862 @@ class TestPotpieRuntimeSpecLightRAG:
         kwargs = mock_svc.diff.await_args.kwargs
         assert kwargs["mode"] == "hybrid"
         assert kwargs["summarize"] is False
+
+
+# ---------------------------------------------------------------------------
+# spec index — query-cache purge after insertion
+# ---------------------------------------------------------------------------
+
+
+class TestSpecIndexPurgesQueryCache:
+    def test_purges_query_cache_after_insert(self, tmp_path: Path) -> None:
+        spec_file = tmp_path / "spec.md"
+        spec_file.write_text("content\n")
+
+        rt = _make_runtime(
+            projects=[{"id": "proj-1", "repo_name": "myproj"}],
+            insert_result={"inserted": 1, "workspace": "defaultuser__proj-1"},
+            purge_query_cache_result=0,
+        )
+
+        with _patch_runtime(rt):
+            result = runner.invoke(
+                app,
+                ["spec", "index", "--path", str(spec_file), "--project-name", "myproj"],
+            )
+
+        assert result.exit_code == 0, result.output
+        rt.spec_purge_query_cache.assert_awaited_once_with(
+            project_id="proj-1",
+            user_id="defaultuser",
+        )
+
+    def test_prints_purge_count_when_nonzero(self, tmp_path: Path) -> None:
+        spec_file = tmp_path / "spec.md"
+        spec_file.write_text("content\n")
+
+        rt = _make_runtime(
+            projects=[{"id": "proj-1", "repo_name": "myproj"}],
+            insert_result={"inserted": 1, "workspace": "defaultuser__proj-1"},
+            purge_query_cache_result=5,
+        )
+
+        with _patch_runtime(rt):
+            result = runner.invoke(
+                app,
+                ["spec", "index", "--path", str(spec_file), "--project-name", "myproj"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "5" in result.output
+        assert "stale query-cache" in result.output.lower() or "purged" in result.output.lower()
+
+    def test_silent_when_nothing_purged(self, tmp_path: Path) -> None:
+        spec_file = tmp_path / "spec.md"
+        spec_file.write_text("content\n")
+
+        rt = _make_runtime(
+            projects=[{"id": "proj-1", "repo_name": "myproj"}],
+            insert_result={"inserted": 1, "workspace": "defaultuser__proj-1"},
+            purge_query_cache_result=0,
+        )
+
+        with _patch_runtime(rt):
+            result = runner.invoke(
+                app,
+                ["spec", "index", "--path", str(spec_file), "--project-name", "myproj"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Purged 0" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# spec list — validation, lookup, and output
+# ---------------------------------------------------------------------------
+
+
+_SAMPLE_DOC = {
+    "doc_id": "doc-2fe649",
+    "file_path": "/specs/requirements.md",
+    "status": "indexed",
+    "chunks_count": 4,
+    "content_length": 1024,
+    "created_at": "2024-01-01T12:00:00.000Z",
+    "updated_at": "2024-01-01T12:00:00.000Z",
+}
+
+
+class TestSpecListValidation:
+    def test_requires_project_name_or_id(self) -> None:
+        result = runner.invoke(app, ["spec", "list"])
+        assert result.exit_code == 1
+        assert "specify at least one" in (result.output + (result.stderr or "")).lower()
+
+    def test_help_lists_list_command(self) -> None:
+        result = runner.invoke(app, ["spec", "--help"])
+        assert result.exit_code == 0
+        assert "list" in result.output
+
+
+class TestSpecListByName:
+    def test_lists_docs_for_existing_project(self) -> None:
+        rt = _make_runtime(
+            projects=[{"id": "proj-1", "repo_name": "myproj"}],
+            list_docs_result=[_SAMPLE_DOC],
+        )
+
+        with _patch_runtime(rt):
+            result = runner.invoke(
+                app,
+                ["spec", "list", "--project-name", "myproj"],
+            )
+
+        assert result.exit_code == 0, result.output
+        rt.spec_list_docs.assert_awaited_once_with(
+            project_id="proj-1",
+            user_id="defaultuser",
+        )
+        assert "doc-2fe649" in result.output
+        assert "/specs/" in result.output  # file path column (may be truncated by Rich)
+        assert "indexed" in result.output
+
+    def test_shows_empty_message_when_no_docs(self) -> None:
+        rt = _make_runtime(
+            projects=[{"id": "proj-1", "repo_name": "myproj"}],
+            list_docs_result=[],
+        )
+
+        with _patch_runtime(rt):
+            result = runner.invoke(
+                app,
+                ["spec", "list", "--project-name", "myproj"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "No indexed documents" in result.output
+
+    def test_unknown_name_errors(self) -> None:
+        rt = _make_runtime(projects=[{"id": "x", "repo_name": "other"}])
+
+        with _patch_runtime(rt):
+            result = runner.invoke(
+                app,
+                ["spec", "list", "--project-name", "missing"],
+            )
+
+        assert result.exit_code == 1
+        assert "not found" in result.output
+        rt.spec_list_docs.assert_not_awaited()
+
+    def test_name_id_mismatch_errors(self) -> None:
+        rt = _make_runtime(projects=[{"id": "real-id", "repo_name": "myproj"}])
+
+        with _patch_runtime(rt):
+            result = runner.invoke(
+                app,
+                ["spec", "list", "--project-name", "myproj", "--project-id", "wrong-id"],
+            )
+
+        assert result.exit_code == 1
+        assert "does not match" in result.output
+        rt.spec_list_docs.assert_not_awaited()
+
+
+class TestSpecListById:
+    def test_lists_by_id_skips_lookup(self) -> None:
+        rt = _make_runtime(list_docs_result=[_SAMPLE_DOC])
+
+        with _patch_runtime(rt):
+            result = runner.invoke(
+                app,
+                ["spec", "list", "--project-id", "proj-9"],
+            )
+
+        assert result.exit_code == 0, result.output
+        rt.list_projects.assert_not_awaited()
+        rt.spec_list_docs.assert_awaited_once_with(
+            project_id="proj-9",
+            user_id="defaultuser",
+        )
+
+    def test_shows_total_count(self) -> None:
+        rt = _make_runtime(list_docs_result=[_SAMPLE_DOC, {**_SAMPLE_DOC, "doc_id": "doc-xyz"}])
+
+        with _patch_runtime(rt):
+            result = runner.invoke(
+                app,
+                ["spec", "list", "--project-id", "pid"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "2 document" in result.output
+
+
+class TestSpecListOptions:
+    def test_json_output(self) -> None:
+        import json
+
+        rt = _make_runtime(list_docs_result=[_SAMPLE_DOC])
+
+        with _patch_runtime(rt):
+            result = runner.invoke(
+                app,
+                ["spec", "list", "--project-id", "pid", "--json"],
+            )
+
+        assert result.exit_code == 0, result.output
+        parsed = json.loads(result.output)
+        assert isinstance(parsed, list)
+        assert parsed[0]["doc_id"] == "doc-2fe649"
+
+    def test_custom_user_id(self) -> None:
+        rt = _make_runtime(list_docs_result=[])
+
+        with _patch_runtime(rt):
+            runner.invoke(
+                app,
+                ["spec", "list", "--project-id", "pid", "--user-id", "alice"],
+            )
+
+        rt.spec_list_docs.assert_awaited_once_with(
+            project_id="pid",
+            user_id="alice",
+        )
+
+
+# ---------------------------------------------------------------------------
+# spec del — validation, confirmation, deletion, cache purge
+# ---------------------------------------------------------------------------
+
+
+class TestSpecDelValidation:
+    def test_requires_project_name_or_id(self) -> None:
+        result = runner.invoke(app, ["spec", "del", "doc-abc"])
+        assert result.exit_code == 1
+        assert "specify at least one" in (result.output + (result.stderr or "")).lower()
+
+    def test_help_lists_del_command(self) -> None:
+        result = runner.invoke(app, ["spec", "--help"])
+        assert result.exit_code == 0
+        assert "del" in result.output
+
+
+class TestSpecDelByName:
+    def test_deletes_with_force_flag(self) -> None:
+        rt = _make_runtime(
+            projects=[{"id": "proj-1", "repo_name": "myproj"}],
+            delete_doc_result={
+                "status": "success", "doc_id": "doc-abc", "message": "Deleted.",
+                "status_code": 200, "file_path": "foo.md",
+            },
+        )
+
+        with _patch_runtime(rt):
+            result = runner.invoke(
+                app,
+                ["spec", "del", "doc-abc", "--project-name", "myproj", "--force"],
+            )
+
+        assert result.exit_code == 0, result.output
+        rt.spec_delete_doc.assert_awaited_once_with(
+            project_id="proj-1",
+            user_id="defaultuser",
+            doc_id="doc-abc",
+            delete_llm_cache=False,
+        )
+        assert "Deleted" in result.output
+        assert "doc-abc" in result.output
+
+    def test_prompts_confirmation_and_proceeds(self) -> None:
+        rt = _make_runtime(
+            projects=[{"id": "proj-1", "repo_name": "myproj"}],
+        )
+
+        with _patch_runtime(rt):
+            result = runner.invoke(
+                app,
+                ["spec", "del", "doc-abc", "--project-name", "myproj"],
+                input="y\n",
+            )
+
+        assert result.exit_code == 0, result.output
+        rt.spec_delete_doc.assert_awaited_once()
+
+    def test_prompts_confirmation_and_aborts(self) -> None:
+        rt = _make_runtime(
+            projects=[{"id": "proj-1", "repo_name": "myproj"}],
+        )
+
+        with _patch_runtime(rt):
+            result = runner.invoke(
+                app,
+                ["spec", "del", "doc-abc", "--project-name", "myproj"],
+                input="n\n",
+            )
+
+        assert result.exit_code == 0
+        rt.spec_delete_doc.assert_not_awaited()
+        assert "Aborted" in result.output
+
+    def test_prints_not_found_status(self) -> None:
+        rt = _make_runtime(
+            projects=[{"id": "proj-1", "repo_name": "myproj"}],
+            delete_doc_result={
+                "status": "not_found", "doc_id": "doc-missing", "message": "Document not found.",
+                "status_code": 404, "file_path": None,
+            },
+        )
+
+        with _patch_runtime(rt):
+            result = runner.invoke(
+                app,
+                ["spec", "del", "doc-missing", "--project-name", "myproj", "--force"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Not found" in result.output
+        assert "doc-missing" in result.output
+
+    def test_prints_failed_status(self) -> None:
+        rt = _make_runtime(
+            projects=[{"id": "proj-1", "repo_name": "myproj"}],
+            delete_doc_result={
+                "status": "error", "doc_id": "doc-err", "message": "Internal error.",
+                "status_code": 500, "file_path": None,
+            },
+        )
+
+        with _patch_runtime(rt):
+            result = runner.invoke(
+                app,
+                ["spec", "del", "doc-err", "--project-name", "myproj", "--force"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Failed" in result.output
+        assert "doc-err" in result.output
+
+    def test_unknown_name_errors(self) -> None:
+        rt = _make_runtime(projects=[{"id": "x", "repo_name": "other"}])
+
+        with _patch_runtime(rt):
+            result = runner.invoke(
+                app,
+                ["spec", "del", "doc-abc", "--project-name", "missing"],
+            )
+
+        assert result.exit_code == 1
+        assert "not found" in result.output
+        rt.spec_delete_doc.assert_not_awaited()
+
+    def test_name_id_mismatch_errors(self) -> None:
+        rt = _make_runtime(projects=[{"id": "real-id", "repo_name": "myproj"}])
+
+        with _patch_runtime(rt):
+            result = runner.invoke(
+                app,
+                ["spec", "del", "doc-abc", "--project-name", "myproj", "--project-id", "wrong"],
+            )
+
+        assert result.exit_code == 1
+        assert "does not match" in result.output
+        rt.spec_delete_doc.assert_not_awaited()
+
+    def test_purges_query_cache_after_delete(self) -> None:
+        rt = _make_runtime(
+            projects=[{"id": "proj-1", "repo_name": "myproj"}],
+            purge_query_cache_result=3,
+        )
+
+        with _patch_runtime(rt):
+            result = runner.invoke(
+                app,
+                ["spec", "del", "doc-abc", "--project-name", "myproj", "--force"],
+            )
+
+        assert result.exit_code == 0, result.output
+        rt.spec_purge_query_cache.assert_awaited_once_with(
+            project_id="proj-1",
+            user_id="defaultuser",
+        )
+        assert "3" in result.output
+
+    def test_purge_silent_when_zero(self) -> None:
+        rt = _make_runtime(
+            projects=[{"id": "proj-1", "repo_name": "myproj"}],
+            purge_query_cache_result=0,
+        )
+
+        with _patch_runtime(rt):
+            result = runner.invoke(
+                app,
+                ["spec", "del", "doc-abc", "--project-name", "myproj", "--force"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Purged 0" not in result.output
+
+    def test_multiple_doc_ids_all_deleted(self) -> None:
+        call_count = 0
+
+        async def _delete(**kwargs: object) -> dict:
+            nonlocal call_count
+            call_count += 1
+            return {
+                "status": "success", "doc_id": kwargs["doc_id"],
+                "message": "Deleted.", "status_code": 200, "file_path": None,
+            }
+
+        rt = _make_runtime(projects=[{"id": "proj-1", "repo_name": "myproj"}])
+        rt.spec_delete_doc = _delete  # type: ignore[method-assign]
+
+        with _patch_runtime(rt):
+            result = runner.invoke(
+                app,
+                ["spec", "del", "doc-1", "doc-2", "doc-3", "--project-name", "myproj", "--force"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert call_count == 3
+
+    def test_delete_cache_flag_passed_through(self) -> None:
+        rt = _make_runtime(projects=[{"id": "proj-1", "repo_name": "myproj"}])
+
+        with _patch_runtime(rt):
+            runner.invoke(
+                app,
+                ["spec", "del", "doc-abc", "--project-name", "myproj", "--force", "--delete-cache"],
+            )
+
+        rt.spec_delete_doc.assert_awaited_once()
+        assert rt.spec_delete_doc.await_args.kwargs["delete_llm_cache"] is True
+
+
+class TestSpecDelById:
+    def test_deletes_by_id_skips_lookup(self) -> None:
+        rt = _make_runtime()
+
+        with _patch_runtime(rt):
+            result = runner.invoke(
+                app,
+                ["spec", "del", "doc-abc", "--project-id", "pid-9", "--force"],
+            )
+
+        assert result.exit_code == 0, result.output
+        rt.list_projects.assert_not_awaited()
+        rt.spec_delete_doc.assert_awaited_once_with(
+            project_id="pid-9",
+            user_id="defaultuser",
+            doc_id="doc-abc",
+            delete_llm_cache=False,
+        )
+
+    def test_custom_user_id(self) -> None:
+        rt = _make_runtime()
+
+        with _patch_runtime(rt):
+            runner.invoke(
+                app,
+                ["spec", "del", "doc-x", "--project-id", "pid", "--force", "--user-id", "bob"],
+            )
+
+        assert rt.spec_delete_doc.await_args.kwargs["user_id"] == "bob"
+
+
+# ---------------------------------------------------------------------------
+# PotpieRuntime.spec_list_docs — direct unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestPotpieRuntimeSpecListDocs:
+    async def test_returns_empty_when_file_missing(self, tmp_path: Path) -> None:
+        from pydantic_deep.toolsets.code_graph.potpie.runtime import PotpieRuntime
+
+        b = PotpieRuntime()
+        mock_config = MagicMock()
+        mock_config.get_lightrag_working_dir.return_value = str(tmp_path)
+        mock_config_mod = MagicMock(config_provider=mock_config)
+        mock_kg_mod = MagicMock(workspace_for_user_project=lambda uid, pid: f"{uid}__{pid}")
+
+        with patch.dict("sys.modules", {
+            "app.core.config_provider": mock_config_mod,
+            "app.modules.parsing.lightrag_sync.custom_kg_builder": mock_kg_mod,
+        }):
+            result = await b.spec_list_docs(project_id="proj-1", user_id="u1")
+
+        assert result == []
+
+    async def test_returns_docs_from_file(self, tmp_path: Path) -> None:
+        import json
+
+        from pydantic_deep.toolsets.code_graph.potpie.runtime import PotpieRuntime
+
+        b = PotpieRuntime()
+        workspace = "u1__proj-1"
+        ws_dir = tmp_path / workspace
+        ws_dir.mkdir()
+        status_data = {
+            "doc-abc123": {
+                "file_path": "/specs/req.md",
+                "status": "indexed",
+                "chunks_count": 3,
+                "content_length": 512,
+                "created_at": "2024-01-01T10:00:00",
+                "updated_at": "2024-01-02T10:00:00",
+            },
+        }
+        (ws_dir / "kv_store_doc_status.json").write_text(json.dumps(status_data))
+
+        mock_config = MagicMock()
+        mock_config.get_lightrag_working_dir.return_value = str(tmp_path)
+        mock_config_mod = MagicMock(config_provider=mock_config)
+        mock_kg_mod = MagicMock(workspace_for_user_project=lambda uid, pid: f"{uid}__{pid}")
+
+        with patch.dict("sys.modules", {
+            "app.core.config_provider": mock_config_mod,
+            "app.modules.parsing.lightrag_sync.custom_kg_builder": mock_kg_mod,
+        }):
+            result = await b.spec_list_docs(project_id="proj-1", user_id="u1")
+
+        assert len(result) == 1
+        doc = result[0]
+        assert doc["doc_id"] == "doc-abc123"
+        assert doc["file_path"] == "/specs/req.md"
+        assert doc["status"] == "indexed"
+        assert doc["chunks_count"] == 3
+        assert doc["content_length"] == 512
+        assert doc["created_at"] == "2024-01-01T10:00:00"
+
+    async def test_returns_multiple_docs(self, tmp_path: Path) -> None:
+        import json
+
+        from pydantic_deep.toolsets.code_graph.potpie.runtime import PotpieRuntime
+
+        b = PotpieRuntime()
+        workspace = "u1__proj-2"
+        ws_dir = tmp_path / workspace
+        ws_dir.mkdir()
+        status_data = {
+            f"doc-{i}": {
+                "file_path": f"file{i}.md",
+                "status": "indexed",
+                "chunks_count": i,
+                "content_length": i * 100,
+                "created_at": "",
+                "updated_at": "",
+            }
+            for i in range(3)
+        }
+        (ws_dir / "kv_store_doc_status.json").write_text(json.dumps(status_data))
+
+        mock_config = MagicMock()
+        mock_config.get_lightrag_working_dir.return_value = str(tmp_path)
+        mock_config_mod = MagicMock(config_provider=mock_config)
+        mock_kg_mod = MagicMock(workspace_for_user_project=lambda uid, pid: f"{uid}__{pid}")
+
+        with patch.dict("sys.modules", {
+            "app.core.config_provider": mock_config_mod,
+            "app.modules.parsing.lightrag_sync.custom_kg_builder": mock_kg_mod,
+        }):
+            result = await b.spec_list_docs(project_id="proj-2", user_id="u1")
+
+        assert len(result) == 3
+        doc_ids = {d["doc_id"] for d in result}
+        assert doc_ids == {"doc-0", "doc-1", "doc-2"}
+
+
+# ---------------------------------------------------------------------------
+# PotpieRuntime.spec_purge_query_cache — direct unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestPotpieRuntimeSpecPurgeQueryCache:
+    async def test_returns_zero_when_no_cache_file(self, tmp_path: Path) -> None:
+        from pydantic_deep.toolsets.code_graph.potpie.runtime import PotpieRuntime
+
+        b = PotpieRuntime()
+        mock_config = MagicMock()
+        mock_config.get_lightrag_working_dir.return_value = str(tmp_path)
+        mock_config_mod = MagicMock(config_provider=mock_config)
+        mock_kg_mod = MagicMock(workspace_for_user_project=lambda uid, pid: f"{uid}__{pid}")
+
+        with patch.dict("sys.modules", {
+            "app.core.config_provider": mock_config_mod,
+            "app.modules.parsing.lightrag_sync.custom_kg_builder": mock_kg_mod,
+        }):
+            result = await b.spec_purge_query_cache(project_id="proj-1", user_id="u1")
+
+        assert result == 0
+
+    async def test_removes_only_query_type_entries(self, tmp_path: Path) -> None:
+        import json
+
+        from pydantic_deep.toolsets.code_graph.potpie.runtime import PotpieRuntime
+
+        b = PotpieRuntime()
+        workspace = "u1__proj-1"
+        ws_dir = tmp_path / workspace
+        ws_dir.mkdir()
+        cache_data = {
+            "extract-key-1": {"cache_type": "extract", "data": "entity-extraction"},
+            "query-key-1": {"cache_type": "query", "data": "old-query-answer"},
+            "query-key-2": {"cache_type": "query", "data": "another-answer"},
+            "keywords-key": {"cache_type": "keywords", "data": "kw"},
+        }
+        cache_file = ws_dir / "kv_store_llm_response_cache.json"
+        cache_file.write_text(json.dumps(cache_data))
+
+        mock_config = MagicMock()
+        mock_config.get_lightrag_working_dir.return_value = str(tmp_path)
+        mock_config_mod = MagicMock(config_provider=mock_config)
+        mock_kg_mod = MagicMock(workspace_for_user_project=lambda uid, pid: f"{uid}__{pid}")
+        mock_query_mod = MagicMock()
+        mock_query_mod._rag_instance_cache = {}
+
+        with patch.dict("sys.modules", {
+            "app.core.config_provider": mock_config_mod,
+            "app.modules.parsing.lightrag_sync.custom_kg_builder": mock_kg_mod,
+            "app.modules.parsing.lightrag_sync.lightrag_query_service": mock_query_mod,
+        }):
+            removed = await b.spec_purge_query_cache(project_id="proj-1", user_id="u1")
+
+        assert removed == 2
+        remaining = json.loads(cache_file.read_text())
+        assert "query-key-1" not in remaining
+        assert "query-key-2" not in remaining
+        assert "extract-key-1" in remaining
+        assert "keywords-key" in remaining
+
+    async def test_returns_zero_when_no_query_entries(self, tmp_path: Path) -> None:
+        import json
+
+        from pydantic_deep.toolsets.code_graph.potpie.runtime import PotpieRuntime
+
+        b = PotpieRuntime()
+        workspace = "u1__proj-1"
+        ws_dir = tmp_path / workspace
+        ws_dir.mkdir()
+        cache_data = {
+            "extract-1": {"cache_type": "extract", "data": "x"},
+        }
+        cache_file = ws_dir / "kv_store_llm_response_cache.json"
+        cache_file.write_text(json.dumps(cache_data))
+
+        mock_config = MagicMock()
+        mock_config.get_lightrag_working_dir.return_value = str(tmp_path)
+        mock_config_mod = MagicMock(config_provider=mock_config)
+        mock_kg_mod = MagicMock(workspace_for_user_project=lambda uid, pid: f"{uid}__{pid}")
+
+        with patch.dict("sys.modules", {
+            "app.core.config_provider": mock_config_mod,
+            "app.modules.parsing.lightrag_sync.custom_kg_builder": mock_kg_mod,
+        }):
+            removed = await b.spec_purge_query_cache(project_id="proj-1", user_id="u1")
+
+        assert removed == 0
+        # File should be unchanged
+        assert json.loads(cache_file.read_text()) == cache_data
+
+    async def test_evicts_rag_instance_cache(self, tmp_path: Path) -> None:
+        import json
+
+        from pydantic_deep.toolsets.code_graph.potpie.runtime import PotpieRuntime
+
+        b = PotpieRuntime()
+        workspace = "u1__proj-1"
+        ws_dir = tmp_path / workspace
+        ws_dir.mkdir()
+        cache_data = {"q-1": {"cache_type": "query", "data": "answer"}}
+        (ws_dir / "kv_store_llm_response_cache.json").write_text(json.dumps(cache_data))
+
+        mock_config = MagicMock()
+        mock_config.get_lightrag_working_dir.return_value = str(tmp_path)
+        mock_config_mod = MagicMock(config_provider=mock_config)
+        mock_kg_mod = MagicMock(workspace_for_user_project=lambda uid, pid: f"{uid}__{pid}")
+        # Simulate a cached RAG instance for the workspace
+        instance_cache: dict = {workspace: MagicMock()}
+        mock_query_mod = MagicMock()
+        mock_query_mod._rag_instance_cache = instance_cache
+
+        with patch.dict("sys.modules", {
+            "app.core.config_provider": mock_config_mod,
+            "app.modules.parsing.lightrag_sync.custom_kg_builder": mock_kg_mod,
+            "app.modules.parsing.lightrag_sync.lightrag_query_service": mock_query_mod,
+        }):
+            removed = await b.spec_purge_query_cache(project_id="proj-1", user_id="u1")
+
+        assert removed == 1
+        assert workspace not in instance_cache
+
+
+# ---------------------------------------------------------------------------
+# PotpieRuntime.spec_delete_doc — direct unit tests
+# ---------------------------------------------------------------------------
+
+
+def _make_deletion_result(
+    status: str = "success",
+    doc_id: str = "doc-abc",
+    message: str = "Deleted.",
+    status_code: int = 200,
+    file_path: str | None = "foo.md",
+) -> MagicMock:
+    r = MagicMock()
+    r.status = status
+    r.doc_id = doc_id
+    r.message = message
+    r.status_code = status_code
+    r.file_path = file_path
+    return r
+
+
+def _make_spec_delete_modules(deletion_result: MagicMock) -> dict:
+    """Build sys.modules stubs needed for spec_delete_doc."""
+    mock_rag = MagicMock()
+    mock_rag.initialize_storages = AsyncMock()
+    mock_rag.adelete_by_doc_id = AsyncMock(return_value=deletion_result)
+    mock_rag.finalize_storages = AsyncMock()
+    mock_lightrag_cls = MagicMock(return_value=mock_rag)
+
+    mock_lightrag_mod = MagicMock()
+    mock_lightrag_mod.LightRAG = mock_lightrag_cls
+    mock_lightrag_utils = MagicMock()
+    mock_lightrag_utils.EmbeddingFunc = MagicMock()
+    mock_lightrag_utils.setup_logger = MagicMock()
+
+    mock_config = MagicMock()
+    mock_config.get_lightrag_working_dir.return_value = "/fake/dir"
+    mock_config.get_lightrag_embedding_dim.return_value = 768
+    mock_config.get_lightrag_embedding_model.return_value = "model-name"
+    mock_config.get_lightrag_query_model.return_value = "llm-model"
+    mock_config_mod = MagicMock(config_provider=mock_config)
+    mock_kg_mod = MagicMock(workspace_for_user_project=lambda uid, pid: f"{uid}__{pid}")
+    mock_query_svc_mod = MagicMock(_make_llm_func=MagicMock(return_value=MagicMock()))
+    mock_embedding_mod = MagicMock(get_embedding_model=MagicMock(return_value=MagicMock()))
+    mock_embedding_mod.get_embedding_model.return_value.encode = MagicMock(return_value=[])
+
+    return {
+        "lightrag": mock_lightrag_mod,
+        "lightrag.utils": mock_lightrag_utils,
+        "app.core.config_provider": mock_config_mod,
+        "app.modules.parsing.lightrag_sync.custom_kg_builder": mock_kg_mod,
+        "app.modules.parsing.lightrag_sync.lightrag_query_service": mock_query_svc_mod,
+        "app.modules.parsing.knowledge_graph.code_embedding": mock_embedding_mod,
+        "numpy": MagicMock(),
+        "np": MagicMock(),
+    }, mock_rag
+
+
+class TestPotpieRuntimeSpecDeleteDoc:
+    async def test_returns_deletion_result_dict(self) -> None:
+        from pydantic_deep.toolsets.code_graph.potpie.runtime import PotpieRuntime
+
+        b = PotpieRuntime()
+        deletion_result = _make_deletion_result()
+        modules, mock_rag = _make_spec_delete_modules(deletion_result)
+
+        with patch.dict("sys.modules", modules):
+            result = await b.spec_delete_doc(
+                project_id="proj-1",
+                user_id="u1",
+                doc_id="doc-abc",
+            )
+
+        assert result["status"] == "success"
+        assert result["doc_id"] == "doc-abc"
+        assert result["message"] == "Deleted."
+        assert result["status_code"] == 200
+        assert result["file_path"] == "foo.md"
+
+    async def test_calls_adelete_by_doc_id_with_correct_args(self) -> None:
+        from pydantic_deep.toolsets.code_graph.potpie.runtime import PotpieRuntime
+
+        b = PotpieRuntime()
+        deletion_result = _make_deletion_result()
+        modules, mock_rag = _make_spec_delete_modules(deletion_result)
+
+        with patch.dict("sys.modules", modules):
+            await b.spec_delete_doc(
+                project_id="proj-1",
+                user_id="u1",
+                doc_id="doc-target",
+            )
+
+        mock_rag.adelete_by_doc_id.assert_awaited_once_with(
+            "doc-target",
+            delete_llm_cache=False,
+        )
+
+    async def test_passes_delete_llm_cache_flag(self) -> None:
+        from pydantic_deep.toolsets.code_graph.potpie.runtime import PotpieRuntime
+
+        b = PotpieRuntime()
+        deletion_result = _make_deletion_result()
+        modules, mock_rag = _make_spec_delete_modules(deletion_result)
+
+        with patch.dict("sys.modules", modules):
+            await b.spec_delete_doc(
+                project_id="proj-1",
+                user_id="u1",
+                doc_id="doc-xyz",
+                delete_llm_cache=True,
+            )
+
+        assert mock_rag.adelete_by_doc_id.await_args.kwargs["delete_llm_cache"] is True
+
+    async def test_initializes_and_finalizes_storages(self) -> None:
+        from pydantic_deep.toolsets.code_graph.potpie.runtime import PotpieRuntime
+
+        b = PotpieRuntime()
+        deletion_result = _make_deletion_result()
+        modules, mock_rag = _make_spec_delete_modules(deletion_result)
+
+        with patch.dict("sys.modules", modules):
+            await b.spec_delete_doc(project_id="proj-1", user_id="u1", doc_id="doc-1")
+
+        mock_rag.initialize_storages.assert_awaited_once()
+        mock_rag.finalize_storages.assert_awaited_once()
+
+    async def test_not_found_result(self) -> None:
+        from pydantic_deep.toolsets.code_graph.potpie.runtime import PotpieRuntime
+
+        b = PotpieRuntime()
+        deletion_result = _make_deletion_result(
+            status="not_found", message="Document not found.", status_code=404, file_path=None,
+        )
+        modules, _ = _make_spec_delete_modules(deletion_result)
+
+        with patch.dict("sys.modules", modules):
+            result = await b.spec_delete_doc(project_id="p", user_id="u", doc_id="doc-gone")
+
+        assert result["status"] == "not_found"
+        assert result["status_code"] == 404
+        assert result["file_path"] is None
+
+    async def test_embedding_func_closure_is_callable(self) -> None:
+        """The inner ``embedding_func`` closure (line 608) is passed to LightRAG but
+        never invoked when LightRAG itself is mocked.  This test captures it from the
+        ``EmbeddingFunc`` constructor call and calls it directly to cover the body."""
+        from pydantic_deep.toolsets.code_graph.potpie.runtime import PotpieRuntime
+
+        b = PotpieRuntime()
+        deletion_result = _make_deletion_result()
+        modules, _ = _make_spec_delete_modules(deletion_result)
+
+        with patch.dict("sys.modules", modules):
+            await b.spec_delete_doc(project_id="proj-1", user_id="u1", doc_id="doc-abc")
+
+        # ``EmbeddingFunc`` is mocked; grab the ``func`` kwarg that was passed to it.
+        captured_func = modules["lightrag.utils"].EmbeddingFunc.call_args.kwargs["func"]
+
+        mock_model = (
+            modules["app.modules.parsing.knowledge_graph.code_embedding"]
+            .get_embedding_model.return_value
+        )
+        mock_model.encode.return_value = [[0.1, 0.2]]
+
+        result = await captured_func(["hello", "world"])
+
+        mock_model.encode.assert_called_once_with(["hello", "world"], show_progress_bar=False)
+        assert result == [[0.1, 0.2]]

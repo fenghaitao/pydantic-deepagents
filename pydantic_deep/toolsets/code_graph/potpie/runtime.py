@@ -551,6 +551,158 @@ class PotpieRuntime:
         svc = LightRAGQueryService()
         return await svc.query(project_id=project_id, user_id=user_id, question=query, mode=mode, summarize=summarize)
 
+    async def spec_purge_query_cache(
+        self,
+        project_id: str,
+        user_id: str,
+    ) -> int:
+        """Remove all ``cache_type=query`` entries from the LightRAG response cache.
+
+        After deleting a document the LLM response cache may still hold full
+        query answers that were computed before the deletion.  Purging these
+        forces the next ``spec query`` call to re-run retrieval and generation
+        against the updated knowledge graph.
+
+        Returns:
+            Number of query-cache entries removed.
+        """
+        import json
+        import os
+        from app.core.config_provider import config_provider
+        from app.modules.parsing.lightrag_sync.custom_kg_builder import workspace_for_user_project
+
+        working_dir = os.path.abspath(config_provider.get_lightrag_working_dir())
+        workspace = workspace_for_user_project(user_id, project_id)
+        cache_file = os.path.join(working_dir, workspace, "kv_store_llm_response_cache.json")
+        if not os.path.isfile(cache_file):
+            return 0
+        with open(cache_file, encoding="utf-8") as f:
+            cache: dict = json.load(f)
+        keep = {k: v for k, v in cache.items() if not (isinstance(v, dict) and v.get("cache_type") == "query")}
+        removed = len(cache) - len(keep)
+        if removed:
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(keep, f)
+            # Also evict from the process-level LightRAG instance cache so the
+            # in-memory store is not used to serve stale responses.
+            from app.modules.parsing.lightrag_sync.lightrag_query_service import (
+                _rag_instance_cache,
+            )
+            _rag_instance_cache.pop(workspace, None)
+        return removed
+
+    async def spec_delete_doc(
+        self,
+        project_id: str,
+        user_id: str,
+        doc_id: str,
+        delete_llm_cache: bool = False,
+    ) -> dict:
+        """Delete a document and all its related entities/edges from LightRAG.
+
+        Calls ``adelete_by_doc_id`` on the workspace for *project_id* / *user_id*,
+        which removes the document's chunks, graph nodes, and edges.  Entities or
+        relationships that are shared with other documents are rebuilt from the
+        remaining sources.
+
+        Args:
+            project_id: Potpie project UUID.
+            user_id: User ID for the LightRAG workspace.
+            doc_id: Document ID as stored in ``kv_store_doc_status.json``
+                (e.g. ``doc-2fe6495620515921616b6c94796808e7``).
+            delete_llm_cache: Also delete cached LLM extraction results for
+                the document.  Defaults to ``False``.
+
+        Returns:
+            Dict with ``status``, ``doc_id``, ``message``, ``status_code``, and
+            optional ``file_path`` keys — mirrors ``DeletionResult``.
+        """
+        import os
+        import numpy as np
+        from app.core.config_provider import config_provider
+        from app.modules.parsing.lightrag_sync.custom_kg_builder import workspace_for_user_project
+        from app.modules.parsing.lightrag_sync.lightrag_query_service import _make_llm_func
+        from app.modules.parsing.knowledge_graph.code_embedding import get_embedding_model
+        from lightrag import LightRAG
+        from lightrag.utils import EmbeddingFunc, setup_logger as lightrag_setup_logger
+
+        lightrag_setup_logger("lightrag", level="WARNING", enable_file_logging=False)
+
+        working_dir = os.path.abspath(config_provider.get_lightrag_working_dir())
+        workspace = workspace_for_user_project(user_id, project_id)
+        embedding_dim = config_provider.get_lightrag_embedding_dim()
+        model_name = config_provider.get_lightrag_embedding_model()
+        llm_model_name = config_provider.get_lightrag_query_model()
+
+        embedding_model = get_embedding_model()
+
+        import asyncio as _asyncio
+        loop = _asyncio.get_running_loop()
+
+        async def embedding_func(texts: list[str]) -> np.ndarray:
+            return await loop.run_in_executor(None, lambda: embedding_model.encode(list(texts), show_progress_bar=False))
+
+        rag = LightRAG(
+            working_dir=working_dir,
+            workspace=workspace,
+            llm_model_func=_make_llm_func(),
+            embedding_func=EmbeddingFunc(
+                embedding_dim=embedding_dim,
+                func=embedding_func,
+                max_token_size=8192,
+                model_name=model_name,
+            ),
+            llm_model_name=llm_model_name,
+            enable_llm_cache=False,
+        )
+        await rag.initialize_storages()
+        result = await rag.adelete_by_doc_id(doc_id, delete_llm_cache=delete_llm_cache)
+        await rag.finalize_storages()
+        return {
+            "status": result.status,
+            "doc_id": result.doc_id,
+            "message": result.message,
+            "status_code": result.status_code,
+            "file_path": getattr(result, "file_path", None),
+        }
+
+    async def spec_list_docs(
+        self,
+        project_id: str,
+        user_id: str,
+    ) -> list[dict]:
+        """Return indexed document records from the LightRAG doc-status store.
+
+        Reads ``kv_store_doc_status.json`` directly from the on-disk workspace
+        and returns a list of dicts (one per document) with keys:
+        ``doc_id``, ``file_path``, ``status``, ``chunks_count``,
+        ``content_length``, ``created_at``, ``updated_at``.
+        """
+        import json
+        import os
+        from app.core.config_provider import config_provider
+        from app.modules.parsing.lightrag_sync.custom_kg_builder import workspace_for_user_project
+
+        working_dir = os.path.abspath(config_provider.get_lightrag_working_dir())
+        workspace = workspace_for_user_project(user_id, project_id)
+        status_file = os.path.join(working_dir, workspace, "kv_store_doc_status.json")
+        if not os.path.isfile(status_file):
+            return []
+        with open(status_file, encoding="utf-8") as f:
+            raw: dict = json.load(f)
+        docs: list[dict] = []
+        for doc_id, entry in raw.items():
+            docs.append({
+                "doc_id": doc_id,
+                "file_path": entry.get("file_path", ""),
+                "status": entry.get("status", ""),
+                "chunks_count": entry.get("chunks_count", 0),
+                "content_length": entry.get("content_length", 0),
+                "created_at": entry.get("created_at", ""),
+                "updated_at": entry.get("updated_at", ""),
+            })
+        return docs
+
     async def spec_diff(
         self,
         project_id_a: str,
