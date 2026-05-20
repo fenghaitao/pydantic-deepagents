@@ -18,6 +18,22 @@ from pathlib import Path
 import pytest
 from dotenv import load_dotenv
 
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--fast",
+        action="store_true",
+        default=False,
+        help="Fast mode: evaluate only the first QnA case instead of the full dataset.",
+    )
+
+
+@pytest.fixture(scope="session")
+def fast_mode(request: pytest.FixtureRequest) -> bool:
+    """True when --fast is passed on the pytest command line."""
+    return request.config.getoption("--fast")  # type: ignore[no-any-return]
+
+
 # ── Paths ──────────────────────────────────────────────────────────────────────
 # This file lives at tests/integration-tests/conftest.py, so:
 #   parents[0] = tests/integration-tests

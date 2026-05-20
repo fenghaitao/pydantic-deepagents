@@ -170,12 +170,17 @@ jobs:
         # Downloading it here (before the backend starts) avoids a slow/throttled
         # download inside the worker which causes "Sub-job killed" panics in the
         # DML language server when the embedding step stalls.
+        # Use snapshot_download (not SentenceTransformer) so all files are written
+        # in the standard HF hub layout that the Rust hf-hub crate expects.
         run: |
           uv run --no-sync python -c "
-          from sentence_transformers import SentenceTransformer
-          print('Pre-warming all-MiniLM-L6-v2 ...')
-          SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
-          print('Model cached at \$HF_HOME.')
+          from huggingface_hub import snapshot_download
+          import os
+          print('Pre-warming sentence-transformers/all-MiniLM-L6-v2 ...')
+          path = snapshot_download('sentence-transformers/all-MiniLM-L6-v2')
+          print(f'Model cached at: {path}')
+          print(f'HF_HOME={os.environ.get(\"HF_HOME\", \"(not set)\")}')  
+          print(f'HUGGINGFACE_HUB_CACHE={os.environ.get(\"HUGGINGFACE_HUB_CACHE\", \"(not set)\")}')  
           "
 
       - name: Ensure backend services are healthy
@@ -218,7 +223,7 @@ jobs:
         run: |
           mkdir -p test-results
           uv run --no-sync pytest tests/integration-tests/test_scip_python.py \
-            -v -s \
+            --fast -v -s \
             --tb=short \
             --junitxml=test-results/junit-int-scip-python.xml
 

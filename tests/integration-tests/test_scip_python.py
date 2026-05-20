@@ -23,11 +23,15 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 import tempfile
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple
 
+import pytest
 from dotenv import load_dotenv
 from conftest import extract_json_from_output
 from neo4j import GraphDatabase
@@ -38,6 +42,15 @@ _POTPIE_ROOT = _REPO_ROOT / "code-graph-providers" / "potpie"
 
 # Load potpie .env to pick up dynamic port assignments (NEO4J_URI, BOLT_PORT…).
 load_dotenv(_POTPIE_ROOT / ".env")
+
+_EVAL_SCRIPT = _POTPIE_ROOT / ".kiro" / "skills" / "potpie-evaluator" / "scripts" / "evaluate_qna.py"
+_EVAL_CASES = (
+    _POTPIE_ROOT
+    / "tests"
+    / "integration-tests"
+    / "scip-python"
+    / "qna_eval_srv_pm_testlib_cases.yaml"
+)
 
 
 def _ts() -> str:
@@ -117,9 +130,108 @@ class Neo4jChecker:
             return found
 
 
+# ── QnA Evaluation ─────────────────────────────────────────────────────────────
+
+def _run_eval(project_id: str, output_dir: Path, *, fast: bool = False) -> None:
+    """Run the potpie QnA evaluator for *project_id* using the srv-pm-testlib
+    question set and write the score report to *output_dir*.
+
+    Parameters
+    ----------
+    fast:
+        When True (``--fast`` pytest flag), pass ``--max-cases 1`` to the
+        evaluator so only the first question is scored.  Useful for a quick
+        smoke-test without running the full dataset.
+    """
+    if not _EVAL_SCRIPT.exists():
+        pytest.fail(
+            f"QnA evaluator script not found: {_EVAL_SCRIPT}\n"
+            "This usually means the potpie sources are unavailable locally. "
+            "Ensure the code-graph-providers/potpie git submodule is checked "
+            "out and up to date, or verify that the evaluator script has not "
+            "been moved or deleted."
+        )
+
+    if not _EVAL_CASES.exists():
+        pytest.fail(
+            f"QnA evaluation cases not found: {_EVAL_CASES}\n"
+            "The evaluator test data is missing. Ensure the "
+            "code-graph-providers/potpie git submodule is checked out and up "
+            "to date, or verify that the evaluation cases path is correct."
+        )
+
+    output_path = output_dir / "qna_eval_srv_pm_testlib_score.md"
+    cmd = [
+        sys.executable,
+        str(_EVAL_SCRIPT),
+        "--cases",      str(_EVAL_CASES),
+        "--project-id", project_id,
+        "--output",     str(output_path),
+        # AgentBehaviorCompliance requires an agentic judge with multiple LLM
+        # tool-call rounds per rubric (5 rubrics × 15 cases ≈ 300+ LLM calls)
+        # and scores only ~15% — skip it to keep the test under 30 minutes.
+        "--skip-metrics", "AgentBehaviorCompliance",
+    ]
+    if fast:
+        cmd += ["--max-cases", "1"]
+        print(f"[{_ts()}] Fast mode: evaluating 1 case only")
+    print(f"[{_ts()}] Running QnA evaluation (project_id={project_id})")
+    print(f"[{_ts()}]   command: {' '.join(cmd)}")
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+    output_lines: list[str] = []
+
+    def _stream() -> None:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            line = line.rstrip("\n")
+            print(f"  [eval] {line}", flush=True)
+            output_lines.append(line)
+
+    t = threading.Thread(target=_stream, daemon=True)
+    t.start()
+    try:
+        proc.wait(timeout=7200)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        t.join(timeout=5)
+        tail_lines = output_lines[-200:] if len(output_lines) > 200 else output_lines
+        pytest.fail(
+            "QnA evaluator timed out after 7200 seconds and was terminated.\n"
+            f"output (last {len(tail_lines)} lines):\n" + "\n".join(tail_lines)
+        )
+    t.join(timeout=5)
+
+    print(f"[{_ts()}] QnA evaluator returncode: {proc.returncode}", flush=True)
+    tail_lines = output_lines[-200:] if len(output_lines) > 200 else output_lines
+    if proc.returncode != 0:
+        pytest.fail(
+            f"QnA evaluator failed (exit {proc.returncode}).\n"
+            f"output (last {len(tail_lines)} lines):\n" + "\n".join(tail_lines)
+        )
+
+    if not output_path.exists():
+        pytest.fail(
+            "QnA evaluator exited successfully but did not produce the expected "
+            f"report file: {output_path}"
+        )
+
+    score_text = output_path.read_text()
+    for line in score_text.splitlines()[:30]:
+        print(f"  [eval] {line}")
+    print(f"[{_ts()}] Full eval report: {output_path}")
+
+
 # ── Test ───────────────────────────────────────────────────────────────────────
 
-def test_parse_repo_then_check_graph(pydantic_deep_runner, sparse_checkout):
+def test_parse_repo_then_check_graph(pydantic_deep_runner, sparse_checkout, fast_mode):
     workspace = tempfile.TemporaryDirectory(prefix="test-scip-python-")
     saved_cwd = os.getcwd()
     try:
@@ -133,13 +245,15 @@ def test_parse_repo_then_check_graph(pydantic_deep_runner, sparse_checkout):
         with open(src_dir / ".potpieallowed.json", "w") as fh:
             json.dump({"language": [".py"]}, fh)
         print(f"[{_ts()}] Sparse-checkout ready at {src_dir}")
-        _run_workflow(pydantic_deep_runner, src_dir)
+        if fast_mode:
+            print(f"[{_ts()}] Fast mode enabled: QnA eval will run only the first case")
+        _run_workflow(pydantic_deep_runner, src_dir, output_dir=Path(saved_cwd), fast=fast_mode)
     finally:
         os.chdir(saved_cwd)
         workspace.cleanup()
 
 
-def _run_workflow(pydantic_deep_runner, src_dir: Path) -> None:
+def _run_workflow(pydantic_deep_runner, src_dir: Path, output_dir: Path = Path("."), *, fast: bool = False) -> None:
     # Step 0: remove any pre-existing project entry
     print(f"[{_ts()}] Step 0: Checking for existing project entry")
     list_result = pydantic_deep_runner("projects", "list", "--json", check=False)
@@ -214,7 +328,6 @@ def _run_workflow(pydantic_deep_runner, src_dir: Path) -> None:
     uri      = os.environ.get("NEO4J_URI",      "bolt://localhost:7687")
     user     = os.environ.get("NEO4J_USERNAME",  "neo4j")
     password = os.environ.get("NEO4J_PASSWORD",  "")
-    total_nodes = 0
     checker = Neo4jChecker(uri, user, password, project_id)
 
     try:
@@ -240,6 +353,10 @@ def _run_workflow(pydantic_deep_runner, src_dir: Path) -> None:
             f"The following graph elements were missing (project_id={project_id}):\n"
             + "\n".join(failures)
         )
+
+        # Step 4: QnA evaluation against the indexed project
+        _run_eval(project_id, output_dir, fast=fast)
+
     finally:
         checker.close()
         print(f"[{_ts()}] Cleaning up project {project_id}...")
