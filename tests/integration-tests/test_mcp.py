@@ -141,7 +141,7 @@ EXPECTED_POTPIE_TOOLS = sorted([
     "potpie_write_wiki_page",
     "potpie_simics_device_list_banks",
     "potpie_analyze_register_side_effect",
-    "potpie_list_register_side_effect",
+    "potpie_list_simics_device_feature",
     "potpie_get_register_side_effect",
     "potpie_get_capability_keywords",
     "potpie_analyze_capability",

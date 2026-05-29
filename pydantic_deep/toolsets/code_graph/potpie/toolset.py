@@ -92,25 +92,29 @@ Returns a summary dict:
 :param batch_size: Max concurrent register analyses per batch (default 30).
 :param chunk_tokens: Token budget per LLM call before chunking (default 15000)."""
 
-_LIST_REG_SIDE_EFFECT_DESC = """\
-List all register side-effects for a Simics DML device, grouped by bank.
+_LIST_SIMICS_DEVICE_FEATURE_DESC = """\
+List hardware analysis results for a Simics DML device.
 
-Checks whether all registers have been analysed (status done or failed).
-If any registers are still pending or processing, the tool automatically
-triggers the register side-effect analyser and waits for all registers to
-reach a terminal state before returning.
+Use the ``feature`` parameter to choose what to return:
+  - "register"  — per-register write/read side-effects and capability keywords,
+                  grouped by bank
+  - "event"     — per-event feature descriptions and capability keywords
+  - "fsm"       — per-FSM state diagrams (Mermaid stateDiagram-v2), feature
+                  descriptions, states, and capability keywords
+  - "interface" — per-interface (PORT/CONNECT) feature descriptions and
+                  capability keywords
+  - "keyword"   — device-level capability keyword map derived from register
+                  side-effect analysis
+  - Combine with "+" e.g. "register+event+fsm" or use "all" for all five.
 
-If the device has no structure cached yet, the bank/register/field hierarchy
-is fetched from the Neo4j code graph first.
+If the requested analysis pipeline has not been run yet for the device,
+the tool triggers it automatically before returning results.
 
-Returns a dict with: device_name, project_id, banks (dict keyed by bank name,
-each mapping register_name → {write_side_effect, read_side_effect,
-capability_keyword}), and summary (total_banks, total_registers, total_done,
-total_pending, total_processing, total_failed).
+Returns a dict with device_name, project_id, and either flat top-level fields
+(single feature) or a "features" dict (multiple features).
 
-Prerequisite: none — analysis is triggered automatically if needed.
-
-:param device_name: DML device name (case-insensitive partial match)."""
+:param device_name: DML device name (case-insensitive partial match).
+:param feature: Which feature(s) to return (see above)."""
 
 _LIST_CAP_DESC = """\
 List all hardware capability descriptions for a Simics DML device.
@@ -129,9 +133,15 @@ domain name and contains:
   - code_map:        source files with Defines / Uses sub-sections
   - code_snippets:   list of DML code snippet strings extracted from the features
 
+When output is provided and is a writable directory path, one <capability>-spec.md
+file is written per capability containing the overview, feature details, output
+signal behavior, and code map. The list of written paths is returned under
+files_written in the response.
+
 Prerequisite: analyze_register_side_effect must have been run first.
 
-:param device_name: DML device name (case-insensitive partial match)."""
+:param device_name: DML device name (case-insensitive partial match).
+:param output: Optional path to an output directory for writing spec files."""
 
 _ANALYZE_CAP_DESC = """\
 Generate structured hardware capability descriptions for a Simics DML device.
@@ -152,7 +162,93 @@ Each capability entry: {capability_name: {spec: "...", nodes: [node_id, ...]}}
 
 :param device_name: DML device name (case-insensitive partial match).
 :param refresh: When true, re-generate even if capabilities are already stored.
-:param chunk_tokens: Token budget per LLM call before splitting into chunks (default 15000)."""
+:param chunk_tokens: Token budget per LLM call before splitting into chunks (default 15000).
+:param batch_size: Max parallel MAP chunk calls per gather() batch (default 5)."""
+
+_ANALYZE_INTERFACE_DESC = """\
+Analyze all PORT (input) and CONNECT (output) interfaces of a Simics DML device.
+
+For each PORT/CONNECT node discovered via the Neo4j code graph the tool:
+  - Collects DML context: templates, interfaces, and functions with call chains.
+  - Sends the context to an LLM to produce a multi-paragraph feature description
+    and 2-5 short hardware concept keywords (e.g. "interrupt-signal", "AXI-master").
+  - Persists results to device storage; already-done records are skipped.
+
+Set refresh=True to force full re-analysis from scratch.
+
+Returns a summary dict:
+  {"device_name", "project_id", "total_ports", "total_connects",
+   "done", "failed", "status_counts", "interfaces": [...]}
+
+Each entry in ``interfaces``: {node_id, name, kind ("port"|"connect"),
+feature, keywords}.
+
+:param device_name: DML device name (case-insensitive partial match).
+:param refresh: When true, reset all interface records and re-analyse.
+:param batch_size: Max concurrent interface analyses per batch (default 30).
+:param chunk_tokens: Token budget per LLM call before chunking (default 15000)."""
+
+_ANALYZE_FSM_DESC = """\
+Analyze the finite-state machines (FSMs) in a Simics DML device and produce a
+flowchart, hardware feature description, and capability keywords for each FSM.
+
+For each FSM (a DML bank implementing the fsm template) the tool:
+  - Queries the Neo4j code graph for FSM-level functions, event declarations,
+    state groups, per-state event handlers, unconditional handlers, and call chains.
+  - Finds external entry points — call sites that trigger FSM events via
+    ``<fsm>.events.<event>.run_now`` / ``run_delayed``.
+  - Sends the assembled context to an LLM (with map-reduce for large FSMs) to
+    produce a Mermaid stateDiagram-v2 flowchart, a multi-paragraph hardware
+    feature description, and 2-5 kebab-case capability keywords.
+  - Merges FSM keywords into the device-level capability_keywords in storage.
+
+FSMs already at DONE status are skipped — safe to re-run after a partial failure.
+Set refresh=True to force full re-analysis from scratch.
+
+Returns a dict:
+  {"device_name", "project_id", "total_fsms",
+   "fsm_analyses": [{"node_id", "name", "docstring",
+                      "flowchart", "feature", "keywords",
+                      "event_names", "init_states", "states", "entry_points"}, ...]}
+
+:param device_name: DML device name (case-insensitive partial match).
+:param refresh: When true, reset all FSMs to pending and re-analyse.
+:param chunk_limit: Max state nodes per LLM map chunk (default 10).
+:param batch_size: Max concurrent FSM analyses per gather() batch (default 3)."""
+
+
+
+_ANALYZE_EVENT_DESC = """\
+Analyse all EVENT nodes in a Simics DML device and produce per-event hardware
+feature descriptions and capability keywords.
+
+For each event node the tool collects DML context (implemented templates,
+contained functions with call chains, and call sites for post/remove/posted/next),
+then sends the context to an LLM to produce a multi-paragraph hardware feature
+description and 2-5 kebab-case capability keywords.
+
+Events already at DONE status are skipped — safe to re-run after partial failure.
+Set refresh=True to force full re-analysis from scratch.
+
+Returns a dict:
+  {"device_name", "project_id", "total_events", "done", "failed",
+   "total_keywords", "status"}
+
+:param device_name: DML device name (case-insensitive partial match).
+:param refresh: When true, reset all events to pending and re-analyse.
+:param batch_size: Max concurrent event analyses per gather() batch (default 5)."""
+
+_EXPLORE_SIMICS_DEVICE_DESC = """
+Explore the full structural inventory of a Simics DML device.
+
+Traverses the code graph and returns all banks, registers, fields, FSMs,
+events, and interface nodes (PORTs and CONNECTs) for the given device.
+
+Useful as a first step before calling analyse_register_side_effect,
+analyse_fsm, analyse_event, or analyse_interface — the returned node_ids
+can be fed directly into other potpie tools. Always fetches fresh data.
+
+:param device_name: DML device name (case-insensitive partial match)."""
 
 # ── Low-level KG tool names (PotpieRuntime only) ────────────────────────────
 
@@ -169,10 +265,14 @@ KG_TOOL_NAMES: list[str] = [
 ]
 
 SIMICS_TOOL_NAMES: list[str] = [
+    "explore_simics_device",
     "analyze_register_side_effect",
-    "list_register_side_effect",
+    "list_simics_device_feature",
     "analyze_capability",
     "list_capability",
+    "analyze_interface",
+    "analyze_fsm",
+    "analyze_event",
 ]
 
 _EMBEDDING_DEPENDENT_TOOLS: frozenset[str] = frozenset({"ask_knowledge_graph_queries"})
@@ -255,10 +355,14 @@ class PotpieToolset(FunctionToolset[Any]):
         - ``search_codebase``: fast keyword search
         - ``nl_query``: structural NL→Cypher query
         - ``ask_knowledge_graph``: semantic/docstring similarity search
+        - ``explore_simics_device``: full structural inventory (banks, registers, FSMs, events, interfaces)
         - ``analyze_register_side_effect``: analyze Simics DML device registers
-        - ``list_register_side_effect``: list all register side-effects grouped by bank (runs analysis if needed)
+        - ``list_simics_device_feature``: list analysis results for a device by feature type (register/event/fsm/interface/keyword/all); triggers analysis on-demand
         - ``list_capability``: list capability descriptions for a device (generates them if not yet stored)
         - ``analyze_capability``: generate hardware capability descriptions from register analysis
+        - ``analyze_interface``: analyze all PORT/CONNECT interfaces of a DML device
+        - ``analyze_fsm``: analyze FSMs in a DML device (flowchart, feature, keywords)
+        - ``analyze_event``: analyze EVENT nodes in a DML device
     """
 
     def __init__(
@@ -373,25 +477,27 @@ class PotpieToolset(FunctionToolset[Any]):
             )
             return json.dumps(result, default=str)
 
-        @self.tool(description=_LIST_REG_SIDE_EFFECT_DESC)
-        async def list_register_side_effect(
+        @self.tool(description=_LIST_SIMICS_DEVICE_FEATURE_DESC)
+        async def list_simics_device_feature(
             ctx: RunContext[Any],
             device_name: str,
+            feature: str = "all",
         ) -> str:
-            """List all register side-effects for a Simics DML device, grouped by bank.
-
-            Triggers register side-effect analysis automatically if needed.
+            """List hardware analysis results for a Simics DML device.
 
             Args:
                 device_name: DML device name (case-insensitive partial match).
+                feature: Which feature(s) to return: "register", "event", "fsm",
+                    "interface", "keyword", a "+"-joined combination, or "all".
             """
             kg_context = getattr(ctx.deps, "kg_context", None)
             project_id = (getattr(kg_context, "project_id", None) if kg_context else None) or self._project_id
             if not project_id:
                 return "Error: no project_id available. Use list_code_projects to find one."
-            result = await self._runtime.list_register_side_effect(
+            result = await self._runtime.list_simics_device_feature(
                 project_id=project_id,
                 device_name=device_name,
+                feature=feature,
             )
             return json.dumps(result, default=str)
 
@@ -399,6 +505,7 @@ class PotpieToolset(FunctionToolset[Any]):
         async def list_capability(
             ctx: RunContext[Any],
             device_name: str,
+            output: str | None = None,
         ) -> str:
             """List hardware capability descriptions for a Simics DML device.
 
@@ -407,6 +514,8 @@ class PotpieToolset(FunctionToolset[Any]):
 
             Args:
                 device_name: DML device name (case-insensitive partial match).
+                output: Optional path to an output directory.  When provided,
+                    one <capability>-spec.md is written per capability.
             """
             kg_context = getattr(ctx.deps, "kg_context", None)
             project_id = (getattr(kg_context, "project_id", None) if kg_context else None) or self._project_id
@@ -415,6 +524,7 @@ class PotpieToolset(FunctionToolset[Any]):
             result = await self._runtime.list_capability(
                 project_id=project_id,
                 device_name=device_name,
+                output=output,
             )
             return json.dumps(result, default=str)
 
@@ -424,6 +534,7 @@ class PotpieToolset(FunctionToolset[Any]):
             device_name: str,
             refresh: bool = False,
             chunk_tokens: int = 15000,
+            batch_size: int = 5,
         ) -> str:
             """Generate structured hardware capability descriptions for a Simics DML device.
 
@@ -431,6 +542,7 @@ class PotpieToolset(FunctionToolset[Any]):
                 device_name: DML device name (case-insensitive partial match).
                 refresh: When True, re-generate even if capabilities are already stored.
                 chunk_tokens: Token budget per LLM call before splitting into chunks (default 15000).
+                batch_size: Max parallel MAP chunk calls per gather() batch (default 5).
             """
             kg_context = getattr(ctx.deps, "kg_context", None)
             project_id = (getattr(kg_context, "project_id", None) if kg_context else None) or self._project_id
@@ -441,6 +553,111 @@ class PotpieToolset(FunctionToolset[Any]):
                 device_name=device_name,
                 refresh=refresh,
                 chunk_tokens=chunk_tokens,
+                batch_size=batch_size,
+            )
+            return json.dumps(result, default=str)
+
+        @self.tool(description=_ANALYZE_INTERFACE_DESC)
+        async def analyze_interface(
+            ctx: RunContext[Any],
+            device_name: str,
+            refresh: bool = False,
+            batch_size: int = 30,
+            chunk_tokens: int = 15000,
+        ) -> str:
+            """Analyze all PORT/CONNECT interfaces of a Simics DML device.
+
+            Args:
+                device_name: DML device name (case-insensitive partial match).
+                refresh: When True, reset all interface records and re-analyse.
+                batch_size: Max concurrent interface analyses per batch (default 30).
+                chunk_tokens: Token budget per LLM call before chunking (default 15000).
+            """
+            kg_context = getattr(ctx.deps, "kg_context", None)
+            project_id = (getattr(kg_context, "project_id", None) if kg_context else None) or self._project_id
+            if not project_id:
+                return "Error: no project_id available. Use list_code_projects to find one."
+            result = await self._runtime.analyze_interface(
+                project_id=project_id,
+                device_name=device_name,
+                refresh=refresh,
+                batch_size=batch_size,
+                chunk_tokens=chunk_tokens,
+            )
+            return json.dumps(result, default=str)
+
+        @self.tool(description=_ANALYZE_FSM_DESC)
+        async def analyze_fsm(
+            ctx: RunContext[Any],
+            device_name: str,
+            refresh: bool = False,
+            chunk_limit: int = 10,
+            batch_size: int = 3,
+        ) -> str:
+            """Analyze FSMs in a Simics DML device.
+
+            Args:
+                device_name: DML device name (case-insensitive partial match).
+                refresh: When True, reset all FSMs to pending and re-analyse.
+                chunk_limit: Max state nodes per LLM map chunk (default 10).
+                batch_size: Max concurrent FSM analyses per gather() batch (default 3).
+            """
+            kg_context = getattr(ctx.deps, "kg_context", None)
+            project_id = (getattr(kg_context, "project_id", None) if kg_context else None) or self._project_id
+            if not project_id:
+                return "Error: no project_id available. Use list_code_projects to find one."
+            result = await self._runtime.analyze_fsm(
+                project_id=project_id,
+                device_name=device_name,
+                refresh=refresh,
+                chunk_limit=chunk_limit,
+                batch_size=batch_size,
+            )
+            return json.dumps(result, default=str)
+
+        @self.tool(description=_ANALYZE_EVENT_DESC)
+        async def analyze_event(
+            ctx: RunContext[Any],
+            device_name: str,
+            refresh: bool = False,
+            batch_size: int = 5,
+        ) -> str:
+            """Analyse EVENT nodes in a Simics DML device.
+
+            Args:
+                device_name: DML device name (case-insensitive partial match).
+                refresh: When True, reset all events to pending and re-analyse.
+                batch_size: Max concurrent event analyses per gather() batch (default 5).
+            """
+            kg_context = getattr(ctx.deps, "kg_context", None)
+            project_id = (getattr(kg_context, "project_id", None) if kg_context else None) or self._project_id
+            if not project_id:
+                return "Error: no project_id available. Use list_code_projects to find one."
+            result = await self._runtime.analyze_event(
+                project_id=project_id,
+                device_name=device_name,
+                refresh=refresh,
+                batch_size=batch_size,
+            )
+            return json.dumps(result, default=str)
+
+        @self.tool(description=_EXPLORE_SIMICS_DEVICE_DESC)
+        async def explore_simics_device(
+            ctx: RunContext[Any],
+            device_name: str,
+        ) -> str:
+            """Explore the full structure of a Simics DML device.
+
+            Args:
+                device_name: DML device name (case-insensitive partial match).
+            """
+            kg_context = getattr(ctx.deps, "kg_context", None)
+            project_id = (getattr(kg_context, "project_id", None) if kg_context else None) or self._project_id
+            if not project_id:
+                return "Error: no project_id available. Use list_code_projects to find one."
+            result = await self._runtime.explore_simics_device(
+                project_id=project_id,
+                device_name=device_name,
             )
             return json.dumps(result, default=str)
 

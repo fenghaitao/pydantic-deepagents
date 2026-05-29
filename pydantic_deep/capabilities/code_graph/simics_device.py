@@ -1,8 +1,8 @@
 """SimicsDeviceCapability — pydantic-ai capability for Simics DML device analysis.
 
-Encapsulates the four Simics-specific register and capability analysis tools
-(``analyze_register_side_effect``, ``list_register_side_effect``,
-``analyze_capability``, ``list_capability``) behind the standard
+Encapsulates the Simics-specific register, capability and interface analysis tools
+(``analyze_register_side_effect``, ``analyze_capability``, ``list_capability``,
+``analyze_interface``, ``list_simics_device_feature``) behind the standard
 AbstractCapability interface.
 
 Can be used standalone (without a full PotpieCapability) when only Simics
@@ -47,11 +47,12 @@ from pydantic_deep.toolsets.code_graph.potpie.runtime import PotpieRuntime
 class SimicsDeviceCapability(AbstractCapability[Any]):
     """Capability exposing Simics DML device register and capability analysis tools.
 
-    Wraps the four Simics-specific tools from SIMICS_TOOL_NAMES:
+    Wraps the Simics-specific tools from SIMICS_TOOL_NAMES:
       - ``analyze_register_side_effect``
-      - ``list_register_side_effect``
       - ``analyze_capability``
       - ``list_capability``
+      - ``analyze_interface``
+      - ``list_simics_device_feature``
 
     Injects ``kg_context`` into deps via ``before_run()`` so that the
     underlying PotpieToolset functions can read the project_id without
@@ -102,20 +103,24 @@ class SimicsDeviceCapability(AbstractCapability[Any]):
                     "You have access to Simics DML device analysis tools:\n"
                     "- `analyze_register_side_effect`: analyze the simulated hardware behaviour "
                     "of every register in a DML device (write_effect, read_effect, keywords).\n"
-                    "- `list_register_side_effect`: list all register side-effects grouped by bank "
-                    "(triggers analysis automatically if needed).\n"
+                    "- `list_simics_device_feature`: list analysis results for a device by feature "
+                    "type: \"register\", \"event\", \"fsm\", \"interface\", \"keyword\", or \"all\" "
+                    "(triggers the relevant analysis pipeline automatically if needed).\n"
                     "- `analyze_capability`: generate structured hardware capability descriptions "
                     "from register keyword analysis.\n"
                     "- `list_capability`: list capability descriptions for a device "
-                    "(generates them automatically if not yet stored).\n\n"
+                    "(generates them automatically if not yet stored).\n"
+                    "- `analyze_interface`: analyze all PORT (input) and CONNECT (output) interfaces "
+                    "of a DML device, producing feature descriptions and hardware keywords for each.\n\n"
                     "Workflow: run `analyze_register_side_effect` first, then "
-                    "`analyze_capability` / `list_capability` for high-level hardware summaries."
+                    "`analyze_capability` / `list_capability` for high-level hardware summaries. "
+                    "Use `list_simics_device_feature` to retrieve register, FSM, event, or interface results."
                 )
             return (
                 "## Simics Device Analysis\n\n"
                 "You have access to Simics DML device analysis tools "
-                "(`analyze_register_side_effect`, `list_register_side_effect`, "
-                "`analyze_capability`, `list_capability`). "
+                "(`analyze_register_side_effect`, `list_simics_device_feature`, "
+                "`analyze_capability`, `list_capability`, `analyze_interface`). "
                 "Use `list_code_projects` to discover available project IDs first."
             )
 

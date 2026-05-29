@@ -85,6 +85,7 @@ def _setup_phoenix(endpoint: str) -> None:
         # Verify it's actually a Phoenix server, not some other app on that port
         import urllib.request
         import urllib.error
+
         healthz_url = endpoint.rstrip("/") + "/healthz"
         try:
             with urllib.request.urlopen(healthz_url, timeout=3) as resp:
@@ -115,10 +116,12 @@ def _setup_phoenix(endpoint: str) -> None:
 
         # Pass provider explicitly so pydantic-ai uses it; include_content=True
         # ensures user prompts and completions are captured as span attributes.
-        Agent.instrument_all(InstrumentationSettings(
-            tracer_provider=provider,
-            include_content=True,
-        ))
+        Agent.instrument_all(
+            InstrumentationSettings(
+                tracer_provider=provider,
+                include_content=True,
+            )
+        )
     except ImportError as e:
         print(
             f"Phoenix tracing dependencies not installed ({e}). "
@@ -145,9 +148,7 @@ def _setup_logfire() -> None:
         kwargs: dict = {"token": token, "send_to_logfire": "if-token-present"}
 
         if not token:
-            kwargs["additional_span_processors"] = [
-                SimpleSpanProcessor(SessionFileExporter())
-            ]
+            kwargs["additional_span_processors"] = [SimpleSpanProcessor(SessionFileExporter())]
             kwargs["console"] = False
 
         logfire.configure(**kwargs)
@@ -157,6 +158,7 @@ def _setup_logfire() -> None:
         log_level_str = os.environ.get("PYDANTIC_DEEP_LOG_LEVEL", "").upper()
         if log_level_str:
             import logging as _logging
+
             _level = getattr(_logging, log_level_str, None)
             if _level is not None:
                 _logging.getLogger("logfire").setLevel(_level)
@@ -228,7 +230,10 @@ def _setup_vector() -> None:
         try:
             from ports_allocator import PortManager
             from pathlib import Path as _Path
-            _pm_port = PortManager().get("obs.victoria_metrics", workspace=str(_Path.cwd().resolve()))
+
+            _pm_port = PortManager().get(
+                "obs.victoria_metrics", workspace=str(_Path.cwd().resolve())
+            )
             if _pm_port:
                 metrics_port = str(_pm_port)
         except Exception:
@@ -247,11 +252,13 @@ def _setup_vector() -> None:
     )
     meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
     from opentelemetry import metrics as otel_metrics
+
     otel_metrics.set_meter_provider(meter_provider)
     # Flush pending metrics on process exit — PeriodicExportingMetricReader fires
     # every 5 s, so short-lived CLI runs would otherwise exit before the first
     # export.  shutdown() performs a synchronous final collection + export.
     import atexit
+
     atexit.register(meter_provider.shutdown)
 
     logfire.configure(
@@ -281,6 +288,7 @@ def _resolve_vector_otlp_endpoint() -> str:
 
     try:
         from ports_allocator import PortManager
+
         port = PortManager().get("obs.vector_otlp_http", workspace=workspace)
         if port:
             return f"http://localhost:{port}"
@@ -307,11 +315,14 @@ def _setup_vector_log_handler(service_name: str) -> None:
     # 2. PortManager.get() — same machine, reads ~/.ports-allocator/ directly
     # 3. Hardcoded default
     ingest_url: str | None = os.environ.get("VECTOR_INGEST_LOCAL") or (
-        f"http://localhost:{os.environ['VECTOR_INGEST_PORT']}" if os.environ.get("VECTOR_INGEST_PORT") else None
+        f"http://localhost:{os.environ['VECTOR_INGEST_PORT']}"
+        if os.environ.get("VECTOR_INGEST_PORT")
+        else None
     )
     if not ingest_url:
         try:
             from ports_allocator import PortManager
+
             port = PortManager().get("obs.vector_ingest", workspace=str(Path.cwd().resolve()))
             if port:
                 ingest_url = f"http://localhost:{port}"
@@ -328,14 +339,15 @@ def _setup_vector_log_handler(service_name: str) -> None:
 
         def emit(self, record: logging.LogRecord) -> None:
             try:
-                payload = json.dumps({
-                    "message": self.format(record),
-                    "level": record.levelname.lower(),
-                    "service": self._svc,
-                    "logger": record.name,
-                }).encode()
-                req = Request(self._url, data=payload,
-                              headers={"Content-Type": "application/json"})
+                payload = json.dumps(
+                    {
+                        "message": self.format(record),
+                        "level": record.levelname.lower(),
+                        "service": self._svc,
+                        "logger": record.name,
+                    }
+                ).encode()
+                req = Request(self._url, data=payload, headers={"Content-Type": "application/json"})
                 urlopen(req, timeout=1)  # noqa: S310
             except Exception:
                 pass  # Never let logging errors crash the agent
@@ -372,11 +384,17 @@ def _main_callback(
     ] = None,
     logfire_enabled: Annotated[
         bool | None,
-        typer.Option("--logfire/--no-logfire", help="Enable Logfire tracing (overrides PYDANTIC_DEEP_LOGFIRE env var)"),
+        typer.Option(
+            "--logfire/--no-logfire",
+            help="Enable Logfire tracing (overrides PYDANTIC_DEEP_LOGFIRE env var)",
+        ),
     ] = None,
     phoenix_enabled: Annotated[
         bool,
-        typer.Option("--phoenix/--no-phoenix", help="Send traces to Arize Phoenix (reads PHOENIX_PORT from .env, defaults to 6006)"),
+        typer.Option(
+            "--phoenix/--no-phoenix",
+            help="Send traces to Arize Phoenix (reads PHOENIX_PORT from .env, defaults to 6006)",
+        ),
     ] = False,
     vector_enabled: Annotated[
         bool,
@@ -417,6 +435,7 @@ def _main_callback(
 
     # Non-blocking update notification (uses 24-hour file cache)
     from apps.cli.update import check_for_update
+
     _upd = check_for_update()
     if _upd:
         Console().print(
@@ -589,7 +608,9 @@ def run(
     ] = None,
     code_graph: Annotated[
         bool | None,
-        typer.Option("--code-graph/--no-code-graph", help="Enable code graph capabilities (from config)"),
+        typer.Option(
+            "--code-graph/--no-code-graph", help="Enable code graph capabilities (from config)"
+        ),
     ] = None,
     project_id: Annotated[
         str | None,
@@ -601,7 +622,10 @@ def run(
     ] = None,
     enable_mcp: Annotated[
         bool,
-        typer.Option("--mcp/--no-mcp", help="Connect to code-graph MCP server (provider from kg.provider config)"),
+        typer.Option(
+            "--mcp/--no-mcp",
+            help="Connect to code-graph MCP server (provider from kg.provider config)",
+        ),
     ] = False,
 ) -> None:
     """Run a task non-interactively (headless mode).
@@ -1159,7 +1183,9 @@ def traces_upload(
     ] = None,
     phoenix_port: Annotated[
         str | None,
-        typer.Option("--phoenix-port", "-p", help="Phoenix server port (default: PHOENIX_PORT env or 6006)"),
+        typer.Option(
+            "--phoenix-port", "-p", help="Phoenix server port (default: PHOENIX_PORT env or 6006)"
+        ),
     ] = None,
 ) -> None:
     """Upload a local session trace to the Phoenix tracing server."""
@@ -1300,7 +1326,6 @@ def threads_export(
         for msg in messages:
             typer.echo(f"---\n{msg}\n")
 
-
     asyncio.run(_run())
 
 
@@ -1398,8 +1423,7 @@ def parse_repo(
         if status == "READY":
             console.print("\n[green]Parsing complete.[/green]")
             console.print(
-                "[dim]Set as default: pydantic-deep config set"
-                f" kg.project_id {project_id}[/dim]"
+                f"[dim]Set as default: pydantic-deep config set kg.project_id {project_id}[/dim]"
             )
         elif status == "ERROR":
             console.print("\n[red]Parsing failed.[/red]")
@@ -1709,6 +1733,7 @@ spec_app = typer.Typer(
 )
 app.add_typer(spec_app)
 
+
 def _collect_spec_texts(path: str, extensions: list[str] | None) -> tuple[list[str], list[str]]:
     """Read text files under *path* and return (texts, file_paths).
 
@@ -1718,9 +1743,7 @@ def _collect_spec_texts(path: str, extensions: list[str] | None) -> tuple[list[s
     """
     from pathlib import Path as _Path
 
-    exts: set[str] | None = (
-        {e.lstrip(".").lower() for e in extensions} if extensions else None
-    )
+    exts: set[str] | None = {e.lstrip(".").lower() for e in extensions} if extensions else None
     root = _Path(path)
     candidates = [root] if root.is_file() else list(root.rglob("*"))
     texts: list[str] = []
@@ -1814,7 +1837,11 @@ def spec_index(
 
         if project_name:
             existing = next(
-                (p for p in all_projects if p.get("repo_name", p.get("project_name", "")) == project_name),
+                (
+                    p
+                    for p in all_projects
+                    if p.get("repo_name", p.get("project_name", "")) == project_name
+                ),
                 None,
             )
             if existing is None:
@@ -1845,7 +1872,11 @@ def spec_index(
                 raise typer.Exit(1)
             effective_project_id = project_id
 
-        repo_name = existing.get("repo_name", existing.get("project_name", effective_project_id)) if existing else project_name or effective_project_id
+        repo_name = (
+            existing.get("repo_name", existing.get("project_name", effective_project_id))
+            if existing
+            else project_name or effective_project_id
+        )
         console.print(f"[bold]Project ID:[/bold] {effective_project_id}")
         console.print(f"[bold]Name:[/bold]       {repo_name}")
 
@@ -1882,8 +1913,7 @@ def spec_index(
 
         workspace = result.get("workspace", "")
         console.print(
-            f"\n[green]Done.[/green] "
-            f"inserted={result.get('inserted', len(texts))} document(s)"
+            f"\n[green]Done.[/green] inserted={result.get('inserted', len(texts))} document(s)"
         )
         if workspace:
             console.print(f"[dim]Workspace: {workspace}[/dim]")
@@ -1907,7 +1937,9 @@ def spec_index(
 
 @spec_app.command("query")
 def spec_query(
-    query_text: Annotated[str | None, typer.Argument(help="Query text. Optional when --summarize is set.")] = None,
+    query_text: Annotated[
+        str | None, typer.Argument(help="Query text. Optional when --summarize is set.")
+    ] = None,
     project_id: Annotated[
         str | None,
         typer.Option("--project-id", "-p", help="Project ID to query."),
@@ -1934,7 +1966,9 @@ def spec_query(
     ] = "hybrid",
     summarize: Annotated[
         bool,
-        typer.Option("--summarize", "-s", help="Query with a pre-defined hardware IP summary prompt."),
+        typer.Option(
+            "--summarize", "-s", help="Query with a pre-defined hardware IP summary prompt."
+        ),
     ] = False,
     local: Annotated[
         bool,
@@ -1973,7 +2007,11 @@ def spec_query(
         if project_name:
             all_projects = await runtime.list_projects()
             existing = next(
-                (p for p in all_projects if p.get("repo_name", p.get("project_name", "")) == project_name),
+                (
+                    p
+                    for p in all_projects
+                    if p.get("repo_name", p.get("project_name", "")) == project_name
+                ),
                 None,
             )
             if existing is None:
@@ -2039,7 +2077,11 @@ def spec_list(
         if project_name:
             all_projects = await runtime.list_projects()
             existing = next(
-                (p for p in all_projects if p.get("repo_name", p.get("project_name", "")) == project_name),
+                (
+                    p
+                    for p in all_projects
+                    if p.get("repo_name", p.get("project_name", "")) == project_name
+                ),
                 None,
             )
             if existing is None:
@@ -2061,6 +2103,7 @@ def spec_list(
 
         if output_json:
             import json
+
             console.print(json.dumps(docs, indent=2))
             return
 
@@ -2069,6 +2112,7 @@ def spec_list(
             return
 
         from rich.table import Table
+
         table = Table(show_header=True, header_style="bold")
         table.add_column("#", style="dim", width=4)
         table.add_column("Doc ID", style="dim")
@@ -2117,7 +2161,9 @@ def spec_del(
     ] = "defaultuser",
     delete_llm_cache: Annotated[
         bool,
-        typer.Option("--delete-cache", help="Also delete cached LLM extraction results for the document."),
+        typer.Option(
+            "--delete-cache", help="Also delete cached LLM extraction results for the document."
+        ),
     ] = False,
     force: Annotated[bool, typer.Option("--force", "-f", help="Skip confirmation prompt.")] = False,
     local: Annotated[
@@ -2144,7 +2190,11 @@ def spec_del(
         if project_name:
             all_projects = await runtime.list_projects()
             existing = next(
-                (p for p in all_projects if p.get("repo_name", p.get("project_name", "")) == project_name),
+                (
+                    p
+                    for p in all_projects
+                    if p.get("repo_name", p.get("project_name", "")) == project_name
+                ),
                 None,
             )
             if existing is None:
@@ -2260,13 +2310,20 @@ def spec_diff(
     ids = project_ids or []
 
     if not names and not ids:
-        typer.echo("Error: specify --project-name or --project-id (repeat twice for base and new).", err=True)
+        typer.echo(
+            "Error: specify --project-name or --project-id (repeat twice for base and new).",
+            err=True,
+        )
         raise typer.Exit(1)
     if names and len(names) != 2:
-        typer.echo(f"Error: --project-name must be specified exactly twice, got {len(names)}.", err=True)
+        typer.echo(
+            f"Error: --project-name must be specified exactly twice, got {len(names)}.", err=True
+        )
         raise typer.Exit(1)
     if ids and len(ids) != 2:
-        typer.echo(f"Error: --project-id must be specified exactly twice, got {len(ids)}.", err=True)
+        typer.echo(
+            f"Error: --project-id must be specified exactly twice, got {len(ids)}.", err=True
+        )
         raise typer.Exit(1)
     if ids and names:
         typer.echo("Error: specify either --project-name or --project-id, not both.", err=True)
@@ -2305,7 +2362,9 @@ def spec_diff(
         label_b = eff_id_b
 
         detail_label = "summary" if summarize else "signal-level detail"
-        with console.status(f"[bold blue]Querying both specs ({mode}, {detail_label})…[/bold blue]"):
+        with console.status(
+            f"[bold blue]Querying both specs ({mode}, {detail_label})…[/bold blue]"
+        ):
             delta = await runtime.spec_diff(
                 project_id_a=eff_id_a,
                 project_id_b=eff_id_b,
@@ -2315,6 +2374,269 @@ def spec_diff(
             )
 
         console.print(delta)
+
+    asyncio.run(_run())
+
+
+# ── simics_device sub-app ─────────────────────────────────────────────────────
+
+simics_device_app = typer.Typer(
+    name="simics-device",
+    help="Analyze and inspect Simics DML device models.",
+    no_args_is_help=True,
+)
+app.add_typer(simics_device_app)
+
+_ANALYZE_FEATURES = ("register", "interface", "fsm", "event", "capability", "all")
+_SHOW_FEATURES = ("register", "interface", "fsm", "event", "capability", "all")
+
+
+@simics_device_app.command("analyze")
+def simics_device_analyze(
+    project_id: Annotated[str, typer.Option("--project-id", "-p", help="Project ID")],
+    device_name: Annotated[str, typer.Option("--device-name", "-d", help="DML device name")],
+    feature: Annotated[
+        str,
+        typer.Option(
+            "--feature",
+            "-f",
+            help=f"Feature to analyze: {', '.join(_ANALYZE_FEATURES)}",
+        ),
+    ] = "all",
+    refresh: Annotated[
+        bool, typer.Option("--refresh", help="Force re-analysis (ignore cached results)")
+    ] = False,
+    batch_size: Annotated[
+        int | None,
+        typer.Option(
+            "--batch-size",
+            help=(
+                "Optional per-request batch size. "
+                "Used by register/interface/fsm/event/capability analyzers."
+            ),
+        ),
+    ] = None,
+    chunk_tokens: Annotated[
+        int | None,
+        typer.Option(
+            "--chunk-tokens",
+            help=(
+                "Optional token budget per chunk. "
+                "Used by register/interface/capability analyzers."
+            ),
+        ),
+    ] = None,
+    chunk_limit: Annotated[
+        int | None,
+        typer.Option(
+            "--chunk-limit",
+            help="Optional chunk limit. Used by fsm analyzer.",
+        ),
+    ] = None,
+    user_id: Annotated[
+        str,
+        typer.Option("--user-id", help="User ID (default: defaultuser)"),
+    ] = "defaultuser",
+) -> None:
+    """Analyze a Simics DML device model (registers, interfaces, FSM, events, capabilities).
+
+    Examples:\n
+        pydantic-deep simics-device analyze --project-id <id> --device-name my_dev\n
+        pydantic-deep simics-device analyze --project-id <id> --device-name my_dev --feature register --refresh
+    """
+    if feature not in _ANALYZE_FEATURES:
+        typer.echo(f"Error: --feature must be one of: {', '.join(_ANALYZE_FEATURES)}", err=True)
+        raise typer.Exit(1)
+
+    console = Console()
+
+    async def _run() -> None:
+        from pydantic_deep.providers.code_graph import make_provider
+
+        runtime: Any = make_provider("potpie", user_id=user_id)
+        features_to_run = ["register", "interface", "fsm", "event", "capability"] if feature == "all" else [feature]
+        if "capability" in features_to_run:
+            features_to_run = [feat for feat in features_to_run if feat != "capability"] + ["capability"]
+
+        for feat in features_to_run:
+            with console.status(f"[bold blue]Analyzing {feat}…[/bold blue]"):
+                if feat == "register":
+                    kwargs: dict[str, Any] = {
+                        "project_id": project_id,
+                        "device_name": device_name,
+                        "refresh": refresh,
+                    }
+                    if batch_size is not None:
+                        kwargs["batch_size"] = batch_size
+                    if chunk_tokens is not None:
+                        kwargs["chunk_tokens"] = chunk_tokens
+                    result = await runtime.analyze_register_side_effect(**kwargs)
+                elif feat == "interface":
+                    kwargs = {
+                        "project_id": project_id,
+                        "device_name": device_name,
+                        "refresh": refresh,
+                    }
+                    if batch_size is not None:
+                        kwargs["batch_size"] = batch_size
+                    if chunk_tokens is not None:
+                        kwargs["chunk_tokens"] = chunk_tokens
+                    result = await runtime.analyze_interface(**kwargs)
+                elif feat == "fsm":
+                    kwargs = {
+                        "project_id": project_id,
+                        "device_name": device_name,
+                        "refresh": refresh,
+                    }
+                    if batch_size is not None:
+                        kwargs["batch_size"] = batch_size
+                    if chunk_limit is not None:
+                        kwargs["chunk_limit"] = chunk_limit
+                    result = await runtime.analyze_fsm(**kwargs)
+                elif feat == "event":
+                    kwargs = {
+                        "project_id": project_id,
+                        "device_name": device_name,
+                        "refresh": refresh,
+                    }
+                    if batch_size is not None:
+                        kwargs["batch_size"] = batch_size
+                    result = await runtime.analyze_event(**kwargs)
+                else:  # capability
+                    kwargs = {
+                        "project_id": project_id,
+                        "device_name": device_name,
+                        "refresh": refresh,
+                    }
+                    if batch_size is not None:
+                        kwargs["batch_size"] = batch_size
+                    if chunk_tokens is not None:
+                        kwargs["chunk_tokens"] = chunk_tokens
+                    result = await runtime.analyze_capability(**kwargs)
+
+            console.print(f"\n[bold cyan]=== {feat.upper()} ===[/bold cyan]")
+            if isinstance(result, dict):
+                console.print_json(json.dumps(result, default=str))
+            else:
+                console.print(str(result))
+
+    asyncio.run(_run())
+
+
+@simics_device_app.command("show")
+def simics_device_show(
+    project_id: Annotated[str, typer.Option("--project-id", "-p", help="Project ID")],
+    device_name: Annotated[str, typer.Option("--device-name", "-d", help="DML device name")],
+    feature: Annotated[
+        str,
+        typer.Option(
+            "--feature",
+            "-f",
+            help=f"Feature to show: {', '.join(_SHOW_FEATURES)}",
+        ),
+    ] = "all",
+    user_id: Annotated[
+        str,
+        typer.Option("--user-id", help="User ID (default: defaultuser)"),
+    ] = "defaultuser",
+    output_json: Annotated[bool, typer.Option("--json", help="Output raw JSON")] = False,
+    gen_specs: Annotated[
+        bool,
+        typer.Option("--gen-specs", help="Write per-capability spec files to --output dir (capability feature only)"),
+    ] = False,
+    output: Annotated[
+        str | None,
+        typer.Option("--output", "-o", help="Output directory for capability spec files (capability feature only)"),
+    ] = None,
+) -> None:
+    """Show stored features of a Simics DML device (registers, interfaces, FSM, events, capabilities).
+
+    Examples:\n
+        pydantic-deep simics-device show --project-id <id> --device-name my_dev\n
+        pydantic-deep simics-device show --project-id <id> --device-name my_dev --feature capability --json\n
+        pydantic-deep simics-device show --project-id <id> --device-name my_dev --feature capability --gen-specs --output ./specs
+    """
+    if feature not in _SHOW_FEATURES:
+        typer.echo(f"Error: --feature must be one of: {', '.join(_SHOW_FEATURES)}", err=True)
+        raise typer.Exit(1)
+
+    if (gen_specs or output) and feature != "capability":
+        typer.echo("Warning: --gen-specs and --output are only used when --feature=capability; ignoring.", err=True)
+
+    console = Console()
+
+    async def _run() -> None:
+        import app.core.models  # noqa: ensure all SQLAlchemy models are registered
+        from app.core.database import SessionLocal
+        from app.modules.intelligence.tools.simics_device_tools.list_capability_tool import (
+            ListCapabilityTool,
+        )
+        from app.modules.intelligence.tools.simics_device_tools.list_simics_device_feature import (
+            ListSimicsDeviceFeatureTool,
+        )
+
+        db = SessionLocal()
+        try:
+            if feature == "capability":
+                tool = ListCapabilityTool(db, user_id)
+                result = await tool.arun(
+                    project_id,
+                    device_name,
+                    gen_specs=gen_specs,
+                    output=output,
+                )
+            else:
+                tool = ListSimicsDeviceFeatureTool(db, user_id)
+                result = await tool.arun(project_id, device_name, feature=feature)
+        finally:
+            db.close()
+
+        if output_json:
+            typer.echo(json.dumps(result, indent=2, default=str))
+            return
+
+        if isinstance(result, dict):
+            console.print_json(json.dumps(result, default=str))
+        else:
+            console.print(str(result))
+
+    asyncio.run(_run())
+
+
+@simics_device_app.command("explore")
+def simics_device_explore(
+    project_id: Annotated[str, typer.Option("--project-id", "-p", help="Project ID")],
+    device_name: Annotated[str, typer.Option("--device-name", "-d", help="DML device name")],
+    refresh: Annotated[
+        bool, typer.Option("--refresh", help="Force refresh of cached device structure")
+    ] = False,
+) -> None:
+    """Explore the full structural inventory of a Simics DML device.
+
+    Examples:\n
+        pydantic-deep simics-device explore --project-id <id> --device-name my_dev\n
+        pydantic-deep simics-device explore --project-id <id> --device-name my_dev --refresh
+    """
+    console = Console()
+
+    async def _run() -> None:
+        from app.core.database import SessionLocal
+        from app.modules.intelligence.tools.simics_device_tools.explore_simics_device_tool import (
+            ExploreSimicsDeviceTool,
+        )
+
+        db = SessionLocal()
+        try:
+            tool = ExploreSimicsDeviceTool(db, "defaultuser")
+            with console.status("[bold blue]Exploring device structure…[/bold blue]"):
+                result = await tool.arun(project_id, device_name, refresh=refresh)
+        finally:
+            db.close()
+
+        if isinstance(result, dict):
+            console.print_json(json.dumps(result, default=str))
+        else:
+            console.print(str(result))
 
     asyncio.run(_run())
 

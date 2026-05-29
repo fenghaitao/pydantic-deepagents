@@ -184,6 +184,7 @@ class PotpieRuntime:
         device_name: str,
         refresh: bool = False,
         chunk_tokens: int = 15000,
+        batch_size: int = 5,
     ) -> dict:
         from app.modules.intelligence.tools.simics_device_tools.analyze_capability_tool import (
             AnalyzeCapabilityTool,
@@ -198,6 +199,7 @@ class PotpieRuntime:
                 device_name=device_name,
                 refresh=refresh,
                 chunk_tokens=chunk_tokens,
+                batch_size=batch_size,
             )
         finally:
             session.close()
@@ -206,6 +208,7 @@ class PotpieRuntime:
         self,
         project_id: str,
         device_name: str,
+        output: str | None = None,
     ) -> dict:
         from app.modules.intelligence.tools.simics_device_tools.list_capability_tool import (
             ListCapabilityTool,
@@ -218,26 +221,127 @@ class PotpieRuntime:
             return await tool.arun(
                 project_id=project_id,
                 device_name=device_name,
+                output=output,
             )
         finally:
             session.close()
 
-    async def list_register_side_effect(
+    async def list_simics_device_feature(
         self,
         project_id: str,
         device_name: str,
+        feature: str = "all",
     ) -> dict:
-        from app.modules.intelligence.tools.simics_device_tools.list_register_side_effect_tool import (
-            ListRegisterSideEffectTool,
+        from app.modules.intelligence.tools.simics_device_tools.list_simics_device_feature import (
+            ListSimicsDeviceFeatureTool,
         )
 
         rt = await self._get_runtime()
         session = rt.db.get_session()
         try:
-            tool = ListRegisterSideEffectTool(sql_db=session, user_id=self._user_id)
+            tool = ListSimicsDeviceFeatureTool(sql_db=session, user_id=self._user_id)
             return await tool.arun(
                 project_id=project_id,
                 device_name=device_name,
+                feature=feature,
+            )
+        finally:
+            session.close()
+
+    async def analyze_interface(
+        self,
+        project_id: str,
+        device_name: str,
+        refresh: bool = False,
+        batch_size: int = 30,
+        chunk_tokens: int = 15000,
+    ) -> dict:
+        from app.modules.intelligence.tools.simics_device_tools.analyze_interface_tool import (
+            AnalyzeInterfaceTool,
+        )
+
+        rt = await self._get_runtime()
+        session = rt.db.get_session()
+        try:
+            tool = AnalyzeInterfaceTool(sql_db=session, user_id=self._user_id)
+            return await tool.arun(
+                project_id=project_id,
+                device_name=device_name,
+                refresh=refresh,
+                batch_size=batch_size,
+                chunk_tokens=chunk_tokens,
+            )
+        finally:
+            session.close()
+
+    async def analyze_fsm(
+        self,
+        project_id: str,
+        device_name: str,
+        refresh: bool = False,
+        chunk_limit: int = 10,
+        batch_size: int = 3,
+    ) -> dict:
+        from app.modules.intelligence.tools.simics_device_tools.analyze_fsm_tool import (
+            AnalyzeFsmTool,
+        )
+
+        rt = await self._get_runtime()
+        session = rt.db.get_session()
+        try:
+            tool = AnalyzeFsmTool(sql_db=session, user_id=self._user_id)
+            return await tool.arun(
+                project_id=project_id,
+                device_name=device_name,
+                refresh=refresh,
+                chunk_limit=chunk_limit,
+                batch_size=batch_size,
+            )
+        finally:
+            session.close()
+
+    async def analyze_event(
+        self,
+        project_id: str,
+        device_name: str,
+        refresh: bool = False,
+        batch_size: int = 5,
+    ) -> dict:
+        from app.modules.intelligence.tools.simics_device_tools.analyze_event_tool import (
+            AnalyzeEventTool,
+        )
+
+        rt = await self._get_runtime()
+        session = rt.db.get_session()
+        try:
+            tool = AnalyzeEventTool(sql_db=session, user_id=self._user_id)
+            return await tool.arun(
+                project_id=project_id,
+                device_name=device_name,
+                refresh=refresh,
+                batch_size=batch_size,
+            )
+        finally:
+            session.close()
+
+    async def explore_simics_device(
+        self,
+        project_id: str,
+        device_name: str,
+        refresh: bool = False,
+    ) -> dict:
+        from app.modules.intelligence.tools.simics_device_tools.explore_simics_device_tool import (
+            ExploreSimicsDeviceTool,
+        )
+
+        rt = await self._get_runtime()
+        session = rt.db.get_session()
+        try:
+            tool = ExploreSimicsDeviceTool(sql_db=session, user_id=self._user_id)
+            return await tool.arun(
+                project_id=project_id,
+                device_name=device_name,
+                refresh=refresh,
             )
         finally:
             session.close()
