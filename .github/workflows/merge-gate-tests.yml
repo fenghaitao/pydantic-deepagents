@@ -28,6 +28,13 @@ env:
   # the Intel Proxy Root CA — fixing "unable to get local issuer certificate"
   # errors in npm install / lerna bootstrap on fresh self-hosted runners.
   NODE_EXTRA_CA_CERTS: /etc/ssl/ca-bundle.pem
+  # Python's requests/httpx (used by LiteLLM, huggingface_hub, etc.) has its
+  # own bundled CA store and ignores NODE_EXTRA_CA_CERTS.  These two vars make
+  # every Python HTTPS call in every step trust the Intel Proxy Root CA.
+  SSL_CERT_FILE: /etc/ssl/ca-bundle.pem
+  REQUESTS_CA_BUNDLE: /etc/ssl/ca-bundle.pem
+  # Single source of truth for the Python version used across all jobs.
+  PYTHON_VERSION: "3.13"
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -46,17 +53,45 @@ jobs:
 
       - uses: ./.github/actions/setup-uv
         with:
-          python-version: "3.13"
+          python-version: ${{ env.PYTHON_VERSION }}
           uv-sync-args: "--frozen --group dev --group lint"
 
       - name: Verify uv.lock is consistent
         run: make uv-lock-check
 
       - name: Run tests
-        run: make test
+        env:
+          # Emit JUnit XML alongside coverage so the AI RCA step has structured
+          # failure data to work with even for the plain `make test` invocation.
+          PYTEST_ADDOPTS: "--junitxml=test-results/junit-unit.xml"
+        run: |
+          mkdir -p test-results
+          make test
 
       - name: Generate lcov report
         run: uv run --no-sync coverage lcov -o coverage.lcov
+
+      - name: AI Root Cause Analysis
+        if: failure()
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+          PR_COMMENT_FLAG: ${{ github.event_name == 'pull_request' && '--pr-comment' || '' }}
+        run: |
+          uv run --no-sync python tools/ci_rca/root_cause_analysis.py \
+            --junit-dir test-results \
+            --output test-results/ai-root-cause-analysis.md \
+            ${PR_COMMENT_FLAG} \
+          || echo "WARNING: AI RCA failed, continuing CI safely"
+
+      - name: Upload RCA report
+        if: failure()
+        run: |
+          if [ -f test-results/ai-root-cause-analysis.md ]; then
+            echo "## 🤖 AI Root Cause Analysis" >> "$GITHUB_STEP_SUMMARY"
+            cat test-results/ai-root-cause-analysis.md >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   # ---------------------------------------------------------------------------
   # Potpie submodule tests — copied from potpie/.github/workflows/unit-tests.yml
@@ -83,12 +118,6 @@ jobs:
       # persists across steps and avoids re-downloading on every job.
       HF_HOME: /tmp/hf-cache
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
-      # Python's SSL stack (used by requests / httpx / huggingface_hub) has its
-      # own CA bundle and ignores the system trust store by default.  Setting
-      # these vars makes every Python process in every step trust the Intel
-      # Proxy Root CA — fixing the SSL certificate verify failed errors.
-      SSL_CERT_FILE: /etc/ssl/ca-bundle.pem
-      REQUESTS_CA_BUNDLE: /etc/ssl/ca-bundle.pem
       PYDANTIC_DEEP_LOGFIRE: ${{ vars.CI_LOGFIRE_ENABLED }}
       PYDANTIC_DEEP_LOG_LEVEL: ${{ vars.CI_LOGFIRE_LEVEL }}
       CI_LOGFIRE_ENABLED: ${{ vars.CI_LOGFIRE_ENABLED }}
@@ -250,6 +279,30 @@ jobs:
             --tb=short \
             --junitxml=test-results/junit-int-phoenix.xml
 
+      - name: AI Root Cause Analysis
+        if: failure()
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+          PR_COMMENT_FLAG: ${{ github.event_name == 'pull_request' && '--pr-comment' || '' }}
+        run: |
+          mkdir -p test-results
+          uv run --no-sync python tools/ci_rca/root_cause_analysis.py \
+            --junit-dir test-results \
+            --junit-dir code-graph-providers/potpie/test-results \
+            --output test-results/ai-root-cause-analysis.md \
+            ${PR_COMMENT_FLAG} \
+          || echo "WARNING: AI RCA failed, continuing CI safely"
+
+      - name: Upload RCA report
+        if: failure()
+        run: |
+          if [ -f test-results/ai-root-cause-analysis.md ]; then
+            echo "## 🤖 AI Root Cause Analysis" >> "$GITHUB_STEP_SUMMARY"
+            cat test-results/ai-root-cause-analysis.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Backup logfire sessions
         if: always()
         working-directory: code-graph-providers/potpie
@@ -308,7 +361,7 @@ jobs:
       - name: Set up Python & venv
         uses: ./.github/actions/setup-uv
         with:
-          python-version: "3.13"
+          python-version: ${{ env.PYTHON_VERSION }}
           uv-sync-args: "--frozen --group dev --group lint"
 
       - name: Start observability stack
@@ -410,6 +463,28 @@ jobs:
             echo "=== ${svc} log (last 50 lines) ==="
             tail -50 "scripts/vector/logs/${svc}.log" 2>/dev/null || echo "(no log file)"
           done
+
+      - name: AI Root Cause Analysis
+        if: failure()
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+          PR_COMMENT_FLAG: ${{ github.event_name == 'pull_request' && '--pr-comment' || '' }}
+        run: |
+          uv run --no-sync python tools/ci_rca/root_cause_analysis.py \
+            --junit-dir test-results \
+            --output test-results/ai-root-cause-analysis.md \
+            ${PR_COMMENT_FLAG} \
+          || echo "WARNING: AI RCA failed, continuing CI safely"
+
+      - name: Upload RCA report
+        if: failure()
+        run: |
+          if [ -f test-results/ai-root-cause-analysis.md ]; then
+            echo "## 🤖 AI Root Cause Analysis" >> "$GITHUB_STEP_SUMMARY"
+            cat test-results/ai-root-cause-analysis.md >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Stop observability stack
         if: always()
@@ -524,7 +599,7 @@ jobs:
 
       - uses: ./.github/actions/setup-uv
         with:
-          python-version: "3.13"
+          python-version: ${{ env.PYTHON_VERSION }}
           uv-sync-args: "--frozen --group dev --extra cgc"
 
       - name: Download scip-clang binary
@@ -559,3 +634,25 @@ jobs:
             -v -s \
             --tb=short \
             --junitxml=test-results/junit-int-scip-clang-simics-device.xml
+
+      - name: AI Root Cause Analysis
+        if: failure()
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+          PR_COMMENT_FLAG: ${{ github.event_name == 'pull_request' && '--pr-comment' || '' }}
+        run: |
+          uv run --no-sync python tools/ci_rca/root_cause_analysis.py \
+            --junit-dir test-results \
+            --output test-results/ai-root-cause-analysis.md \
+            ${PR_COMMENT_FLAG} \
+          || echo "WARNING: AI RCA failed, continuing CI safely"
+
+      - name: Upload RCA report
+        if: failure()
+        run: |
+          if [ -f test-results/ai-root-cause-analysis.md ]; then
+            echo "## 🤖 AI Root Cause Analysis" >> "$GITHUB_STEP_SUMMARY"
+            cat test-results/ai-root-cause-analysis.md >> "$GITHUB_STEP_SUMMARY"
+          fi

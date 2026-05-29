@@ -222,6 +222,7 @@ class TestCheckAllowedDomain:
 def _make_page() -> AsyncMock:
     page = AsyncMock()
     page.url = "https://example.com"
+    page.on = MagicMock()  # page.on() is synchronous in Playwright; avoid unawaited coroutine warning
     page.title = AsyncMock(return_value="Example Domain")
     page.content = AsyncMock(return_value="<html><body><p>Hello world</p></body></html>")
     page.goto = AsyncMock()

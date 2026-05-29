@@ -222,11 +222,11 @@ class SkillsToolset(FunctionToolset):
             # Default: ./skills directory (only if no skills provided)
             default_dir = Path("./skills")
             if not default_dir.exists():
-                warnings.warn(
-                    f"Default skills directory '{default_dir}' does not exist. "
+                import logging
+                logging.getLogger(__name__).debug(
+                    "Default skills directory '%s' does not exist. "
                     "No skills will be loaded.",
-                    UserWarning,
-                    stacklevel=2,
+                    default_dir,
                 )
             else:
                 self._load_directory_skills([default_dir])  # pragma: no cover

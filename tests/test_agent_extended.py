@@ -35,7 +35,7 @@ class TestCreateDeepAgentExtended:
 
         custom_toolset = FunctionToolset(id="custom")
 
-        @custom_toolset.tool
+        @custom_toolset.tool_plain
         async def custom_tool() -> str:
             """Custom tool."""
             return "custom"

@@ -394,12 +394,14 @@ class TestSkillsToolset:
             SkillsToolset(skills=[], exclude_tools=["load_skill"])
             assert any("critical" in str(x.message).lower() for x in w)
 
-    def test_default_directory_warns(self) -> None:
-        """When no skills or dirs provided, warns about missing ./skills."""
+    def test_default_directory_no_warn(self) -> None:
+        """When no skills or dirs provided and ./skills is absent, no warning is
+        emitted (the missing-directory case is silently logged at DEBUG level)."""
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             SkillsToolset()
-            assert any("does not exist" in str(x.message) for x in w)
+            assert not any("missing ./skills" in str(x.message) for x in w), (
+                f"Unexpected warning found: {[str(x.message) for x in w]}")
 
     def test_duplicate_skill_warns(self) -> None:
         skill1 = Skill(name="dupe", description="first", content="a")
