@@ -13,6 +13,7 @@ from apps.cli.agent import (
     _make_shell_allow_list_hook,
     create_cli_agent,
 )
+from apps.cli.app import DeepApp
 from apps.cli.prompts import CLI_SYSTEM_PROMPT, build_cli_instructions
 from pydantic_deep.capabilities.hooks import HookEvent, HookInput, HookResult
 
@@ -89,7 +90,7 @@ class TestCreateCliAgent:
         )
         assert agent is not None
 
-    def test_default_model_falls_back_to_litellm_when_no_keys(self, tmp_path: Path) -> None:
+    def test_default_model_falls_back_to_moonshot_when_no_keys(self, tmp_path: Path) -> None:
         with (
             patch.dict(
                 "os.environ",
@@ -98,13 +99,11 @@ class TestCreateCliAgent:
                     "OPENROUTER_API_KEY": "",
                     "ANTHROPIC_API_KEY": "",
                     "GOOGLE_API_KEY": "",
-                    "GROQ_API_KEY": "",
-                    "MISTRAL_API_KEY": "",
-                    "DEEPSEEK_API_KEY": "",
+                    "MOONSHOT_API_KEY": "",
                 },
                 clear=False,
             ),
-            patch("cli.agent.create_deep_agent") as mock_create,
+            patch("apps.cli.agent.create_deep_agent") as mock_create,
         ):
             mock_create.return_value = TestModel()
             create_cli_agent(
@@ -112,16 +111,24 @@ class TestCreateCliAgent:
                 working_dir=str(tmp_path),
             )
             call_kwargs = mock_create.call_args.kwargs
+            # No managed-provider key is set → config default "moonshot:kimi-k2.6"
+            # is passed through as an OpenAIChatModel (Moonshot's pydantic-ai adapter).
             assert call_kwargs["model"] is not None
-            assert type(call_kwargs["model"]).__name__ == "LiteLLMModel"
+            assert type(call_kwargs["model"]).__name__ == "OpenAIChatModel"
 
 
 class TestCliProviderAutoSelection:
     def test_select_default_model_prefers_openai_when_key_present(self) -> None:
-        with patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}, clear=False):
-            assert select_default_model() == "openai:gpt-4.1"
+        with patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}, clear=True):
+            assert DeepApp._pick_available_model("openai:gpt-4.1") == "openai:gpt-4.1"
 
-    def test_select_default_model_uses_litellm_when_no_keys(self) -> None:
+    def test_select_default_model_uses_moonshot_when_moonshot_key_present(self) -> None:
+        with patch.dict("os.environ", {"MOONSHOT_API_KEY": "mk-test"}, clear=True):
+            assert DeepApp._pick_available_model("moonshot:kimi-k2.6") == "moonshot:kimi-k2.6"
+
+    def test_select_default_model_uses_config_default_when_no_keys(self) -> None:
+        # When no managed-provider key is set, _pick_available_model returns the
+        # configured model unchanged (no key to fall back to).
         with patch.dict(
             "os.environ",
             {
@@ -129,13 +136,11 @@ class TestCliProviderAutoSelection:
                 "OPENROUTER_API_KEY": "",
                 "ANTHROPIC_API_KEY": "",
                 "GOOGLE_API_KEY": "",
-                "GROQ_API_KEY": "",
-                "MISTRAL_API_KEY": "",
-                "DEEPSEEK_API_KEY": "",
+                "MOONSHOT_API_KEY": "",
             },
-            clear=False,
+            clear=True,
         ):
-            assert select_default_model() == "litellm:github_copilot/gpt-4o"
+            assert DeepApp._pick_available_model("moonshot:kimi-k2.6") == "moonshot:kimi-k2.6"
 
     def test_include_browser_true_with_playwright(self, tmp_path: Path) -> None:
         """When include_browser=True and playwright is available, BrowserCapability is added."""

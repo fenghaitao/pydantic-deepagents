@@ -107,6 +107,12 @@ class TestRunCommand:
 class TestExecuteHeadless:
     """Tests for execute_headless()."""
 
+    @pytest.fixture(autouse=True)
+    def _no_fs_init(self) -> Any:
+        """Prevent execute_headless from writing to /tmp/.pydantic-deep/."""
+        with patch("apps.cli.init.ensure_initialized"):
+            yield
+
     @pytest.fixture()
     def mock_agent(self) -> MagicMock:
         """Create a mock agent with a run() method returning a result."""

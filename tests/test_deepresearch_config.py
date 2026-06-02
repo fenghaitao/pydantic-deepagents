@@ -42,17 +42,16 @@ def test_litellm_prefix_returns_litellm_model() -> None:
     assert isinstance(cfg.MODEL_NAME, LiteLLMModel)
 
 
-def test_unset_model_falls_back_to_litellm_without_keys() -> None:
-    from pydantic_deep.litellm import LiteLLMModel
-
+def test_unset_model_falls_back_to_moonshot_without_keys() -> None:
     cfg = _reload_deepresearch_config(
         OPENAI_API_KEY="",
         OPENROUTER_API_KEY="",
         ANTHROPIC_API_KEY="",
         GOOGLE_API_KEY="",
-        GROQ_API_KEY="",
-        MISTRAL_API_KEY="",
-        DEEPSEEK_API_KEY="",
+        MOONSHOT_API_KEY="",
     )
     assert "MODEL_NAME" not in os.environ
-    assert isinstance(cfg.MODEL_NAME, LiteLLMModel)
+    # No managed-provider key set → config default "moonshot:kimi-k2.6" is returned
+    # as a string. The deepresearch config layer only wraps litellm: prefixes;
+    # moonshot: strings are resolved by the CLI agent layer when the model is used.
+    assert cfg.MODEL_NAME == "moonshot:kimi-k2.6"
