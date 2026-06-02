@@ -86,6 +86,7 @@ def create_cli_agent(  # noqa: C901
     temperature: float | None = None,
     include_browser: bool | None = None,
     browser_headless: bool | None = None,
+    extra_capabilities: list[Any] | None = None,
 ) -> tuple[Any, DeepAgentDeps]:
     """Create a CLI-configured agent with all pydantic-deep capabilities.
 
@@ -294,8 +295,8 @@ def create_cli_agent(  # noqa: C901
     # WebSearchTool/WebFetchTool only work with OpenAIResponsesModel, not LiteLLM
     _is_litellm = hasattr(effective_model, "system") and getattr(effective_model, "system", None) == "litellm"
 
-    # Build extra capabilities list (browser, future additions)
-    extra_capabilities: list[Any] = []
+    # Build extra capabilities list (browser, caller-supplied, future additions)
+    _extra_capabilities: list[Any] = list(extra_capabilities or [])
     if effective_browser:
         try:
             from pydantic_deep.capabilities.browser import BrowserCapability
@@ -303,7 +304,7 @@ def create_cli_agent(  # noqa: C901
             effective_headless = (
                 browser_headless if browser_headless is not None else config.browser_headless
             )
-            extra_capabilities.append(BrowserCapability(headless=effective_headless))
+            _extra_capabilities.append(BrowserCapability(headless=effective_headless))
         except ImportError:
             import warnings
 
@@ -381,7 +382,7 @@ def create_cli_agent(  # noqa: C901
         hooks=hooks or None,
         middleware=middleware or None,
         toolsets=[local_context] if local_context else None,
-        capabilities=extra_capabilities or None,
+        capabilities=_extra_capabilities or None,
     )
 
     # Extract context middleware for CLI commands (/compact, /context)
