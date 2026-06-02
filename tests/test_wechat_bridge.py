@@ -291,6 +291,62 @@ async def test_start_qr_login_failure(tmp_path) -> None:
     assert any("login failed" in m.lower() for _, m in app.notifications)
 
 
+async def test_start_setup_failure_releases_lock(tmp_path) -> None:
+    """A failure building the agent releases the lock and reports the error."""
+    app = FakeApp()
+    c = WeChatBridgeController(app)
+    released = {"called": False}
+
+    with (
+        patch("apps.cli.wechat_bridge._BRIDGE_CONFIG_PATH", tmp_path / "bridge.json"),
+        patch("apps.cli.wechat_bridge._load_config", return_value={"wechat_token": "tok"}),
+        patch("apps.bridge.wechat._acquire_lock", return_value=(True, 1)),
+        patch(
+            "apps.bridge.wechat._release_lock",
+            side_effect=lambda: released.update(called=True),
+        ),
+        patch("apps.cli.agent.create_cli_agent", side_effect=RuntimeError("boom")),
+    ):
+        await c.start()
+
+    assert c.running is False
+    assert c._wx_cfg is None
+    assert released["called"] is True
+    assert any("Failed to start WeChat bridge" in m for _, m in app.notifications)
+
+
+async def test_start_suspend_unsupported(tmp_path) -> None:
+    """If suspend() raises, the lock is released and the error reported."""
+    app = FakeApp()
+    c = WeChatBridgeController(app)
+    released = {"called": False}
+
+    class _BadApp(FakeApp):
+        @contextlib.contextmanager
+        def suspend(self):  # type: ignore[no-untyped-def]
+            raise RuntimeError("no tty")
+            yield  # pragma: no cover
+
+    app = _BadApp()
+    c = WeChatBridgeController(app)
+
+    with (
+        patch("apps.cli.wechat_bridge._BRIDGE_CONFIG_PATH", tmp_path / "bridge.json"),
+        patch("apps.cli.wechat_bridge._load_config", return_value={}),
+        patch("apps.bridge.wechat._acquire_lock", return_value=(True, 1)),
+        patch("apps.bridge.wechat.WeChatConfig.from_env", return_value=None),
+        patch(
+            "apps.bridge.wechat._release_lock",
+            side_effect=lambda: released.update(called=True),
+        ),
+    ):
+        await c.start()
+
+    assert c.running is False
+    assert released["called"] is True
+    assert any("QR login could not start" in m for _, m in app.notifications)
+
+
 def test_stop_when_running(tmp_path) -> None:
     app = FakeApp()
     c = WeChatBridgeController(app)

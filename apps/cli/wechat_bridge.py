@@ -91,8 +91,13 @@ class WeChatBridgeController:
             app.notify("No WeChat token — opening QR login (scan with WeChat)…")
             # Suspend the TUI so the ascii QR code renders on the real terminal.
             success = False
-            with app.suspend():
-                success = wx.qr_login(config)
+            try:
+                with app.suspend():
+                    success = wx.qr_login(config)
+            except Exception as exc:
+                wx._release_lock()
+                app.notify(f"WeChat QR login could not start: {exc}", severity="error")
+                return
             if not success:
                 wx._release_lock()
                 app.notify("WeChat login failed or timed out.", severity="error")
@@ -105,49 +110,58 @@ class WeChatBridgeController:
             app.notify("WeChat login produced no token.", severity="error")
             return
 
-        self._wx_cfg = wx_cfg
-        token, base_url = wx_cfg.token, wx_cfg.base_url
+        # From here on, any failure must release the lock and surface an error —
+        # the command runs in a fire-and-forget task whose exception is otherwise
+        # swallowed (the user would just see "no response").
+        try:
+            self._wx_cfg = wx_cfg
+            token, base_url = wx_cfg.token, wx_cfg.base_url
 
-        # Outbound send: deliver to WeChat AND mirror into the chat view.
-        # Runs in a worker thread (BridgeRunner offloads sends), so UI updates
-        # must hop back onto the app thread via call_from_thread.
-        def send_fn(uid: str, text: str) -> None:
-            wx.wx_send(uid, text, token, base_url)
-            try:
-                app.call_from_thread(app.mirror_bridge_outbound, text)
-            except Exception:
-                pass
+            # Outbound send: deliver to WeChat AND mirror into the chat view.
+            # Runs in a worker thread (BridgeRunner offloads sends), so UI updates
+            # must hop back onto the app thread via call_from_thread.
+            def send_fn(uid: str, text: str) -> None:
+                wx.wx_send(uid, text, token, base_url)
+                try:
+                    app.call_from_thread(app.mirror_bridge_outbound, text)
+                except Exception:
+                    pass
 
-        bridge_cap = BridgeCapability(send_fn=send_fn)
+            bridge_cap = BridgeCapability(send_fn=send_fn)
 
-        # Dedicated non-interactive agent — WeChat users can't answer approval
-        # prompts, and its per-user history stays separate from the TUI session.
-        agent, deps = create_cli_agent(
-            model=app.model_name or None,
-            working_dir=app.working_dir,
-            non_interactive=True,
-            extra_capabilities=[bridge_cap],
-        )
-        runner = BridgeRunner(agent=agent, deps=deps, send_fn=send_fn)
+            # Dedicated non-interactive agent — WeChat users can't answer approval
+            # prompts, and its per-user history stays separate from the TUI session.
+            agent, deps = create_cli_agent(
+                model=app.model_name or None,
+                working_dir=app.working_dir,
+                non_interactive=True,
+                extra_capabilities=[bridge_cap],
+            )
+            runner = BridgeRunner(agent=agent, deps=deps, send_fn=send_fn)
 
-        # Wrap on_message to mirror inbound WeChat messages. This runs on the
-        # event loop (scheduled via run_coroutine_threadsafe), so direct UI
-        # calls are safe here.
-        orig_on_message = runner.on_message
+            # Wrap on_message to mirror inbound WeChat messages. This runs on the
+            # event loop (scheduled via run_coroutine_threadsafe), so direct UI
+            # calls are safe here.
+            orig_on_message = runner.on_message
 
-        async def on_message(uid: str, text: str) -> None:
-            app.mirror_bridge_inbound(uid, text)
-            await orig_on_message(uid, text)
+            async def on_message(uid: str, text: str) -> None:
+                app.mirror_bridge_inbound(uid, text)
+                await orig_on_message(uid, text)
 
-        loop = asyncio.get_running_loop()
-        stop_event = threading.Event()
-        poll_thread = wx.start_poll(
-            token=token,
-            base_url=base_url,
-            on_message=on_message,
-            loop=loop,
-            stop_event=stop_event,
-        )
+            loop = asyncio.get_running_loop()
+            stop_event = threading.Event()
+            poll_thread = wx.start_poll(
+                token=token,
+                base_url=base_url,
+                on_message=on_message,
+                loop=loop,
+                stop_event=stop_event,
+            )
+        except Exception as exc:
+            wx._release_lock()
+            self._wx_cfg = None
+            app.notify(f"Failed to start WeChat bridge: {exc}", severity="error")
+            return
 
         self._runner = runner
         self._poll_thread = poll_thread

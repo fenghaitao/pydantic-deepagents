@@ -38,7 +38,9 @@ COMMANDS: list[tuple[str, str]] = [
     ("/tokens", "Show token count"),
     ("/undo", "Undo last turn"),
     ("/version", "Show version"),
-    ("/wechat", "WeChat bridge: /wechat on | off | status"),
+    ("/wechat on", "Start the WeChat bridge (QR login if needed)"),
+    ("/wechat off", "Stop the WeChat bridge"),
+    ("/wechat status", "Show WeChat bridge status"),
 ]
 
 
