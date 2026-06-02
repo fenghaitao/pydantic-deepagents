@@ -252,7 +252,7 @@ class TestEvictionProcessor:
         assert "read_file" in str(tool_part.content)
 
         # File should be written to backend
-        evicted_content = backend._read_bytes("/large_tool_results/call_123")
+        evicted_content = backend.read_bytes("/large_tool_results/call_123")
         assert evicted_content == large_content.encode()
 
     @pytest.mark.anyio
@@ -460,7 +460,7 @@ class TestEvictionProcessor:
         assert "/custom/evicted/" in str(tool_part.content)
 
         # Check file was written to custom path
-        evicted = backend._read_bytes("/custom/evicted/call_custom")
+        evicted = backend.read_bytes("/custom/evicted/call_custom")
         assert evicted == large_content.encode()
 
     @pytest.mark.anyio
@@ -602,11 +602,11 @@ class TestResolveBackend:
         await processor(ctx, messages)
 
         # File should be in RUNTIME backend, not creation backend
-        evicted = runtime_backend._read_bytes("/large_tool_results/call_rt")
+        evicted = runtime_backend.read_bytes("/large_tool_results/call_rt")
         assert evicted == large_content.encode()
 
         # Creation backend should NOT have the file
-        assert creation_backend._read_bytes("/large_tool_results/call_rt") == b""
+        assert creation_backend.read_bytes("/large_tool_results/call_rt") == b""
 
     @pytest.mark.anyio
     async def test_falls_back_to_self_backend(self):
@@ -623,7 +623,7 @@ class TestResolveBackend:
         await processor(ctx, messages)
 
         # File should be in creation (fallback) backend
-        evicted = creation_backend._read_bytes("/large_tool_results/call_fb")
+        evicted = creation_backend.read_bytes("/large_tool_results/call_fb")
         assert evicted == large_content.encode()
 
 
@@ -849,7 +849,7 @@ class TestEvictionPreviewFormat:
         await processor(ctx, messages)
 
         # Read back from backend
-        stored = backend._read_bytes("/large_tool_results/call_read")
+        stored = backend.read_bytes("/large_tool_results/call_read")
         assert stored.decode() == original_content
 
 
@@ -997,7 +997,7 @@ class TestEvictionCapability:
         assert "Tool result too large" in result
         assert "/large_tool_results/call_big" in result
         # File was written
-        evicted = backend._read_bytes("/large_tool_results/call_big")
+        evicted = backend.read_bytes("/large_tool_results/call_big")
         assert evicted == large.encode()
 
     @pytest.mark.anyio
@@ -1018,8 +1018,8 @@ class TestEvictionCapability:
         )
 
         # Written to deps_backend, not fallback
-        assert deps_backend._read_bytes("/large_tool_results/call_deps") not in (None, b"")
-        assert fallback._read_bytes("/large_tool_results/call_deps") in (None, b"")
+        assert deps_backend.read_bytes("/large_tool_results/call_deps") not in (None, b"")
+        assert fallback.read_bytes("/large_tool_results/call_deps") in (None, b"")
 
     @pytest.mark.anyio
     async def test_no_backend_passes_through(self):
