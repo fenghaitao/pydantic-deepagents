@@ -114,11 +114,15 @@ class LiteLLMModel(Model):
 
         tools = _get_tools(params)
         if tools:
+            if self._model_name.startswith("moonshot/"):
+                tools = _sanitize_tools_for_moonshot(tools)
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto" if params.allow_text_output else "required"
 
+        # kimi-k2.x only accepts temperature=1; skip it entirely to avoid errors.
+        _fixed_temp = self._model_name.startswith("moonshot/kimi-k2")
         if settings:
-            if settings.get("temperature") is not None:
+            if settings.get("temperature") is not None and not _fixed_temp:
                 kwargs["temperature"] = settings["temperature"]
             if settings.get("max_tokens") is not None:
                 kwargs["max_tokens"] = settings["max_tokens"]
@@ -313,6 +317,28 @@ def _map_messages(messages: list[ModelMessage]) -> list[dict[str, Any]]:  # noqa
                 assistant["tool_calls"] = tool_calls
             result.append(assistant)
     return result
+
+
+def _strip_ref_siblings(schema: Any) -> Any:
+    """Recursively remove sibling keywords next to $ref.
+
+    Moonshot's validator follows JSON Schema Draft 7 where $ref is exclusive —
+    having description or other keywords alongside $ref is invalid.
+    """
+    if isinstance(schema, dict):
+        if "$ref" in schema:
+            return {"$ref": schema["$ref"]}
+        return {k: _strip_ref_siblings(v) for k, v in schema.items()}
+    if isinstance(schema, list):
+        return [_strip_ref_siblings(item) for item in schema]
+    return schema
+
+
+def _sanitize_tools_for_moonshot(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {**t, "function": {**t["function"], "parameters": _strip_ref_siblings(t["function"]["parameters"])}}
+        for t in tools
+    ]
 
 
 def _get_tools(params: ModelRequestParameters) -> list[dict[str, Any]]:

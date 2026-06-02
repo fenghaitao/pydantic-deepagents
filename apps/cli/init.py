@@ -30,7 +30,8 @@ The agent reads and updates this file across sessions.
 """
 
 _DEFAULT_CONFIG_TOML = """\
-model = "litellm:github_copilot/gpt-4o"
+#model = "litellm:github_copilot/gpt-4o"
+model = "litellm:moonshot/kimi-k2.6"
 show_cost = true
 show_tokens = true
 web_search = false
