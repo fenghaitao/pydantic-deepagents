@@ -7,6 +7,7 @@ from typing import Any
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
+from textual.events import Key
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
@@ -105,3 +106,16 @@ class ApprovalModal(ModalScreen[str]):
 
     def action_deny(self) -> None:
         self.dismiss("no")
+
+    def on_key(self, event: Key) -> None:
+        """Accept uppercase shortcuts as well as lowercase bindings."""
+        key = event.key.lower()
+        if key == "y":
+            event.stop()
+            self.action_approve_once()
+        elif key == "a":
+            event.stop()
+            self.action_approve_always()
+        elif key == "n":
+            event.stop()
+            self.action_deny()

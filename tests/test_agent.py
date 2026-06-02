@@ -120,6 +120,7 @@ class TestCreateDeepAgent:
             },
         )
         assert agent is not None
+        assert agent.output_type is str
 
 
 class TestBasePrompt:

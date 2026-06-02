@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+import asyncio
 
 from apps.cli.app import DeepApp
 
@@ -133,6 +134,45 @@ class TestToolCallWidget:
             assert tool.expanded is False
 
             msg_list.end_assistant_message()
+
+
+class TestApprovalModal:
+    async def test_uppercase_a_auto_approves(self, app):
+        result = None
+
+        async with app.run_test(size=(120, 35)) as pilot:
+            await pilot.pause()
+
+            from apps.cli.modals.approval import ApprovalModal
+
+            def _capture(decision: str) -> None:
+                nonlocal result
+                result = decision
+
+            app.push_screen(ApprovalModal("execute", {"command": "echo hi"}), _capture)
+            await pilot.pause()
+            await pilot.press("A")
+            await pilot.pause()
+
+        assert result == "always"
+
+    async def test_auto_approve_mode_skips_modal(self, app):
+        async with app.run_test(size=(120, 35)) as pilot:
+            await pilot.pause()
+
+            from apps.cli.messages import ApprovalRequested
+            from apps.cli.modals.approval import ApprovalModal
+
+            screen = app.screen
+            screen._auto_approve_tools = True
+            future: asyncio.Future[str] = asyncio.Future()
+
+            screen.on_approval_requested(ApprovalRequested("execute", {"command": "echo hi"}, future))
+            await pilot.pause()
+
+            assert future.done()
+            assert future.result() == "yes"
+            assert not any(isinstance(s, ApprovalModal) for s in app.screen_stack)
 
 
 class TestThemes:

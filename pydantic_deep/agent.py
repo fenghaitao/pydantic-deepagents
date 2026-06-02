@@ -525,7 +525,7 @@ def create_deep_agent(  # noqa: C901
         require_write_approval = interrupt_on.get("write_file", False) or interrupt_on.get(
             "edit_file", False
         )
-        require_execute_approval = interrupt_on.get("execute", True)
+        require_execute_approval = interrupt_on.get("execute", False)
 
         # Determine if execute should be included
         # If explicitly set, use that; otherwise auto-detect from backend type
@@ -791,15 +791,11 @@ def create_deep_agent(  # noqa: C901
     }
 
     # Human-in-the-loop / deferred tools require DeferredToolRequests in output_type.
-    # Approval defaults are applied in create_console_toolset / create_web_toolset even when
-    # interrupt_on is {} (e.g. CLI passes interrupt_on=None). Using only
-    # any(interrupt_on.values()) misses that: missing keys are not in .values(), but
-    # require_execute_approval still defaults to True via interrupt_on.get("execute", True).
     _require_write = interrupt_on.get("write_file", False) or interrupt_on.get(
         "edit_file", False
     )
-    _require_execute = interrupt_on.get("execute", True)
-    _require_web = interrupt_on.get("web_search", True) if interrupt_on else True
+    _require_execute = interrupt_on.get("execute", False)
+    _require_web = interrupt_on.get("web_search", False)
     has_interrupt_tools = any(interrupt_on.values()) or (
         include_filesystem and (_require_write or _require_execute)
     ) or ((web_search or web_fetch) and _require_web)

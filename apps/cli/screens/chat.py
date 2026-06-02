@@ -50,6 +50,10 @@ class ChatScreen(Screen):
         Binding("pagedown", "scroll_down", "Scroll down", show=False),
     ]
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._auto_approve_tools = False
+
     def compose(self) -> ComposeResult:
         yield DeepHeader()
         with Horizontal(id="main-layout"):
@@ -688,6 +692,10 @@ class ChatScreen(Screen):
                     approvals: dict[str, ToolApproved | ToolDenied] = {}
 
                     for call in result.output.approvals:
+                        if self._auto_approve_tools:
+                            approvals[call.tool_call_id] = ToolApproved()
+                            continue
+
                         future: asyncio.Future[str] = asyncio.Future()
                         tool_args = call.args if isinstance(call.args, dict) else {}
 
@@ -711,6 +719,10 @@ class ChatScreen(Screen):
                             assistant_new.finalize_text()
                             msg_list.end_assistant_message()
                         else:
+                            if decision == "always":
+                                self._auto_approve_tools = True
+                                with contextlib.suppress(Exception):
+                                    self.query_one(StatusBar).approve_mode = "auto"
                             approvals[call.tool_call_id] = ToolApproved()
 
                     # Continue agent with approval decisions
@@ -895,7 +907,15 @@ class ChatScreen(Screen):
     def on_approval_requested(self, event: ApprovalRequested) -> None:
         from apps.cli.modals.approval import ApprovalModal
 
+        if self._auto_approve_tools:
+            event.future.set_result("yes")
+            return
+
         async def _handle_result(result: str) -> None:
+            if result == "always":
+                self._auto_approve_tools = True
+                with contextlib.suppress(Exception):
+                    self.query_one(StatusBar).approve_mode = "auto"
             event.future.set_result(result)
 
         self.app.push_screen(

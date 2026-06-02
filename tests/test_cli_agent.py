@@ -105,7 +105,22 @@ class TestCreateCliAgent:
         )
         assert agent is not None
 
-    def test_default_model_falls_back_to_moonshot_when_no_keys(self, tmp_path: Path) -> None:
+    def test_empty_approve_tools_disables_interrupts(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "config.toml"
+        config_path.write_text("approve_tools = []\n")
+
+        with patch("apps.cli.agent.create_deep_agent") as mock_create:
+            mock_create.return_value = TestModel()
+
+            create_cli_agent(
+                model=TEST_MODEL,
+                working_dir=str(tmp_path),
+                config_path=config_path,
+            )
+
+        assert mock_create.call_args.kwargs["interrupt_on"] == {}
+
+    def test_default_model_uses_moonshot_when_moonshot_key_present(self, tmp_path: Path) -> None:
         with (
             patch.dict(
                 "os.environ",
@@ -114,7 +129,7 @@ class TestCreateCliAgent:
                     "OPENROUTER_API_KEY": "",
                     "ANTHROPIC_API_KEY": "",
                     "GOOGLE_API_KEY": "",
-                    "MOONSHOT_API_KEY": "",
+                    "MOONSHOT_API_KEY": "mk-test",
                 },
                 clear=False,
             ),
@@ -126,8 +141,8 @@ class TestCreateCliAgent:
                 working_dir=str(tmp_path),
             )
             call_kwargs = mock_create.call_args.kwargs
-            # No managed-provider key is set → config default "moonshot:kimi-k2.6"
-            # is passed through as an OpenAIChatModel (Moonshot's pydantic-ai adapter).
+            # Config default "moonshot:kimi-k2.6" is passed through as an
+            # OpenAIChatModel using Moonshot's OpenAI-compatible provider.
             assert call_kwargs["model"] is not None
             assert type(call_kwargs["model"]).__name__ == "OpenAIChatModel"
 

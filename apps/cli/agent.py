@@ -216,7 +216,7 @@ def create_cli_agent(  # noqa: C901
     else:
         # Build interrupt_on from config.approve_tools
         interrupt_on = (
-            {tool: True for tool in config.approve_tools} if config.approve_tools else None
+            {tool: True for tool in config.approve_tools} if config.approve_tools else {}
         )
 
     # Resolve feature flags: explicit param > config.toml > lean override
