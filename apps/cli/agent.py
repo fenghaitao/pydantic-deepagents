@@ -208,13 +208,32 @@ def create_cli_agent(  # noqa: C901
 
         local_context = LocalContextToolset(root_dir=root)
 
+    # In non-interactive mode: no approval needed, disable interactive features
+    # (memory, plan, subagents). Skills stay ON — they're static
+    # instructions that improve benchmark performance.
+    if non_interactive:
+        interrupt_on: dict[str, bool] | None = {"execute": False}
+    else:
+        # Build interrupt_on from config.approve_tools
+        interrupt_on = (
+            {tool: True for tool in config.approve_tools} if config.approve_tools else None
+        )
+
+    # Resolve feature flags: explicit param > config.toml > lean override
+    _skills = include_skills if include_skills is not None else config.include_skills
+    _plan = include_plan if include_plan is not None else config.include_plan
+    _memory = include_memory if include_memory is not None else config.include_memory
+    _subagents = include_subagents if include_subagents is not None else config.include_subagents
+    _todo = include_todo if include_todo is not None else config.include_todo
+    _context_disc = context_discovery if context_discovery is not None else config.context_discovery
+
     # Skills directories — searched in order, all matching dirs included:
     # 1. Bundled skills (shipped with CLI package)
     # 2. User-level skills (~/.pydantic-deep/skills/)
     # 3. Project-level skills (.pydantic-deep/skills/)
     # 4. Explicit override (--skills-dir flag)
     skill_dirs: list[str] = []
-    if include_skills:
+    if _skills:
         # Bundled skills (always available)
         bundled = Path(__file__).resolve().parent / "skills"
         if bundled.is_dir():
@@ -235,25 +254,6 @@ def create_cli_agent(  # noqa: C901
             sd = Path(skills_dir)
             if sd.is_dir():
                 skill_dirs.append(str(sd))
-
-    # In non-interactive mode: no approval needed, disable interactive features
-    # (memory, plan, subagents). Skills stay ON — they're static
-    # instructions that improve benchmark performance.
-    if non_interactive:
-        interrupt_on: dict[str, bool] | None = {"execute": False}
-    else:
-        # Build interrupt_on from config.approve_tools
-        interrupt_on = (
-            {tool: True for tool in config.approve_tools} if config.approve_tools else None
-        )
-
-    # Resolve feature flags: explicit param > config.toml > lean override
-    _skills = include_skills if include_skills is not None else config.include_skills
-    _plan = include_plan if include_plan is not None else config.include_plan
-    _memory = include_memory if include_memory is not None else config.include_memory
-    _subagents = include_subagents if include_subagents is not None else config.include_subagents
-    _todo = include_todo if include_todo is not None else config.include_todo
-    _context_disc = context_discovery if context_discovery is not None else config.context_discovery
 
     effective_skills = _skills if not lean else False
     effective_plan = _plan if not lean else False

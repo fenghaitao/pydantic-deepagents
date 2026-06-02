@@ -76,6 +76,21 @@ class TestCreateCliAgent:
         )
         assert agent is not None
 
+    def test_passes_default_skill_directories_when_skills_enabled(self, tmp_path: Path) -> None:
+        with patch("apps.cli.agent.create_deep_agent") as mock_create:
+            mock_create.return_value = TestModel()
+
+            create_cli_agent(
+                model=TEST_MODEL,
+                working_dir=str(tmp_path),
+            )
+
+        skill_directories = mock_create.call_args.kwargs["skill_directories"]
+        assert skill_directories
+        assert Path(skill_directories[0]).name == "skills"
+        assert Path(skill_directories[0]).parent.name == "cli"
+        assert mock_create.call_args.kwargs["include_skills"] is True
+
     def test_features_can_be_disabled(self, tmp_path: Path) -> None:
         """All features can be individually disabled."""
         agent, deps = create_cli_agent(
