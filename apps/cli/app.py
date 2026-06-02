@@ -247,7 +247,14 @@ class DeepApp(App):
 
     @staticmethod
     def _pick_available_model(current: str) -> str:
-        """If the current model's provider key isn't set, pick one that is."""
+        """If the current model's provider key isn't set, pick one that is.
+
+        Only providers whose API key we manage via the environment participate
+        in auto-selection. Models for any other provider (litellm, ollama, or
+        custom OpenAI-compatible endpoints) are trusted exactly as configured
+        and returned unchanged — otherwise a configured model could be silently
+        swapped just because some unrelated provider key happens to be present.
+        """
         import os
 
         # Map provider prefix → env var → default model
@@ -255,8 +262,15 @@ class DeepApp(App):
             ("openrouter:", "OPENROUTER_API_KEY", "openrouter:anthropic/claude-sonnet-4"),
             ("anthropic:", "ANTHROPIC_API_KEY", "anthropic:claude-sonnet-4-6"),
             ("openai:", "OPENAI_API_KEY", "openai:gpt-4.1"),
+            ("moonshot:", "MOONSHOT_API_KEY", "moonshot:kimi-k2.6"),
             ("google", "GOOGLE_API_KEY", "google-gla:gemini-2.5-pro"),
         ]
+
+        known_prefixes = tuple(prefix for prefix, _, _ in provider_keys)
+
+        # Providers we don't manage keys for are trusted as configured.
+        if not current.startswith(known_prefixes):
+            return current
 
         # Check if current model's key is available
         for prefix, env_var, _ in provider_keys:
