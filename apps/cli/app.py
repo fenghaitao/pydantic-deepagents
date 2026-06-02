@@ -84,6 +84,7 @@ class DeepApp(App):
         self.last_response: str = ""
         self._agent_task: asyncio.Task[Any] | None = None
         self._startup_error = startup_error
+        self._wechat_bridge: Any | None = None
 
         # Register custom themes
         from apps.cli.styles.themes import register_themes
@@ -293,6 +294,44 @@ class DeepApp(App):
     def watch_current_cost(self, cost: float) -> None:
         with contextlib.suppress(NoMatches, Exception):
             self.screen.query_one(StatusBar).current_cost = cost
+
+    # ── WeChat bridge ─────────────────────────────────────────────
+
+    @property
+    def wechat_bridge(self) -> Any:
+        """Lazily-created WeChat bridge controller for this app."""
+        if self._wechat_bridge is None:
+            from apps.cli.wechat_bridge import WeChatBridgeController
+
+            self._wechat_bridge = WeChatBridgeController(self)
+        return self._wechat_bridge
+
+    def _chat_screen(self) -> Any | None:
+        """Return the active ChatScreen, even when a modal is on top."""
+        from apps.cli.screens.chat import ChatScreen
+
+        for screen in reversed(self.screen_stack):
+            if isinstance(screen, ChatScreen):
+                return screen
+        return None
+
+    def mirror_bridge_inbound(self, sender: str, text: str) -> None:
+        """Echo an inbound WeChat message into the chat view."""
+        screen = self._chat_screen()
+        if screen is not None:
+            screen.add_bridge_inbound(sender, text)
+
+    def mirror_bridge_outbound(self, text: str) -> None:
+        """Echo an outbound bridge reply into the chat view."""
+        screen = self._chat_screen()
+        if screen is not None:
+            screen.add_bridge_outbound(text)
+
+    def on_unmount(self) -> None:
+        """Tear down the WeChat bridge so the lock/thread don't linger."""
+        if self._wechat_bridge is not None:
+            with contextlib.suppress(Exception):
+                self._wechat_bridge.stop(notify=False)
 
     # ── Command handling ──────────────────────────────────────────
 

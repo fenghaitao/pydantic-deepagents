@@ -549,6 +549,18 @@ async def dispatch_command(app: DeepApp, command: str) -> None:  # noqa: C901
             except Exception:
                 app.notify(text[:200])
 
+    elif cmd == "/wechat":
+        sub = arg.strip().lower()
+        controller = app.wechat_bridge
+        if sub in ("on", "start", "login"):
+            await controller.start()
+        elif sub in ("off", "stop"):
+            controller.stop()
+        elif sub in ("", "status"):
+            app.notify(controller.status_text())
+        else:
+            app.notify("Usage: /wechat on | off | status", severity="warning")
+
     elif cmd == "/bug":
         import webbrowser
 

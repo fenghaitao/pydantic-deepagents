@@ -64,6 +64,7 @@ cli = [
     "prompt-toolkit>=3.0.0",
     "tomli>=2.0; python_version < '3.11'",
     "python-dotenv>=1.0.0",
+    "qrcode>=7.0",
     "pydantic-ai-slim[anthropic,openai,openrouter,web-fetch,duckduckgo]>=1.77.0",
 ]
 # TUI (Textual-based terminal UI)
@@ -73,6 +74,7 @@ tui = [
     "rich>=13.0.0",
     "tomli>=2.0; python_version < '3.11'",
     "python-dotenv>=1.0.0",
+    "qrcode>=7.0",
     "pydantic-ai-slim[anthropic,openai,openrouter,web-fetch,duckduckgo]>=1.77.0",
 ]
 # Web server support (for full_app example)

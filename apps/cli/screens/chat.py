@@ -329,6 +329,31 @@ class ChatScreen(Screen):
         except Exception:
             pass
 
+    def add_bridge_inbound(self, sender: str, text: str) -> None:
+        """Mirror an inbound WeChat message into the chat view (display-only).
+
+        Unlike :meth:`add_system_message`, this does not touch
+        ``app.message_history`` — the mirrored WeChat conversation is shown for
+        visibility but kept out of the TUI agent's own context.
+        """
+        try:
+            msg_list = self.query_one(MessageList)
+            short = sender if len(sender) <= 12 else sender[:11] + "…"
+            msg_list.append_user_message(f"📱 WeChat[{short}]: {text}")
+        except Exception:
+            pass
+
+    def add_bridge_outbound(self, text: str) -> None:
+        """Mirror an outbound bridge reply into the chat view (display-only)."""
+        try:
+            msg_list = self.query_one(MessageList)
+            assistant = msg_list.begin_assistant_message()
+            assistant.append_text(text)
+            assistant.finalize_text()
+            msg_list.end_assistant_message()
+        except Exception:
+            pass
+
     def _show_welcome(self) -> None:
         """Display a welcome message with project context."""
         from pathlib import Path

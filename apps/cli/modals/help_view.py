@@ -29,6 +29,7 @@ _HELP_TEXT = """\
   [bold cyan]/tokens[/bold cyan]      Show message count
   [bold cyan]/undo[/bold cyan]        Undo last turn
   [bold cyan]/version[/bold cyan]     Show version
+  [bold cyan]/wechat[/bold cyan]      WeChat bridge ([dim]on | off | status[/dim])
   [bold cyan]/quit[/bold cyan]        Exit
 
 [bold]Keyboard Shortcuts[/bold]
