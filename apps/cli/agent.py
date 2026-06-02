@@ -132,11 +132,16 @@ def create_cli_agent(  # noqa: C901
     config = load_config(config_path)
 
     # Apply config defaults — explicit params override.
-    effective_model = model or config.model
-    if isinstance(effective_model, str) and effective_model.startswith("litellm:"):
+    _raw_model = model or config.model
+    effective_model: Any = _raw_model
+    if isinstance(_raw_model, str) and _raw_model.startswith("litellm:"):
         from pydantic_deep.litellm import infer_litellm_model
 
-        effective_model = infer_litellm_model(effective_model)
+        effective_model = infer_litellm_model(_raw_model)
+    elif isinstance(_raw_model, str) and _raw_model.startswith("moonshot:"):
+        from pydantic_deep.moonshot import infer_moonshot_model
+
+        effective_model = infer_moonshot_model(_raw_model)
     effective_working_dir = working_dir or config.working_dir
     effective_allow_list = shell_allow_list or config.shell_allow_list or None
 
@@ -260,7 +265,8 @@ def create_cli_agent(  # noqa: C901
 
     # Model settings — explicit param > model_settings dict > non-interactive > config
     effective_model_settings: dict[str, Any] = {}
-    if non_interactive:
+    _skip_temperature = isinstance(_raw_model, str) and _raw_model.startswith("moonshot:kimi-k2")
+    if non_interactive and not _skip_temperature:
         effective_model_settings["temperature"] = 0.0
     if config.temperature is not None and "temperature" not in (model_settings or {}):
         effective_model_settings["temperature"] = config.temperature
