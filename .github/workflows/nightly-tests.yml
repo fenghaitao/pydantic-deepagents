@@ -14,7 +14,10 @@ env:
   COLUMNS: 150
   UV_NATIVE_TLS: "1"
   NODE_EXTRA_CA_CERTS: /etc/ssl/ca-bundle.pem
+  SSL_CERT_FILE: /etc/ssl/ca-bundle.pem
+  REQUESTS_CA_BUNDLE: /etc/ssl/ca-bundle.pem
   HF_TOKEN: ${{ secrets.HF_TOKEN }}
+  PYTHON_VERSION: "3.13"
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -54,11 +57,484 @@ jobs:
   #         run: <command>
   # ---------------------------------------------------------------------------
 
+  # ---------------------------------------------------------------------------
+  # Potpie submodule tests — copied from potpie/.github/workflows/unit-tests.yml
+  # All `run:` steps execute inside the potpie/ submodule directory.
+  # ---------------------------------------------------------------------------
+  potpie-integration-tests:
+    name: Integration tests / Potpie
+    runs-on: [self-hosted]
+
+    env:
+      UV_PYTHON: "3.13"
+      UV_LINK_MODE: copy
+      # Explicitly set the cache dir so uv ignores XDG_CACHE_HOME (which may
+      # point to a KDE temp dir on self-hosted runners, causing cache corruption).
+      # /tmp is machine-local so different runners never share this path.
+      UV_CACHE_DIR: /tmp/uv-cache
+      UV_HTTP_TIMEOUT: 120
+      # Skip dependency resolution for every `uv run` call (including inside
+      # submodule scripts such as singularity/start.sh) — the lock file is the
+      # source of truth and the restricted Intel mirror has no mistralai package.
+      UV_FROZEN: "1"
+      # Cache the HuggingFace sentence-transformers model in /tmp so it
+      # persists across steps and avoids re-downloading on every job.
+      HF_HOME: /tmp/hf-cache
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      PYDANTIC_DEEP_LOGFIRE: ${{ vars.CI_LOGFIRE_ENABLED }}
+      PYDANTIC_DEEP_LOG_LEVEL: ${{ vars.CI_LOGFIRE_LEVEL }}
+      CI_LOGFIRE_ENABLED: ${{ vars.CI_LOGFIRE_ENABLED }}
+      CI_LOGFIRE_BACKUP_PATH: ${{ vars.CI_LOGFIRE_BACKUP_PATH }}
+
+    steps:
+      - name: Stop backend before clean checkout
+        working-directory: ${{ github.workspace }}
+        run: |
+          if [ -f code-graph-providers/potpie/Makefile ]; then
+            make potpie-stop-force 2>/dev/null || true
+          fi
+          pkill -f "${GITHUB_WORKSPACE}/code-graph-providers/potpie/.venv/bin/gunicorn" 2>/dev/null || true
+          pkill -f "${GITHUB_WORKSPACE}/code-graph-providers/potpie/.venv/bin/celery"   2>/dev/null || true
+          pkill -f "${GITHUB_WORKSPACE}/.venv/bin/phoenix"                              2>/dev/null || true
+          rm -rf code-graph-providers/potpie/singularity/singularity-compose/.venv
+          rm -rf code-graph-providers/potpie/singularity/potpie-data
+          sleep 3
+
+      - name: Checkout code and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Clear logfire sessions
+        if: env.CI_LOGFIRE_ENABLED == 'true'
+        working-directory: code-graph-providers/potpie
+        run: |
+          rm -rf .pydantic-deep/sessions
+          mkdir -p .pydantic-deep/sessions
+          echo "Logfire sessions directory cleared."
+
+      - name: Prepare Python & venv (install dev extra -> pytest)
+        working-directory: code-graph-providers/potpie
+        run: |
+          set -euo pipefail
+          uv python install "${UV_PYTHON}" || true
+          test -d .venv || uv venv --python "${UV_PYTHON}" .venv
+          uv sync --frozen --group dev
+          uv run --no-sync python -V
+          uv run --no-sync pytest --version
+          cp .env.template .env
+          mkdir -p test-results
+
+      - name: Prepare pydantic-deepagents venv (for integration tests)
+        run: |
+          set -euo pipefail
+          uv sync --frozen --python "${UV_PYTHON}" --all-groups --extra potpie --extra cgc
+
+      - name: Run tests/unit-tests
+        working-directory: code-graph-providers/potpie
+        run: |
+          uv run --no-sync pytest tests/unit-tests \
+            -m "not integration" \
+            -v \
+            --tb=short \
+            --noconftest \
+            --junitxml=test-results/junit-tests.xml
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          ENABLE_MULTI_AGENT: "false"
+
+      - name: Login to Docker Hub (reduce Singularity pull rate-limit exposure)
+        working-directory: code-graph-providers/potpie
+        run: |
+          echo "${{ secrets.DOCKER_HUB_TOKEN }}" | singularity remote login \
+            --username "${{ secrets.DOCKER_HUB_USERNAME }}" \
+            --password-stdin docker://docker.io 2>/dev/null || true
+
+      - name: Start Phoenix tracing server
+        # Phoenix is managed at the pydantic-deepagents level — port allocated via
+        # scripts/vector/alloc_ports.py, started via pydantic-deepagents .venv.
+        # PHOENIX_PORT and PHOENIX_GRPC_PORT are written to GITHUB_ENV.
+        run: bash scripts/phoenix.sh start
+
+      - name: Pre-warm HuggingFace embedding model cache
+        # The Celery parsing worker loads all-MiniLM-L6-v2 on first parse.
+        # Downloading it here (before the backend starts) avoids a slow/throttled
+        # download inside the worker which causes "Sub-job killed" panics in the
+        # DML language server when the embedding step stalls.
+        # Use snapshot_download (not SentenceTransformer) so all files are written
+        # in the standard HF hub layout that the Rust hf-hub crate expects.
+        run: |
+          uv run --no-sync python -c "
+          from huggingface_hub import snapshot_download
+          import os
+          print('Pre-warming sentence-transformers/all-MiniLM-L6-v2 ...')
+          path = snapshot_download('sentence-transformers/all-MiniLM-L6-v2')
+          print(f'Model cached at: {path}')
+          print(f'HF_HOME={os.environ.get(\"HF_HOME\", \"(not set)\")}')  
+          print(f'HUGGINGFACE_HUB_CACHE={os.environ.get(\"HUGGINGFACE_HUB_CACHE\", \"(not set)\")}')  
+          "
+
+      - name: Ensure backend services are healthy
+        working-directory: code-graph-providers/potpie
+        run: make ensure-healthy
+
+      - name: Run scip_dml integration test
+        # Runs from the pydantic-deepagents root.  make targets use -C to
+        # operate on the potpie submodule without changing the shell cwd.
+        # cargo build --release can take 20+ min on a cold cache; 60 min is safe.
+        timeout-minutes: 60
+        env:
+          # Enable Rust-level logging so dfa/dls emit progress to stderr.
+          # "info" gives stage markers without flooding the log; use "debug"
+          # for deeper tracing if "info" is still insufficient.
+          RUST_LOG: info
+          # Print a full backtrace on any Rust panic (e.g. DLS sub-job kills).
+          RUST_BACKTRACE: "1"
+        run: |
+          make -C code-graph-providers/potpie --no-print-directory export-ports > tmp-ports.env
+          # shellcheck disable=SC1091  # file is generated at runtime
+          source tmp-ports.env
+          make -C code-graph-providers/potpie check-health HEALTH_FLAGS="--api-retries 15"
+
+          export PATH="$HOME/.cargo/bin:$PATH"
+          make -C code-graph-providers/potpie build-dls
+          (cd code-graph-providers/potpie/tests/integration-tests/scip-dml/simics-project && \
+            /nfs/site/disks/ssg_stc_simics_base-packages-release/simics-7/1000/7.79.0/bin/project-setup \
+            --ignore-existing-files .)
+          mkdir -p test-results
+          uv run --no-sync pytest tests/integration-tests/test_scip_dml.py \
+            -v -s \
+            --tb=short \
+            --junitxml=test-results/junit-int-scip-dml.xml
+
+      - name: Run scip-python tests
+        # Runs from the pydantic-deepagents root.
+        # parse repo polls up to 120×5s=10min plus startup/LLM time; 30min is safe.
+        timeout-minutes: 30
+        run: |
+          mkdir -p test-results
+          uv run --no-sync pytest tests/integration-tests/test_scip_python.py \
+            --fast -v -s \
+            --tb=short \
+            --junitxml=test-results/junit-int-scip-python.xml
+
+      - name: Run MCP integration tests
+        timeout-minutes: 20
+        run: |
+          mkdir -p test-results
+          uv run --no-sync pytest tests/integration-tests/test_mcp.py \
+            -v -s \
+            --tb=short \
+            --junitxml=test-results/junit-int-mcp.xml
+
+      - name: Check phoenix health
+        run: bash scripts/phoenix.sh health 10
+
+      - name: Run phoenix integration test
+        # Runs from the pydantic-deepagents root — tests the pydantic-deep
+        # --phoenix CLI flag.  PHOENIX_PORT is set in GITHUB_ENV by the
+        # 'Start Phoenix tracing server' step above.
+        run: |
+          mkdir -p test-results
+          uv run --no-sync pytest tests/integration-tests/test_phoenix.py \
+            -v -s \
+            --tb=short \
+            --junitxml=test-results/junit-int-phoenix.xml
+
+      - name: AI Root Cause Analysis
+        if: failure() && github.event_name == 'workflow_dispatch' && github.ref_name != 'main'
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+          PR_COMMENT_FLAG: ${{ github.event_name == 'pull_request' && '--pr-comment' || '' }}
+        run: |
+          mkdir -p test-results
+          uv run --no-sync python tools/ci_rca/root_cause_analysis.py \
+            --junit-dir test-results \
+            --junit-dir code-graph-providers/potpie/test-results \
+            --output test-results/ai-root-cause-analysis.md \
+            ${PR_COMMENT_FLAG} \
+          || echo "WARNING: AI RCA failed, continuing CI safely"
+
+      - name: Upload RCA report
+        if: failure()
+        run: |
+          if [ -f test-results/ai-root-cause-analysis.md ]; then
+            echo "## 🤖 AI Root Cause Analysis" >> "$GITHUB_STEP_SUMMARY"
+            cat test-results/ai-root-cause-analysis.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Backup logfire sessions
+        if: always()
+        working-directory: code-graph-providers/potpie
+        run: make backup-logfire
+
+      - name: Stop Phoenix tracing server
+        if: always()
+        run: bash scripts/phoenix.sh stop 2>/dev/null || true
+
+      - name: Clean up potpie-data
+        if: always()
+        working-directory: code-graph-providers/potpie
+        run: |
+          make stop-force 2>/dev/null || true
+          rm -rf singularity/potpie-data
+
+  # ---------------------------------------------------------------------------
+  # Observability stack tests — starts Vector/Tempo/VictoriaMetrics/VictoriaLogs
+  # natively (no Docker), verifies service health, and runs smoke tests for the
+  # --vector CLI feature.  Binaries are cached in scripts/vector/bin/ between
+  # runs; only data/pids/logs are wiped each time.
+  # ---------------------------------------------------------------------------
+  observability-tests:
+    name: Integration tests / Observability
+    runs-on: self-hosted
+    env:
+      UV_LINK_MODE: copy
+
+    steps:
+      - name: Stop stale observability stack before clean checkout
+        run: |
+          # Graceful stop via script if present from a previous checkout.
+          if [ -f scripts/vector/observability.sh ]; then
+            bash scripts/vector/observability.sh stop 2>/dev/null || true
+          fi
+          # Kill any orphaned binaries that survived script removal.
+          pkill -f "${GITHUB_WORKSPACE}/scripts/vector/bin/vector"                2>/dev/null || true
+          pkill -f "${GITHUB_WORKSPACE}/scripts/vector/bin/victoria-metrics-prod" 2>/dev/null || true
+          pkill -f "${GITHUB_WORKSPACE}/scripts/vector/bin/victoria-logs"         2>/dev/null || true
+          pkill -f "${GITHUB_WORKSPACE}/scripts/vector/bin/tempo"                 2>/dev/null || true
+          pkill -f "${GITHUB_WORKSPACE}/scripts/vector/bin/grafana"               2>/dev/null || true
+          # Release any stale port allocations so the next run gets fresh ports.
+          if [ -f .venv/bin/python ]; then
+            .venv/bin/python scripts/vector/alloc_ports.py free 2>/dev/null || true
+          fi
+          # Wipe stale runtime dirs; leave scripts/vector/bin/ (cached binaries).
+          rm -rf scripts/vector/data scripts/vector/pids scripts/vector/logs
+          sleep 2
+
+      - name: Checkout code and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Set up Python & venv
+        uses: ./.github/actions/setup-uv
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          uv-sync-args: "--frozen --group dev --group lint"
+
+      - name: Start observability stack
+        run: bash scripts/vector/observability.sh start
+
+      - name: Export allocated ports to GITHUB_ENV
+        run: |
+          # alloc_ports.py print emits VAR=VALUE lines; append each to GITHUB_ENV
+          # so subsequent steps can reference them as shell variables.
+          while IFS='=' read -r var val; do
+            [[ -n "$var" ]] && echo "${var}=${val}" >> "$GITHUB_ENV"
+          done < <(.venv/bin/python scripts/vector/alloc_ports.py print)
+
+      - name: Wait for services to be healthy
+        run: |
+          set -euo pipefail
+          _check() {
+            local name="$1" url="$2" retries="${3:-20}" interval="${4:-3}"
+            echo "Checking ${name} at ${url} ..."
+            for _i in $(seq 1 "$retries"); do
+              curl -sf "$url" >/dev/null 2>&1 && echo "  OK: ${name}" && return 0
+              echo "  ${name} not ready (attempt ${_i}/${retries}) — waiting ${interval}s..."
+              sleep "$interval"
+            done
+            echo "ERROR: ${name} did not become healthy at ${url} after $((retries * interval))s"
+            return 1
+          }
+          _check "VictoriaMetrics" "http://localhost:${VICTORIA_METRICS_PORT}/health"
+          _check "VictoriaLogs"    "http://localhost:${VICTORIA_LOGS_PORT}/health"
+          _check "Tempo"           "http://localhost:${TEMPO_HTTP_PORT}/ready"
+          _check "Vector API"      "http://localhost:${VECTOR_API_PORT}/health"
+
+      - name: Smoke test — log flow (Vector → VictoriaLogs)
+        run: |
+          set -euo pipefail
+          # Unique tag so we can reliably find this specific entry.
+          TEST_TAG="ci-obs-smoke-$$-${GITHUB_RUN_ID:-0}"
+
+          echo "Posting test log to Vector HTTP ingest (port ${VECTOR_INGEST_PORT})..."
+          curl -sf -X POST \
+            "http://localhost:${VECTOR_INGEST_PORT}" \
+            -H "Content-Type: application/json" \
+            -d "{\"message\":\"observability smoke test\",\"service\":\"ci\",\"test_tag\":\"${TEST_TAG}\"}"
+          echo "Log sent (test_tag=${TEST_TAG})"
+
+          # Allow Vector to route and VictoriaLogs to index the record.
+          sleep 4
+
+          # Query VictoriaLogs for the test entry (stream-label filter on service).
+          echo "Querying VictoriaLogs for test entry..."
+          RESULT=$(curl -sf \
+            "http://localhost:${VICTORIA_LOGS_PORT}/select/logsql/query?query=%7Bservice%3D%22ci%22%7D&limit=1&start=now-5m" \
+            2>/dev/null || echo "")
+          if [ -z "$RESULT" ]; then
+            echo "ERROR: Log entry not found in VictoriaLogs after 4s."
+            exit 1
+          fi
+          echo "Log confirmed in VictoriaLogs: ${RESULT}"
+
+      - name: Smoke test — OTLP trace proxy reachable (Vector → Tempo)
+        run: |
+          # POST an empty body to Vector's OTLP HTTP proxy.  Tempo rejects it
+          # with 400 (bad protobuf), but 000 = connection refused and means the
+          # Vector → Tempo pipeline is broken.
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "http://localhost:${VECTOR_OTLP_HTTP_PORT}/v1/traces" \
+            -H "Content-Type: application/x-protobuf" \
+            --data-binary "" || echo "000")
+          echo "OTLP HTTP proxy response code: ${HTTP_CODE}"
+          if [ "${HTTP_CODE}" = "000" ]; then
+            echo "ERROR: Vector OTLP proxy not reachable on port ${VECTOR_OTLP_HTTP_PORT}."
+            exit 1
+          fi
+          echo "Vector OTLP proxy is reachable (code=${HTTP_CODE})."
+
+      - name: Run observability unit tests
+        run: |
+          mkdir -p test-results
+          # Collect any tests tagged with observability-related keywords.
+          # pytest exits 5 when no tests match; treat that as success (placeholder
+          # until dedicated observability test files are added).
+          uv run --no-sync pytest tests/ \
+            -k "vector or tempo or victoria or observab" \
+            -v --tb=short \
+            --ignore=code-graph-providers \
+            --junitxml=test-results/junit-observability.xml \
+          && PYTEST_EXIT=0 || PYTEST_EXIT=$?
+          if [ "${PYTEST_EXIT}" -eq 5 ]; then
+            echo "No observability-specific tests collected yet — OK (placeholder)."
+            exit 0
+          fi
+          exit "${PYTEST_EXIT}"
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: |
+          bash scripts/vector/observability.sh status 2>/dev/null || true
+          for svc in vector tempo victoria-metrics victoria-logs; do
+            echo "=== ${svc} log (last 50 lines) ==="
+            tail -50 "scripts/vector/logs/${svc}.log" 2>/dev/null || echo "(no log file)"
+          done
+
+      - name: AI Root Cause Analysis
+        if: failure() && github.event_name == 'workflow_dispatch' && github.ref_name != 'main'
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+          PR_COMMENT_FLAG: ${{ github.event_name == 'pull_request' && '--pr-comment' || '' }}
+        run: |
+          uv run --no-sync python tools/ci_rca/root_cause_analysis.py \
+            --junit-dir test-results \
+            --output test-results/ai-root-cause-analysis.md \
+            ${PR_COMMENT_FLAG} \
+          || echo "WARNING: AI RCA failed, continuing CI safely"
+
+      - name: Upload RCA report
+        if: failure()
+        run: |
+          if [ -f test-results/ai-root-cause-analysis.md ]; then
+            echo "## 🤖 AI Root Cause Analysis" >> "$GITHUB_STEP_SUMMARY"
+            cat test-results/ai-root-cause-analysis.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Stop observability stack
+        if: always()
+        run: |
+          bash scripts/vector/observability.sh stop 2>/dev/null || true
+          rm -rf scripts/vector/data scripts/vector/pids scripts/vector/logs
+
+  # ---------------------------------------------------------------------------
+  # scip-clang integration tests — indexes sample-cpp and simics-c++-device
+  # with scip-clang and verifies that File, Class, and Repository nodes are
+  # present in the resulting KuzuDB knowledge graphs.
+  # ---------------------------------------------------------------------------
+  scip-clang:
+    name: Integration tests / scip-clang
+    runs-on: self-hosted
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GH_PAT }}
+
+      - uses: ./.github/actions/setup-uv
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          uv-sync-args: "--frozen --group dev --extra cgc"
+
+      - name: Download scip-clang binary
+        run: make setup-scip-clang
+
+      - name: Generate compile_commands.json for sample-cpp
+        working-directory: tests/integration-tests/sample-cpp
+        run: bash gen-compile-commands.sh
+
+      - name: Run scip-clang / sample-cpp integration test
+        run: |
+          mkdir -p test-results
+          uv run --no-sync pytest tests/integration-tests/test_scip_clang_sample_cpp.py \
+            -v -s \
+            --tb=short \
+            --junitxml=test-results/junit-int-scip-clang-sample-cpp.xml
+
+      - name: Set up Simics project scaffold
+        working-directory: tests/integration-tests/simics-c++-device
+        run: |
+          /nfs/site/disks/ssg_stc_simics_base-packages-release/simics-7/1000/7.79.0/bin/project-setup \
+            --ignore-existing-files .
+
+      - name: Generate compile_commands.json for simics-c++-device
+        working-directory: tests/integration-tests/simics-c++-device
+        run: bash gen-compile-commands.sh
+
+      - name: Run scip-clang / simics-c++-device integration test
+        run: |
+          mkdir -p test-results
+          uv run --no-sync pytest tests/integration-tests/test_scip_clang_simics_device.py \
+            -v -s \
+            --tb=short \
+            --junitxml=test-results/junit-int-scip-clang-simics-device.xml
+
+      - name: AI Root Cause Analysis
+        if: failure() && github.event_name == 'workflow_dispatch' && github.ref_name != 'main'
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+          PR_COMMENT_FLAG: ${{ github.event_name == 'pull_request' && '--pr-comment' || '' }}
+        run: |
+          uv run --no-sync python tools/ci_rca/root_cause_analysis.py \
+            --junit-dir test-results \
+            --output test-results/ai-root-cause-analysis.md \
+            ${PR_COMMENT_FLAG} \
+          || echo "WARNING: AI RCA failed, continuing CI safely"
+
+      - name: Upload RCA report
+        if: failure()
+        run: |
+          if [ -f test-results/ai-root-cause-analysis.md ]; then
+            echo "## 🤖 AI Root Cause Analysis" >> "$GITHUB_STEP_SUMMARY"
+            cat test-results/ai-root-cause-analysis.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   # Summary gate — reports overall pass/fail in the Actions UI.
   nightly-gate:
     name: Nightly Tests Passed
     runs-on: self-hosted
-    needs: [test-all-python]
+    needs: [test-all-python, potpie-integration-tests, observability-tests, scip-clang]
     if: always()
     steps:
       - name: Check results
