@@ -85,6 +85,11 @@ jobs:
       PYDANTIC_DEEP_LOG_LEVEL: ${{ vars.CI_LOGFIRE_LEVEL }}
       CI_LOGFIRE_ENABLED: ${{ vars.CI_LOGFIRE_ENABLED }}
       CI_LOGFIRE_BACKUP_PATH: ${{ vars.CI_LOGFIRE_BACKUP_PATH }}
+      # Use gpt-4o-mini to reduce token consumption and stay within the Copilot
+      # rate limit; the .env.template default (gpt-4o) hits 429s in CI.
+      # gpt-4o-mini has a separate quota from gpt-4o and supports temperature.
+      INFERENCE_MODEL: "github_copilot/gpt-4o-mini"
+      CHAT_MODEL: "github_copilot/gpt-4o-mini"
 
     steps:
       - name: Stop backend before clean checkout
@@ -202,6 +207,23 @@ jobs:
           (cd code-graph-providers/potpie/tests/integration-tests/scip-dml/simics-project && \
             /nfs/site/disks/ssg_stc_simics_base-packages-release/simics-7/1000/7.79.0/bin/project-setup \
             --ignore-existing-files .)
+
+          # Pre-generate dml_compile_commands.json so the Celery worker skips cmake.
+          # cmake runs visibly here (output in GHA log); when the worker later calls
+          # prepare_compile_info it finds the file already present and skips straight
+          # to running dfa.  Without this the worker runs cmake silently (output goes
+          # to its own pipe) and hangs for 9+ minutes with no CI-visible progress.
+          SIMICS_PROJECT="code-graph-providers/potpie/tests/integration-tests/scip-dml/simics-project"
+          CMAKE_BIN=$(which cmake 2>/dev/null || echo "/usr/intel/pkgs/cmake/3.31.5/bin/cmake")
+          echo "Pre-generating dml_compile_commands.json via cmake ..."
+          (cd "$SIMICS_PROJECT" && \
+            "$CMAKE_BIN" -S . -B bt -G Ninja \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_EXPORT_COMPILE_COMMANDS=1 \
+              -Wno-dev && \
+            "$CMAKE_BIN" --build bt --target generate-dml-compile-commands)
+          echo "dml_compile_commands.json: $(ls -lh ${SIMICS_PROJECT}/bt/dml_compile_commands.json 2>/dev/null || echo 'MISSING — Celery worker will fall back to cmake')"
+
           mkdir -p test-results
           uv run --no-sync pytest tests/integration-tests/test_scip_dml.py \
             -v -s \
@@ -221,6 +243,8 @@ jobs:
 
       - name: Run MCP integration tests
         timeout-minutes: 20
+        env:
+          PYDANTIC_DEEP_MODEL: "litellm:github_copilot/gpt-4o-mini"
         run: |
           mkdir -p test-results
           uv run --no-sync pytest tests/integration-tests/test_mcp.py \

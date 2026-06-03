@@ -338,7 +338,14 @@ class TestCGCMCP:
     def test_cgc_mcp_tools(self):
         """Verify all expected cgc-prefixed tools are available via MCP."""
         result = _run(
-            "run", "list all tools with cgc prefix", "--mcp", "--no-browser",
+            "run",
+            # Ask the agent to list tools by their exact full name, including the
+            # cgc_ prefix, so the regex extractor can find them in stdout.
+            "List every tool available to you whose name begins with 'cgc_'. "
+            "Output each tool's complete name exactly as defined "
+            "(for example: cgc_find_code, cgc_add_code_to_graph). "
+            "Do not omit the cgc_ prefix.",
+            "--mcp", "--no-browser",
             timeout=300,
         )
         assert result.returncode == 0, (
