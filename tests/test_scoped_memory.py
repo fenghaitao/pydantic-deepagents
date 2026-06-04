@@ -324,3 +324,8 @@ class TestMemoryContext:
         assert "- [u](u.md) — x" in out
         assert "[Project memories]" in out
         assert "- [p](p.md) — y" in out
+
+    def test_project_only(self):
+        out = context.get_memory_context("", "- [p](p.md) — y")
+        assert out.startswith("[Project memories]")
+        assert "- [p](p.md) — y" in out
