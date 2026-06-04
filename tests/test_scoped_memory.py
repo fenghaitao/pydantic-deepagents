@@ -1,7 +1,10 @@
 """Tests for the scoped, typed agent memory package."""
 
+import json
 import math
 
+from pydantic_ai.messages import ModelResponse, TextPart
+from pydantic_ai.models.function import FunctionModel
 from pydantic_ai_backends import StateBackend
 
 from pydantic_deep.toolsets.scoped_memory import context, scan, store
@@ -267,3 +270,42 @@ class TestKeywordSearchAndRank:
         e = self._e("x", "q", created="2026-05-28", confidence=0.5)  # 7 days
         score = context.rank_score(e, today="2026-06-04")
         assert math.isclose(score, 0.5 * math.exp(-7 / 30), rel_tol=1e-6)
+
+
+def _fixed_indices_model(indices):
+    def fn(messages, info):
+        return ModelResponse(parts=[TextPart(json.dumps({"indices": indices}))])
+
+    return FunctionModel(fn)
+
+
+class TestAISelect:
+    def _cands(self):
+        return [
+            MemoryEntry(
+                name="a", description="testing", type="user", content="x", created="2026-06-04"
+            ),
+            MemoryEntry(
+                name="b", description="deploys", type="user", content="y", created="2026-06-04"
+            ),
+            MemoryEntry(
+                name="c", description="oncall", type="user", content="z", created="2026-06-04"
+            ),
+        ]
+
+    async def test_ai_select_returns_chosen(self):
+        out = await context.ai_select_memories(
+            "testing", self._cands(), 5, _fixed_indices_model([0, 2])
+        )
+        assert [e.name for e in out] == ["a", "c"]
+
+    async def test_ai_select_clamps_out_of_range(self):
+        out = await context.ai_select_memories(
+            "q", self._cands(), 5, _fixed_indices_model([0, 99, -1])
+        )
+        assert [e.name for e in out] == ["a"]
+
+    async def test_ai_select_falls_back_on_bad_json(self):
+        bad = FunctionModel(lambda m, i: ModelResponse(parts=[TextPart("not json")]))
+        out = await context.ai_select_memories("q", self._cands(), 2, bad)
+        assert [e.name for e in out] == ["a", "b"]  # keyword fallback = first N
