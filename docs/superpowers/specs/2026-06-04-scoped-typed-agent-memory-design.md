@@ -25,10 +25,6 @@ The new system uses the repo-standard `.pydantic-deep/memory` convention in both
 - **user** scope → dedicated `LocalBackend`, base `~/.pydantic-deep/memory/{agent_name}/`
 - **project** scope → run's backend, base (relative) `.pydantic-deep/memory/{agent_name}/`
 
-The legacy `/.deep/memory` path appears in this document **only** when describing the
-deprecated `AgentMemoryToolset` and the absolute-path bug it suffers on `LocalBackend`. No
-new code uses `/.deep/memory`.
-
 ## Motivation
 
 The current memory toolset (`pydantic_deep/toolsets/memory.py`) stores one append-only
@@ -72,7 +68,7 @@ limitation.
 | 3 | `agent_name` × scope | **`agent_name` namespaces both** | Preserves the repo's per-subagent memory isolation (`clone_for_subagent`, `share_todos`). |
 | 4 | Compatibility | **New alongside, deprecate old** | Honors the repo `@deprecated` convention; no breakage; clean test boundaries. |
 | 5 | AI mechanism | **Internal `Agent`, app-triggered** | `consolidate_session` + `use_ai` ranking use a throwaway pydantic-ai `Agent` with a Pydantic `output_type`; `TestModel`-friendly; no lifecycle-hook guesswork. |
-| 6 | Path convention | **`.pydantic-deep/memory`** | Matches the established repo convention used by skills/logs/config (not the legacy `/.deep/memory` outlier). |
+| 6 | Path convention | **`.pydantic-deep/memory`** | Matches the established repo convention used by skills/logs/config. |
 | 7 | Recency source | **`created` frontmatter date only** | Backends (State/Docker) do not reliably expose mtime. Ranking uses immutable `created`; `last_used_at` is a cleanup signal, **not** a ranking input (see Decision 9). |
 | 8 | Sync/async split | **Store sync, tools async** | Matches the existing `read_backend_bytes`/`backend.write` pattern; `BackendProtocol` methods are sync. |
 | 9 | `last_used_at` semantics | **Cleanup signal, not ranking input** | Feeding usage-recency into the score inflates freshness on every search (cheetahclaws' latent bug). Decoupled so touching returned entries is harmless. |
@@ -105,8 +101,8 @@ root, with a `MEMORY.md` index per `(agent_name, scope)`:
 - **Relative paths** (`.pydantic-deep/memory/...`, no leading slash) work on both
   `StateBackend` (dict key) and `LocalBackend` (`<root>/.pydantic-deep/...`, persisted).
   Absolute backend paths (leading `/`) are **rejected by `LocalBackend`** as "outside
-  allowed directories" — this is why the legacy `/.deep/memory` default silently no-ops
-  on `LocalBackend`. The project scope therefore uses a **relative** base path.
+  allowed directories" and the failing write returns an error `WriteResult`. The project
+  scope therefore uses a **relative** base path.
 - Listing uses `backend.glob_info("*.md", <dir>)`; confirmed working on State + Local.
   `StateBackend` normalizes relative writes to leading-slash keys and returns those from
   `glob_info`/`ls_info`, so the store reads back via the **returned** `path`, not the
