@@ -6,6 +6,7 @@ import importlib
 import os
 import sys
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -18,7 +19,7 @@ if _DEEPRESEARCH_SRC.is_dir() and str(_DEEPRESEARCH_SRC) not in sys.path:
 pytest.importorskip("deepresearch")
 
 
-def _reload_deepresearch_config(**env: str) -> object:
+def _reload_deepresearch_config(**env: str) -> Any:
     """Reload ``deepresearch.config`` with patched environment."""
     to_drop = [m for m in sys.modules if m == "deepresearch" or m.startswith("deepresearch.")]
     for m in to_drop:
@@ -42,16 +43,17 @@ def test_litellm_prefix_returns_litellm_model() -> None:
     assert isinstance(cfg.MODEL_NAME, LiteLLMModel)
 
 
-def test_unset_model_falls_back_to_moonshot_without_keys() -> None:
+def test_unset_model_falls_back_to_agnes_without_keys() -> None:
     cfg = _reload_deepresearch_config(
         OPENAI_API_KEY="",
         OPENROUTER_API_KEY="",
         ANTHROPIC_API_KEY="",
         GOOGLE_API_KEY="",
         MOONSHOT_API_KEY="",
+        AGNES_API_KEY="",
     )
     assert "MODEL_NAME" not in os.environ
-    # No managed-provider key set → config default "moonshot:kimi-k2.6" is returned
+    # No managed-provider key set → config default "agnes:agnes-2.0-flash" is returned
     # as a string. The deepresearch config layer only wraps litellm: prefixes;
-    # moonshot: strings are resolved by the CLI agent layer when the model is used.
-    assert cfg.MODEL_NAME == "moonshot:kimi-k2.6"
+    # agnes: strings are resolved by the CLI agent layer when the model is used.
+    assert cfg.MODEL_NAME == "agnes:agnes-2.0-flash"

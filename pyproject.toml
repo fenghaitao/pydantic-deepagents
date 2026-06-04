@@ -169,6 +169,8 @@ select = [
 "apps/deepresearch/src/deepresearch/prompts.py" = ["E501"]
 "apps/deepresearch/src/deepresearch/agent.py" = ["E501"]
 "examples/full_app/app.py" = ["E501"]
+# Tests use assert statements by convention
+"tests/*.py" = ["S101"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 15
