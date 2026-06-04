@@ -62,8 +62,11 @@ limitation.
 | 4 | Compatibility | **New alongside, deprecate old** | Honors the repo `@deprecated` convention; no breakage; clean test boundaries. |
 | 5 | AI mechanism | **Internal `Agent`, app-triggered** | `consolidate_session` + `use_ai` ranking use a throwaway pydantic-ai `Agent` with a Pydantic `output_type`; `TestModel`-friendly; no lifecycle-hook guesswork. |
 | 6 | Path convention | **`.pydantic-deep/memory`** | Matches the established repo convention used by skills/logs/config (not the legacy `/.deep/memory` outlier). |
-| 7 | Recency source | **Frontmatter dates** (`created`/`last_used_at`) | Backends (State/Docker) do not reliably expose mtime; cheetahclaws' `mtime_s` approach is not portable. |
+| 7 | Recency source | **`created` frontmatter date only** | Backends (State/Docker) do not reliably expose mtime. Ranking uses immutable `created`; `last_used_at` is a cleanup signal, **not** a ranking input (see Decision 9). |
 | 8 | Sync/async split | **Store sync, tools async** | Matches the existing `read_backend_bytes`/`backend.write` pattern; `BackendProtocol` methods are sync. |
+| 9 | `last_used_at` semantics | **Cleanup signal, not ranking input** | Feeding usage-recency into the score inflates freshness on every search (cheetahclaws' latent bug). Decoupled so touching returned entries is harmless. |
+| 10 | Staleness threshold | **Configurable `staleness_days`, default 7** | The warning is a *code-state* caveat ("verify file:line before asserting"), not a relevance signal. 7 days is a compromise from cheetahclaws' aggressive 1-day default. |
+| 11 | `conflict_group` | **Advisory metadata only** | Displayed in list/search output; never drives auto-detection or auto-surfacing. `check_conflict` is slug-based only. YAGNI on auto-resolution. |
 
 ## Path & Scope Layout
 
@@ -109,7 +112,7 @@ split but backend-backed:
 |--------|----------------|
 | `types.py` | `MemoryEntry` dataclass (name, description, type, content, file_path, created, scope, confidence, source, last_used_at, conflict_group); `MEMORY_TYPES`; `MEMORY_TYPE_DESCRIPTIONS`; `MEMORY_SYSTEM_PROMPT`; `WHAT_NOT_TO_SAVE`; `MEMORY_FORMAT_EXAMPLE`. |
 | `store.py` | Backend CRUD (sync): `save_memory`, `delete_memory`, `load_entries`, `load_index`, `search_memory`, `check_conflict`, `touch_last_used`, `_rewrite_index`, `get_index_content`; helpers `_slugify`, `parse_frontmatter`, `_format_entry_md`. All take an explicit `backend` + base path. |
-| `scan.py` | Frontmatter-date freshness: `memory_age_days`, `memory_age_str`, `memory_freshness_text`. |
+| `scan.py` | Frontmatter-date freshness: `memory_age_days`, `memory_age_str`, `memory_freshness_text(age_days, staleness_days)`. Age from `created`; warning emitted only when `age_days > staleness_days`. |
 | `context.py` | `get_memory_context` (index injection for both scopes), `find_relevant_memories` (keyword + optional AI), `truncate_index_content` (200 lines / 25 KB, with warning). |
 | `consolidator.py` | `consolidate_session(messages, model)` — internal pydantic-ai `Agent` with structured `output_type`; hard cap of 3; confidence-aware conflict skip; `source="consolidator"`. |
 | `toolset.py` | `ScopedMemoryToolset(FunctionToolset)` — tools `MemorySave`, `MemorySearch`, `MemoryDelete`, `MemoryList`; `get_instructions()` for prompt injection. |
@@ -117,7 +120,11 @@ split but backend-backed:
 Capability `ScopedMemoryCapability(AbstractCapability)` in
 `pydantic_deep/capabilities/scoped_memory.py`, parallel to existing `MemoryCapability`.
 Holds the project-scope config and the dedicated user-scope backend; wires the toolset and
-instructions.
+instructions. Configurable fields include: `agent_name`, `user_backend` (default factory
+→ `LocalBackend(~/.pydantic-deep/memory)`), `project_base` (default
+`.pydantic-deep/memory`), `staleness_days` (default 7), `max_index_lines` (200),
+`max_index_bytes` (25_000), and an optional `ai_model` for `use_ai` ranking (defaults to a
+fast model, overridable).
 
 ### Resolving backend + base path per scope
 
@@ -151,6 +158,13 @@ conflict_group: str = ""
 Frontmatter format and the `_format_entry_md` field-omission rules (only emit
 confidence/source/last_used_at/conflict_group when non-default) are ported verbatim.
 
+**`conflict_group` is advisory metadata only.** It is an optional free-text tag that links
+related memories (e.g. `testing_policy`). It is surfaced in `MemoryList`/`MemorySearch`
+output (`grp:<group>`) so the human/agent can notice related entries and reconcile them
+manually. It does **not** trigger automatic conflict detection and does **not** cause group
+members to be co-surfaced during search. `check_conflict` operates purely on the slug
+(same filename, differing body).
+
 ## Behavior
 
 ### Save (`MemorySave`)
@@ -162,12 +176,29 @@ applicable.
 ### Search (`MemorySearch`)
 Keyword substring filter across both scopes (name + description + content) →
 optionally re-rank via internal `Agent` (`use_ai=true`) → sort by
-`confidence × exp(-age_days / 30)` where `age_days` derives from `created`/`last_used_at`
-frontmatter → `touch_last_used` on returned entries → format with staleness caveat for
-entries older than 1 day.
+`confidence × exp(-age_days / 30)` where `age_days` derives from the **`created`**
+frontmatter date only (never `last_used_at`) → `touch_last_used` on the **final returned
+set** (already capped at `max_results`, default 5) → format with a staleness caveat for
+entries older than `staleness_days` (default 7).
+
+- **Scope is always shown.** Each result line includes a `[<type>/<scope>]` tag so the
+  caller knows whether a memory came from user or project scope. The `scope` field is
+  stamped on each `MemoryEntry` at load time based on which backend/base it was read from,
+  so there is no ambiguity even though the index filename (`MEMORY.md`) is identical in
+  both scopes.
+- **AI fallback is silent and never raises.** When `use_ai=true` and the internal `Agent`
+  call errors (or returns unusable output), search falls back to the keyword-ranked top-N
+  results. The caller always receives keyword results in that case — never an empty list
+  (unless there were no keyword matches) and never an exception.
+- **`last_used_at` does not affect ranking.** It is updated for the returned set purely as
+  a utility/cleanup signal (surfacing memories that are never retrieved). Because it is
+  decoupled from the recency score, touching every returned entry cannot inflate
+  freshness.
 
 ### List (`MemoryList`)
 Enumerate entries for the requested scope(s) with type/scope/confidence/source/group tags.
+Every line carries an explicit `[<type>|<scope>]` tag; `conflict_group` (when set) appears
+as `grp:<group>`, and `last_used_at` may be shown to flag unused memories.
 
 ### Delete (`MemoryDelete`)
 Remove the slug file in the scope and rebuild that index. No error if absent.
@@ -177,12 +208,24 @@ Inject `MEMORY_SYSTEM_PROMPT` once, then both scope indexes (user + project) for
 agent, each truncated via `truncate_index_content`. Returns `None`/empty when no memories
 exist. Implemented as a `dynamic=True` `InstructionPart`, matching the existing toolset.
 
+**What gets injected vs. what does not.** Only the **index** (`MEMORY.md`, one line per
+memory: `- [name](file.md) — description`) is injected into the system prompt. Full memory
+**bodies are never injected** — they are returned (with a ~200-char preview) by
+`MemorySearch` and read in full on demand. Consequently:
+
+- The 200-line / 25 KB limits apply to the **injected index content**, not to bodies. A
+  large memory body is fine; it does not bloat the prompt.
+- A single index *entry* is one line (~150 chars) and cannot itself exceed the byte limit.
+  The limit only fires when there are **too many memories**; truncation then cuts at the
+  last newline before the cap and appends a warning naming which limit fired.
+
 ### Consolidation (`consolidate_session`, app-triggered)
 Standalone async function. Skips sessions shorter than the minimum message count. Builds a
 condensed transcript from recent messages, calls an internal `Agent(model, output_type=...)`
 returning a list of candidate memories, saves at most 3 with `source="consolidator"` and
-default confidence 0.8, skipping any that would overwrite a higher-confidence existing
-memory. Returns the list of saved names. Never raises into the caller (defensive).
+default confidence 0.8, skipping any that would overwrite an existing memory of **equal or
+higher** confidence (tie-break: `existing_confidence >= new_confidence` → existing wins,
+new skipped). Returns the list of saved names. Never raises into the caller (defensive).
 
 ## Backward Compatibility
 
@@ -203,8 +246,9 @@ memory. Returns the list of saved names. Never raises into the caller (defensive
   `WriteResult.error` handling, relative-vs-returned-path read-back.
 - **Conflict:** identical-content (no conflict) vs differing-content (conflict dict).
 - **Truncation:** line-only, byte-only, and both-limits cases, including warning text.
-- **Ranking/staleness:** age-from-frontmatter math, recency decay ordering, freshness text
-  thresholds (≤1 day → empty), `touch_last_used` idempotence.
+- **Ranking/staleness:** age-from-`created` math, recency decay ordering, freshness text at
+  the configurable threshold (`age ≤ staleness_days` → empty), `touch_last_used` idempotence,
+  and confirmation that `last_used_at` does **not** alter ranking order.
 - **Search:** keyword path; AI path via `TestModel` returning fixed indices; fallback on
   error.
 - **Consolidation:** `TestModel` returning JSON memories; ≤3 cap; confidence-skip;
