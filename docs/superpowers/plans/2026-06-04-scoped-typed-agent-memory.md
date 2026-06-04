@@ -434,6 +434,13 @@ class TestStoreCRUD:
         store.delete_memory(b, "main", "nope")  # no raise
         assert store.get_index_content(b, "main") == ""
 
+    def test_delete_local_backend(self, tmp_path):
+        from pydantic_ai_backends import LocalBackend
+        b = LocalBackend(root_dir=str(tmp_path))
+        store.save_memory(b, ".pydantic-deep/memory/main", self._entry(), scope="project")
+        store.delete_memory(b, ".pydantic-deep/memory/main", "user_prefers_tests", scope="project")
+        assert store.load_entries(b, ".pydantic-deep/memory/main", scope="project") == []
+
     def test_load_empty_dir(self):
         assert store.load_entries(StateBackend(), "main", scope="user") == []
 ```
@@ -450,6 +457,8 @@ Run: `uv run pytest tests/test_scoped_memory.py::TestStoreCRUD -v`
 Expected: FAIL — `AttributeError: module ... has no attribute 'save_memory'`
 
 - [ ] **Step 3: Add CRUD + index functions to `store.py`**
+
+First add `import os` to the top import block of `store.py` (next to `import re`), needed by `_delete_backend_file`.
 
 ```python
 # append to pydantic_deep/toolsets/scoped_memory/store.py
@@ -518,16 +527,38 @@ def save_memory(backend: BackendProtocol, base_dir: str, entry: MemoryEntry, sco
     _rewrite_index(backend, base_dir, scope)
 
 
+def _delete_backend_file(backend: BackendProtocol, path: str) -> None:
+    """Delete a single file across backend implementations.
+
+    BackendProtocol has no delete method, so handle the shipped backends:
+    real-filesystem backends (LocalBackend, exposing ``root_dir``) via os.remove;
+    in-memory StateBackend via its live ``files`` dict (keys are normalized to a
+    leading slash with no trailing slash — see StateBackend._normalize_path).
+    """
+    native = getattr(backend, "delete", None)
+    if callable(native):  # pragma: no cover - no shipped backend has this yet
+        native(path)
+        return
+    root = getattr(backend, "root_dir", None)
+    if root is not None:
+        real = os.path.join(str(root), path.lstrip("/"))
+        if os.path.exists(real):  # pragma: no branch - guard against double-delete
+            os.remove(real)
+        return
+    files = getattr(backend, "files", None)
+    if isinstance(files, dict):
+        norm = path if path.startswith("/") else "/" + path
+        files.pop(norm, None)
+        return
+    backend.write(path, b"")  # pragma: no cover - unknown backend tombstone fallback
+
+
 def delete_memory(backend: BackendProtocol, base_dir: str, name: str, scope: str = "user") -> None:
     """Delete the memory file matching name (no error if absent) and rebuild the index."""
     slug = _slugify(name)
     path = _file_path(base_dir, slug)
     if backend.exists(path):
-        delete = getattr(backend, "delete", None)
-        if callable(delete):
-            delete(path)
-        else:  # pragma: no cover - all shipped backends implement delete
-            backend.write(path, b"")
+        _delete_backend_file(backend, path)
     _rewrite_index(backend, base_dir, scope)
 
 
@@ -539,12 +570,12 @@ def get_index_content(backend: BackendProtocol, base_dir: str) -> str:
     return read_backend_bytes(backend, path).decode("utf-8", errors="replace").strip()
 ```
 
-> **Note:** verify the backend `delete` method name during Step 4. If `BackendProtocol` exposes deletion under a different name (e.g. `rm`/`remove`), adjust `delete_memory` accordingly and keep the `# pragma: no cover` fallback.
+> **Note (already resolved):** `BackendProtocol` has NO delete method. Deletion is verified to work via `_delete_backend_file` above: `os.remove` under `root_dir` for `LocalBackend`; `files.pop("/" + path)` for `StateBackend` (its keys are normalized to a leading slash). Add `import os` to the top of `store.py` (Task 2's import block). Do not use `backend.delete` — it does not exist.
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/test_scoped_memory.py::TestStoreCRUD -v`
-Expected: PASS. If `delete` is missing on `StateBackend`, inspect with `uv run python -c "from pydantic_ai_backends import StateBackend; print([m for m in dir(StateBackend) if 'el' in m or 'rm' in m])"` and fix the method name.
+Expected: PASS. `StateBackend` deletion goes through the `files.pop` branch; the `root_dir`/native/tombstone branches carry `# pragma: no cover`.
 
 - [ ] **Step 5: Commit**
 

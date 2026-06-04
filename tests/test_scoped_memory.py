@@ -1,10 +1,16 @@
 """Tests for the scoped, typed agent memory package."""
+
+from pydantic_ai_backends import StateBackend
+
 from pydantic_deep.toolsets.scoped_memory import store
+from pydantic_deep.toolsets.scoped_memory.store import INDEX_FILENAME as _IDX
 from pydantic_deep.toolsets.scoped_memory.types import (
-    MEMORY_TYPES,
     MEMORY_SYSTEM_PROMPT,
+    MEMORY_TYPES,
     MemoryEntry,
 )
+
+INDEX_STEM = _IDX.removesuffix(".md")
 
 
 class TestMemoryEntry:
@@ -45,18 +51,87 @@ class TestStoreHelpers:
         assert body == "---\nname: a\nno close"
 
     def test_format_entry_md_minimal(self):
-        e = MemoryEntry(name="n", description="d", type="user", content="body", created="2026-06-04")
+        e = MemoryEntry(
+            name="n", description="d", type="user", content="body", created="2026-06-04"
+        )
         out = store._format_entry_md(e)
-        assert out.startswith("---\nname: n\ndescription: d\ntype: user\ncreated: 2026-06-04\n---\n")
+        assert out.startswith(
+            "---\nname: n\ndescription: d\ntype: user\ncreated: 2026-06-04\n---\n"
+        )
         assert "confidence:" not in out  # default 1.0 omitted
         assert out.endswith("body\n")
 
     def test_format_entry_md_optional_fields(self):
-        e = MemoryEntry(name="n", description="d", type="user", content="b",
-                        created="2026-06-04", confidence=0.8, source="model",
-                        last_used_at="2026-06-04", conflict_group="g")
+        e = MemoryEntry(
+            name="n",
+            description="d",
+            type="user",
+            content="b",
+            created="2026-06-04",
+            confidence=0.8,
+            source="model",
+            last_used_at="2026-06-04",
+            conflict_group="g",
+        )
         out = store._format_entry_md(e)
         assert "confidence: 0.80" in out
         assert "source: model" in out
         assert "last_used_at: 2026-06-04" in out
         assert "conflict_group: g" in out
+
+
+class TestStoreCRUD:
+    def _entry(self, name="user_prefers_tests"):
+        return MemoryEntry(
+            name=name,
+            description="prefers pytest",
+            type="user",
+            content="Uses pytest.",
+            created="2026-06-04",
+        )
+
+    def test_save_then_load(self):
+        b = StateBackend()
+        store.save_memory(b, "main", self._entry(), scope="user")
+        entries = store.load_entries(b, "main", scope="user")
+        assert len(entries) == 1
+        e = entries[0]
+        assert e.name == "user_prefers_tests"
+        assert e.scope == "user"
+        assert e.content == "Uses pytest."
+        assert e.file_path.endswith("user_prefers_tests.md")
+
+    def test_index_rebuilt_on_save(self):
+        b = StateBackend()
+        store.save_memory(b, "main", self._entry(), scope="user")
+        idx = store.get_index_content(b, "main")
+        assert idx == "- [user_prefers_tests](user_prefers_tests.md) — prefers pytest"
+
+    def test_index_excluded_from_entries(self):
+        b = StateBackend()
+        store.save_memory(b, "main", self._entry(), scope="user")
+        names = [e.name for e in store.load_entries(b, "main", scope="user")]
+        assert "MEMORY" not in names and INDEX_STEM not in names
+
+    def test_delete(self):
+        b = StateBackend()
+        store.save_memory(b, "main", self._entry(), scope="user")
+        store.delete_memory(b, "main", "user_prefers_tests")
+        assert store.load_entries(b, "main", scope="user") == []
+        assert store.get_index_content(b, "main") == ""
+
+    def test_delete_missing_is_noop(self):
+        b = StateBackend()
+        store.delete_memory(b, "main", "nope")  # no raise
+        assert store.get_index_content(b, "main") == ""
+
+    def test_delete_local_backend(self, tmp_path):
+        from pydantic_ai_backends import LocalBackend
+
+        b = LocalBackend(root_dir=str(tmp_path))
+        store.save_memory(b, ".pydantic-deep/memory/main", self._entry(), scope="project")
+        store.delete_memory(b, ".pydantic-deep/memory/main", "user_prefers_tests", scope="project")
+        assert store.load_entries(b, ".pydantic-deep/memory/main", scope="project") == []
+
+    def test_load_empty_dir(self):
+        assert store.load_entries(StateBackend(), "main", scope="user") == []
