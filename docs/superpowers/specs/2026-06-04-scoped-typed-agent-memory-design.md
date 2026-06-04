@@ -1,0 +1,229 @@
+# Scoped, Typed Agent Memory on `BackendProtocol` — Design
+
+- **Date:** 2026-06-04
+- **Status:** Approved (design); pending spec review
+- **Branch:** `feat/scoped-memory`
+
+## Summary
+
+Port the rich, Claude-Code-style memory model from the vendored `cheetahclaws/memory/`
+package onto pydantic-deep's `BackendProtocol`/capability architecture. The new system
+adds file-per-memory storage, a 4-type taxonomy, frontmatter metadata
+(confidence/source/last_used_at/conflict_group), conflict detection, recency ranking,
+staleness warnings, keyword + AI search, and app-triggered AI consolidation — while
+keeping all storage on the backend abstraction (works with `StateBackend`,
+`LocalBackend`, `DockerSandbox`, `CompositeBackend`) and integrating natively via
+`FunctionToolset` + `AbstractCapability`.
+
+The existing single-blob `AgentMemoryToolset` / `MemoryCapability` remain functional and
+are marked `@deprecated`, pointing to the new system.
+
+## Motivation
+
+The current memory toolset (`pydantic_deep/toolsets/memory.py`) stores one append-only
+`MEMORY.md` blob per agent with three tools (`read_memory`, `write_memory`,
+`update_memory`). It has no types, scopes, search, ranking, conflict handling, or
+staleness awareness. The cheetahclaws design (documented in `cheetahclaws/docs/memory/`)
+is a faithful, feature-rich reimplementation of Claude Code's memory system. This work
+brings that capability into pydantic-deep without abandoning the backend abstraction that
+the rest of the project depends on.
+
+### Problem with cheetahclaws as-is
+
+cheetahclaws writes directly to the OS filesystem (`Path.home()`, `Path.cwd()`),
+synchronously, outside any backend abstraction. That is why it has no Docker support and
+cannot run against an in-memory or composite backend. The port must not inherit this
+limitation.
+
+## Goals
+
+- Full feature parity with the cheetahclaws memory model (see Feature Matrix).
+- All storage routed through `BackendProtocol` — no raw filesystem access in the core.
+- True cross-project **user** (global) scope plus per-run **project** (local) scope.
+- Native pydantic-ai integration (`FunctionToolset.get_instructions`, `AbstractCapability`).
+- Per-agent isolation preserved (`agent_name` namespacing, matching current behavior).
+- 100% test coverage; Pyright + MyPy strict clean.
+
+## Non-Goals
+
+- Migrating existing single-blob `MEMORY.md` files into the new format (the deprecated
+  toolset still reads them; no auto-migration).
+- Semantic/vector search, memory versioning, decay/auto-deletion, team sync (listed as
+  "future" in cheetahclaws docs — out of scope).
+- Auto-running consolidation on every run (consolidation is app-triggered only).
+
+## Locked Design Decisions
+
+| # | Decision | Choice | Rationale |
+|---|----------|--------|-----------|
+| 1 | Feature scope | **Full parity** | Capture the complete model; coverage handled via `TestModel`. |
+| 2 | Scope storage | **Dedicated user backend (B)** | A single project-rooted backend cannot provide true cross-project user memory. User scope gets its own `LocalBackend`. |
+| 3 | `agent_name` × scope | **`agent_name` namespaces both** | Preserves the repo's per-subagent memory isolation (`clone_for_subagent`, `share_todos`). |
+| 4 | Compatibility | **New alongside, deprecate old** | Honors the repo `@deprecated` convention; no breakage; clean test boundaries. |
+| 5 | AI mechanism | **Internal `Agent`, app-triggered** | `consolidate_session` + `use_ai` ranking use a throwaway pydantic-ai `Agent` with a Pydantic `output_type`; `TestModel`-friendly; no lifecycle-hook guesswork. |
+| 6 | Path convention | **`.pydantic-deep/memory`** | Matches the established repo convention used by skills/logs/config (not the legacy `/.deep/memory` outlier). |
+| 7 | Recency source | **Frontmatter dates** (`created`/`last_used_at`) | Backends (State/Docker) do not reliably expose mtime; cheetahclaws' `mtime_s` approach is not portable. |
+| 8 | Sync/async split | **Store sync, tools async** | Matches the existing `read_backend_bytes`/`backend.write` pattern; `BackendProtocol` methods are sync. |
+
+## Path & Scope Layout
+
+| Scope | Storage | Default location |
+|-------|---------|------------------|
+| **user** (global, cross-project) | dedicated `LocalBackend` | `~/.pydantic-deep/memory/{agent_name}/` |
+| **project** (local) | the run's backend (`ctx.deps.backend`) | `.pydantic-deep/memory/{agent_name}/` (relative path) |
+
+Within each `{agent_name}/` namespace, individual memory files live directly in the scope
+root, with a `MEMORY.md` index per `(agent_name, scope)`:
+
+```
+~/.pydantic-deep/memory/main/        # user scope (dedicated backend)
+├── MEMORY.md                        # auto-built index
+├── user_prefers_tests.md
+└── feedback_no_db_mocks.md
+
+<backend root>/.pydantic-deep/memory/main/   # project scope (run backend)
+├── MEMORY.md
+└── project_api_migration.md
+```
+
+### Backend path notes (verified empirically)
+
+- **Relative paths** (`.pydantic-deep/memory/...`, no leading slash) work on both
+  `StateBackend` (dict key) and `LocalBackend` (`<root>/.pydantic-deep/...`, persisted).
+  Absolute backend paths (leading `/`) are **rejected by `LocalBackend`** as "outside
+  allowed directories" — this is why the legacy `/.deep/memory` default silently no-ops
+  on `LocalBackend`. The project scope therefore uses a **relative** base path.
+- Listing uses `backend.glob_info("*.md", <dir>)`; confirmed working on State + Local.
+  `StateBackend` normalizes relative writes to leading-slash keys and returns those from
+  `glob_info`/`ls_info`, so the store reads back via the **returned** `path`, not the
+  input string.
+- All backend writes return a `WriteResult`; the store **must check `result.error`** (the
+  legacy toolset ignores it, which is the silent-failure bug above).
+
+## Architecture
+
+New subpackage `pydantic_deep/toolsets/scoped_memory/`, mirroring cheetahclaws' module
+split but backend-backed:
+
+| Module | Responsibility |
+|--------|----------------|
+| `types.py` | `MemoryEntry` dataclass (name, description, type, content, file_path, created, scope, confidence, source, last_used_at, conflict_group); `MEMORY_TYPES`; `MEMORY_TYPE_DESCRIPTIONS`; `MEMORY_SYSTEM_PROMPT`; `WHAT_NOT_TO_SAVE`; `MEMORY_FORMAT_EXAMPLE`. |
+| `store.py` | Backend CRUD (sync): `save_memory`, `delete_memory`, `load_entries`, `load_index`, `search_memory`, `check_conflict`, `touch_last_used`, `_rewrite_index`, `get_index_content`; helpers `_slugify`, `parse_frontmatter`, `_format_entry_md`. All take an explicit `backend` + base path. |
+| `scan.py` | Frontmatter-date freshness: `memory_age_days`, `memory_age_str`, `memory_freshness_text`. |
+| `context.py` | `get_memory_context` (index injection for both scopes), `find_relevant_memories` (keyword + optional AI), `truncate_index_content` (200 lines / 25 KB, with warning). |
+| `consolidator.py` | `consolidate_session(messages, model)` — internal pydantic-ai `Agent` with structured `output_type`; hard cap of 3; confidence-aware conflict skip; `source="consolidator"`. |
+| `toolset.py` | `ScopedMemoryToolset(FunctionToolset)` — tools `MemorySave`, `MemorySearch`, `MemoryDelete`, `MemoryList`; `get_instructions()` for prompt injection. |
+
+Capability `ScopedMemoryCapability(AbstractCapability)` in
+`pydantic_deep/capabilities/scoped_memory.py`, parallel to existing `MemoryCapability`.
+Holds the project-scope config and the dedicated user-scope backend; wires the toolset and
+instructions.
+
+### Resolving backend + base path per scope
+
+The store functions are scope-agnostic — they receive `(backend, base_dir)`. The toolset/
+capability resolves which backend and base path each scope maps to:
+
+- `user`  → `user_backend` (default `LocalBackend(root_dir=expanduser("~/.pydantic-deep/memory"))`), base `"{agent_name}"`.
+- `project` → `ctx.deps.backend`, base `".pydantic-deep/memory/{agent_name}"`.
+
+`user_backend` is an injectable field on the capability (default factory builds the
+`LocalBackend`); tests inject a `LocalBackend` rooted at a tmp dir or a `StateBackend`.
+
+## Data Model
+
+`MemoryEntry` (dataclass) — identical field set to cheetahclaws:
+
+```python
+name: str
+description: str
+type: str          # "user" | "feedback" | "project" | "reference"
+content: str
+file_path: str = ""
+created: str = ""          # ISO "2026-06-04"
+scope: str = "user"        # "user" | "project"
+confidence: float = 1.0    # 0.0–1.0
+source: str = "user"       # "user" | "model" | "tool" | "consolidator"
+last_used_at: str = ""     # ISO date, touched on search hits
+conflict_group: str = ""
+```
+
+Frontmatter format and the `_format_entry_md` field-omission rules (only emit
+confidence/source/last_used_at/conflict_group when non-default) are ported verbatim.
+
+## Behavior
+
+### Save (`MemorySave`)
+Build `MemoryEntry` → `check_conflict` (read existing slug, diff body ignoring whitespace)
+→ write `.md` (frontmatter + body), checking `WriteResult.error` → `_rewrite_index` for
+that `(agent, scope)` → return a status string, appending a conflict-replacement note when
+applicable.
+
+### Search (`MemorySearch`)
+Keyword substring filter across both scopes (name + description + content) →
+optionally re-rank via internal `Agent` (`use_ai=true`) → sort by
+`confidence × exp(-age_days / 30)` where `age_days` derives from `created`/`last_used_at`
+frontmatter → `touch_last_used` on returned entries → format with staleness caveat for
+entries older than 1 day.
+
+### List (`MemoryList`)
+Enumerate entries for the requested scope(s) with type/scope/confidence/source/group tags.
+
+### Delete (`MemoryDelete`)
+Remove the slug file in the scope and rebuild that index. No error if absent.
+
+### Prompt injection (`get_instructions`)
+Inject `MEMORY_SYSTEM_PROMPT` once, then both scope indexes (user + project) for this
+agent, each truncated via `truncate_index_content`. Returns `None`/empty when no memories
+exist. Implemented as a `dynamic=True` `InstructionPart`, matching the existing toolset.
+
+### Consolidation (`consolidate_session`, app-triggered)
+Standalone async function. Skips sessions shorter than the minimum message count. Builds a
+condensed transcript from recent messages, calls an internal `Agent(model, output_type=...)`
+returning a list of candidate memories, saves at most 3 with `source="consolidator"` and
+default confidence 0.8, skipping any that would overwrite a higher-confidence existing
+memory. Returns the list of saved names. Never raises into the caller (defensive).
+
+## Backward Compatibility
+
+- `AgentMemoryToolset` and `MemoryCapability` keep working unchanged, decorated with
+  `@deprecated("Use ScopedMemoryToolset / ScopedMemoryCapability instead.")`.
+- New symbols exported from `pydantic_deep/__init__.py`:
+  `ScopedMemoryToolset`, `ScopedMemoryCapability`, `MemoryEntry`, `consolidate_session`,
+  and the prompt/type constants.
+- `create_deep_agent` gains an opt-in path to the scoped capability (exact wiring decided
+  in the implementation plan); the default remains the existing capability for one release
+  to avoid behavior changes.
+- No migration of legacy single-blob files.
+
+## Testing Strategy
+
+- **Storage:** `StateBackend` (and a tmp-rooted `LocalBackend` for the user scope) — cover
+  slugify, frontmatter round-trip, save/overwrite, delete, load, index rebuild + content,
+  `WriteResult.error` handling, relative-vs-returned-path read-back.
+- **Conflict:** identical-content (no conflict) vs differing-content (conflict dict).
+- **Truncation:** line-only, byte-only, and both-limits cases, including warning text.
+- **Ranking/staleness:** age-from-frontmatter math, recency decay ordering, freshness text
+  thresholds (≤1 day → empty), `touch_last_used` idempotence.
+- **Search:** keyword path; AI path via `TestModel` returning fixed indices; fallback on
+  error.
+- **Consolidation:** `TestModel` returning JSON memories; ≤3 cap; confidence-skip;
+  short-session skip; malformed-output skip.
+- **Capability/toolset:** `get_instructions` with/without memories; tool dispatch; scope
+  routing to the correct backend.
+- **Deprecation:** old classes still importable and functional; emit `DeprecationWarning`.
+
+Use `# pragma: no cover` only for genuinely unreachable platform branches.
+
+## Risks / Open Items
+
+- **Default user backend at import/instantiation time** must not create `~/.pydantic-deep`
+  as a side effect of merely importing the module. `LocalBackend.__init__` calls
+  `mkdir(parents=True)` on its root, so the default user backend is built lazily (on first
+  use / in `__post_init__` of the capability), and tests always inject their own — the
+  real home dir is never touched by the suite.
+- **`StateBackend` key normalization** (relative → leading-slash) means the store must
+  always read back via the `path` returned by `glob_info`/`ls_info`, never reconstruct it.
+- **Message format for consolidation:** the transcript builder must accept pydantic-ai
+  `ModelMessage` history; the exact extraction shape is pinned in the plan.
+```
