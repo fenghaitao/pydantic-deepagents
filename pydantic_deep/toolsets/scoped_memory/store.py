@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import re
+from datetime import date as _date
 
 from pydantic_ai_backends import BackendProtocol
 
@@ -184,3 +185,58 @@ def get_index_content(backend: BackendProtocol, base_dir: str) -> str:
     if not backend.exists(path):
         return ""
     return read_backend_bytes(backend, path).decode("utf-8", errors="replace").strip()
+
+
+def check_conflict(
+    backend: BackendProtocol, base_dir: str, entry: MemoryEntry
+) -> dict[str, object] | None:
+    """Return existing-memory fields if a same-slug memory exists with a DIFFERENT body,
+    else None (no file, or identical body)."""
+    path = _file_path(base_dir, _slugify(entry.name))
+    if not backend.exists(path):
+        return None
+    meta, existing = parse_frontmatter(
+        read_backend_bytes(backend, path).decode("utf-8", errors="replace")
+    )
+    if existing.strip() == entry.content.strip():
+        return None
+    try:
+        existing_conf = float(meta.get("confidence", 1.0))
+    except ValueError:
+        existing_conf = 1.0
+    return {
+        "existing_content": existing.strip(),
+        "existing_confidence": existing_conf,
+        "existing_created": meta.get("created", ""),
+        "existing_source": meta.get("source", "user"),
+    }
+
+
+def touch_last_used(backend: BackendProtocol, file_path: str, today: str | None = None) -> None:
+    """Set last_used_at on a memory file to today's date. Cleanup signal only — never
+    affects ranking. Silent if the file is missing or already current."""
+    if not file_path or not backend.exists(file_path):
+        return
+    stamp = today or _date.today().isoformat()
+    meta, body = parse_frontmatter(
+        read_backend_bytes(backend, file_path).decode("utf-8", errors="replace")
+    )
+    if meta.get("last_used_at") == stamp:
+        return
+    meta["last_used_at"] = stamp
+    fm = ["---"]
+    for k in (
+        "name",
+        "description",
+        "type",
+        "created",
+        "confidence",
+        "source",
+        "last_used_at",
+        "conflict_group",
+    ):
+        v = meta.get(k)
+        if v is not None and str(v):
+            fm.append(f"{k}: {v}")
+    fm.append("---")
+    _write_or_raise(backend, file_path, "\n".join(fm) + "\n" + body + "\n")

@@ -135,3 +135,58 @@ class TestStoreCRUD:
 
     def test_load_empty_dir(self):
         assert store.load_entries(StateBackend(), "main", scope="user") == []
+
+
+class TestConflictAndTouch:
+    def _save(self, b, content, confidence=1.0, source="user"):
+        e = MemoryEntry(
+            name="m",
+            description="d",
+            type="user",
+            content=content,
+            created="2026-06-04",
+            confidence=confidence,
+            source=source,
+        )
+        store.save_memory(b, "main", e, scope="user")
+        return e
+
+    def test_no_conflict_when_absent(self):
+        b = StateBackend()
+        e = MemoryEntry(name="m", description="d", type="user", content="x")
+        assert store.check_conflict(b, "main", e) is None
+
+    def test_no_conflict_identical_body(self):
+        b = StateBackend()
+        self._save(b, "same body")
+        e = MemoryEntry(name="m", description="d", type="user", content="same body")
+        assert store.check_conflict(b, "main", e) is None
+
+    def test_conflict_differing_body(self):
+        b = StateBackend()
+        self._save(b, "old body", confidence=0.9, source="model")
+        e = MemoryEntry(name="m", description="d", type="user", content="new body")
+        c = store.check_conflict(b, "main", e)
+        assert c is not None
+        assert c["existing_content"] == "old body"
+        assert c["existing_confidence"] == 0.9
+        assert c["existing_source"] == "model"
+        assert c["existing_created"] == "2026-06-04"
+
+    def test_touch_last_used_sets_date(self):
+        b = StateBackend()
+        e = self._save(b, "body")
+        store.touch_last_used(b, e.file_path, today="2026-06-10")
+        meta, _ = store.parse_frontmatter(b.read_bytes(e.file_path).decode())
+        assert meta["last_used_at"] == "2026-06-10"
+
+    def test_touch_last_used_idempotent(self):
+        b = StateBackend()
+        e = self._save(b, "body")
+        store.touch_last_used(b, e.file_path, today="2026-06-10")
+        first = b.read_bytes(e.file_path)
+        store.touch_last_used(b, e.file_path, today="2026-06-10")  # no rewrite
+        assert b.read_bytes(e.file_path) == first
+
+    def test_touch_last_used_missing_file_is_noop(self):
+        store.touch_last_used(StateBackend(), "main/nope.md", today="2026-06-10")  # no raise
