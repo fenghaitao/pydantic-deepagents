@@ -104,3 +104,14 @@ async def ai_select_memories(
         if 0 <= i < len(candidates):
             out.append(candidates[i])
     return out
+
+
+def get_memory_context(user_index: str, project_index: str) -> str:
+    """Combine user + project index content (already raw MEMORY.md strings) for prompt
+    injection, truncating each and labelling the project block. '' when both empty."""
+    parts: list[str] = []
+    if user_index.strip():
+        parts.append(truncate_index_content(user_index))
+    if project_index.strip():
+        parts.append(f"[Project memories]\n{truncate_index_content(project_index)}")
+    return "\n\n".join(parts)

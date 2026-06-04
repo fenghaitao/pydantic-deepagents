@@ -309,3 +309,18 @@ class TestAISelect:
         bad = FunctionModel(lambda m, i: ModelResponse(parts=[TextPart("not json")]))
         out = await context.ai_select_memories("q", self._cands(), 2, bad)
         assert [e.name for e in out] == ["a", "b"]  # keyword fallback = first N
+
+
+class TestMemoryContext:
+    def test_empty(self):
+        assert context.get_memory_context("", "") == ""
+
+    def test_user_only(self):
+        out = context.get_memory_context("- [a](a.md) — x", "")
+        assert out == "- [a](a.md) — x"
+
+    def test_both_scopes_labelled(self):
+        out = context.get_memory_context("- [u](u.md) — x", "- [p](p.md) — y")
+        assert "- [u](u.md) — x" in out
+        assert "[Project memories]" in out
+        assert "- [p](p.md) — y" in out
