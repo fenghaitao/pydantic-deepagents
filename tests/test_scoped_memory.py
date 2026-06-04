@@ -2,7 +2,7 @@
 
 from pydantic_ai_backends import StateBackend
 
-from pydantic_deep.toolsets.scoped_memory import scan, store
+from pydantic_deep.toolsets.scoped_memory import context, scan, store
 from pydantic_deep.toolsets.scoped_memory.store import INDEX_FILENAME as _IDX
 from pydantic_deep.toolsets.scoped_memory.types import (
     MEMORY_SYSTEM_PROMPT,
@@ -208,3 +208,21 @@ class TestScan:
         assert scan.memory_freshness_text(7, staleness_days=7) == ""  # at threshold → fresh
         txt = scan.memory_freshness_text(8, staleness_days=7)
         assert "8 days old" in txt and "Verify against current code" in txt
+
+
+class TestTruncation:
+    def test_no_truncation(self):
+        raw = "- [a](a.md) — x\n- [b](b.md) — y"
+        assert context.truncate_index_content(raw) == raw
+
+    def test_line_truncation(self):
+        raw = "\n".join(f"- [m{i}](m{i}.md) — x" for i in range(250))
+        out = context.truncate_index_content(raw, max_lines=200, max_bytes=10**9)
+        assert out.count("\n- [") <= 200
+        assert "WARNING" in out and "200" in out
+
+    def test_byte_truncation(self):
+        raw = "\n".join(f"- [m{i}](m{i}.md) — {'x' * 100}" for i in range(50))
+        out = context.truncate_index_content(raw, max_lines=10**6, max_bytes=500)
+        assert len(out.encode()) < len(raw.encode())
+        assert "WARNING" in out and "bytes" in out
