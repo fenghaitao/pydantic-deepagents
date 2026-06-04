@@ -1,5 +1,7 @@
 """Tests for the scoped, typed agent memory package."""
 
+import math
+
 from pydantic_ai_backends import StateBackend
 
 from pydantic_deep.toolsets.scoped_memory import context, scan, store
@@ -233,3 +235,35 @@ class TestTruncation:
         assert "WARNING" in out
         assert "lines and" in out and "bytes" in out
         assert len(out.encode()) < len(raw.encode())
+
+
+class TestKeywordSearchAndRank:
+    def _e(self, name, content, created="2026-06-04", confidence=1.0):
+        return MemoryEntry(
+            name=name,
+            description=name,
+            type="user",
+            content=content,
+            created=created,
+            confidence=confidence,
+        )
+
+    def test_keyword_filter(self):
+        entries = [self._e("a", "about testing"), self._e("b", "about deploys")]
+        hits = context.keyword_filter(entries, "testing")
+        assert [e.name for e in hits] == ["a"]
+
+    def test_keyword_filter_case_insensitive_multi_field(self):
+        entries = [self._e("Deploy", "x")]
+        assert len(context.keyword_filter(entries, "deploy")) == 1
+
+    def test_rank_by_confidence_and_recency(self):
+        fresh_hi = self._e("fresh_hi", "q", created="2026-06-04", confidence=1.0)
+        old_hi = self._e("old_hi", "q", created="2026-04-05", confidence=1.0)  # ~60d
+        ranked = context.rank_entries([old_hi, fresh_hi], today="2026-06-04")
+        assert [e.name for e in ranked] == ["fresh_hi", "old_hi"]
+
+    def test_rank_score_formula(self):
+        e = self._e("x", "q", created="2026-05-28", confidence=0.5)  # 7 days
+        score = context.rank_score(e, today="2026-06-04")
+        assert math.isclose(score, 0.5 * math.exp(-7 / 30), rel_tol=1e-6)
