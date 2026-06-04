@@ -31,7 +31,7 @@ The agent reads and updates this file across sessions.
 
 _DEFAULT_CONFIG_TOML = """\
 #model = "litellm:github_copilot/gpt-4o"
-model = "moonshot:kimi-k2.6"
+model = "agnes:agnes-2.0-flash"
 show_cost = true
 show_tokens = true
 web_search = false
@@ -135,7 +135,7 @@ def _log(msg: str) -> None:
     """Print a message to stderr."""
     import sys
 
-    print(msg, file=sys.stderr)
+    print(msg, file=sys.stderr)  # noqa: T201
 
 
 __all__ = ["ensure_initialized", "init_project"]

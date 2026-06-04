@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
@@ -143,6 +142,10 @@ def create_cli_agent(  # noqa: C901
         from pydantic_deep.moonshot import infer_moonshot_model
 
         effective_model = infer_moonshot_model(_raw_model)
+    elif isinstance(_raw_model, str) and _raw_model.startswith("agnes:"):
+        from pydantic_deep.agnes import infer_agnes_model
+
+        effective_model = infer_agnes_model(_raw_model)
     effective_working_dir = working_dir or config.working_dir
     effective_allow_list = shell_allow_list or config.shell_allow_list or None
 
@@ -164,7 +167,7 @@ def create_cli_agent(  # noqa: C901
         if workspace:
             import hashlib
 
-            dir_hash = hashlib.md5(str(root.resolve()).encode()).hexdigest()[:8]
+            dir_hash = hashlib.md5(str(root.resolve()).encode(), usedforsecurity=False).hexdigest()[:8]
             docker_kwargs["container_name"] = f"pydantic-deep-{dir_hash}-{workspace}"
 
         effective_backend: Any = DockerSandbox(**docker_kwargs)

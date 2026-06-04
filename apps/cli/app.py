@@ -24,7 +24,7 @@ def _detect_git_branch(working_dir: str) -> str:
     """Detect git branch, return empty string if not a git repo."""
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],  # noqa: S607
             capture_output=True,
             text=True,
             cwd=working_dir,
@@ -32,7 +32,7 @@ def _detect_git_branch(working_dir: str) -> str:
         )
         if result.returncode == 0:
             return result.stdout.strip()
-    except Exception:
+    except Exception:  # noqa: S110
         pass
     return ""
 
@@ -119,7 +119,7 @@ class DeepApp(App):
                 from apps.cli.styles.themes import apply_theme
 
                 apply_theme(self, config.theme)
-        except Exception:
+        except Exception:  # noqa: S110
             pass
 
     def on_mount(self) -> None:
@@ -172,7 +172,7 @@ class DeepApp(App):
             assistant.append_text(error_text)
             assistant.finalize_text()
             msg_list.end_assistant_message()
-        except Exception:
+        except Exception:  # noqa: S110
             pass
 
         # Auto-open provider setup
@@ -193,7 +193,7 @@ class DeepApp(App):
             assistant.append_text(welcome_text)
             assistant.finalize_text()
             msg_list.end_assistant_message()
-        except Exception:
+        except Exception:  # noqa: S110
             pass
 
         # Open provider picker for onboarding
@@ -236,7 +236,7 @@ class DeepApp(App):
                 from apps.cli.config import DEFAULT_CONFIG_PATH, set_config_value
 
                 set_config_value(DEFAULT_CONFIG_PATH, "model", effective)
-            except Exception:
+            except Exception:  # noqa: S110
                 pass
 
             log.info("Agent reconfigured successfully", model=effective)
@@ -263,6 +263,7 @@ class DeepApp(App):
             ("anthropic:", "ANTHROPIC_API_KEY", "anthropic:claude-sonnet-4-6"),
             ("openai:", "OPENAI_API_KEY", "openai:gpt-4.1"),
             ("moonshot:", "MOONSHOT_API_KEY", "moonshot:kimi-k2.6"),
+            ("agnes:", "AGNES_API_KEY", "agnes:agnes-2.0-flash"),
             ("google", "GOOGLE_API_KEY", "google-gla:gemini-2.5-pro"),
         ]
 
@@ -290,7 +291,7 @@ class DeepApp(App):
         try:
             self.screen.query_one(DeepHeader).model_name = name
             self.screen.query_one(StatusBar).model_name = name
-        except (NoMatches, Exception):
+        except (NoMatches, Exception):  # noqa: S110
             pass
 
     def watch_is_streaming(self, streaming: bool) -> None:
@@ -370,7 +371,7 @@ class DeepApp(App):
         msg_list.append_user_message(f"!{command}")
 
         try:
-            result = subprocess.run(
+            result = subprocess.run(  # noqa: S602
                 command,
                 shell=True,
                 capture_output=True,

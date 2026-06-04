@@ -1,4 +1,5 @@
 """Tests for DeepApp._pick_available_model provider auto-selection."""
+# ruff: noqa: S101
 
 from __future__ import annotations
 
@@ -36,6 +37,16 @@ def test_managed_provider_falls_back_when_key_missing() -> None:
     # openai configured but no openai key; anthropic key present → fall back.
     with patch.dict("os.environ", _env(ANTHROPIC_API_KEY="a"), clear=True):
         assert pick("openai:gpt-4.1") == "anthropic:claude-sonnet-4-6"
+
+
+def test_agnes_kept_when_its_key_present() -> None:
+    with patch.dict("os.environ", _env(AGNES_API_KEY="x"), clear=True):
+        assert pick("agnes:agnes-2.0-flash") == "agnes:agnes-2.0-flash"
+
+
+def test_agnes_falls_back_when_key_missing() -> None:
+    with patch.dict("os.environ", _env(ANTHROPIC_API_KEY="a"), clear=True):
+        assert pick("agnes:agnes-2.0-flash") == "anthropic:claude-sonnet-4-6"
 
 
 def test_no_keys_returns_current() -> None:

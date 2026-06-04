@@ -80,7 +80,7 @@ _FLOAT_FIELDS = frozenset({"temperature"})
 class CliConfig:
     """CLI configuration loaded from config.toml."""
 
-    model: str = "moonshot:kimi-k2.6"
+    model: str = "agnes:agnes-2.0-flash"
     working_dir: str | None = None
     shell_allow_list: list[str] = field(default_factory=list)
     theme: str = "default"
