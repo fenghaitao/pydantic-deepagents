@@ -18,6 +18,17 @@ keeping all storage on the backend abstraction (works with `StateBackend`,
 The existing single-blob `AgentMemoryToolset` / `MemoryCapability` remain functional and
 are marked `@deprecated`, pointing to the new system.
 
+### Canonical paths (authoritative)
+
+The new system uses the repo-standard `.pydantic-deep/memory` convention in both scopes:
+
+- **user** scope → dedicated `LocalBackend`, base `~/.pydantic-deep/memory/{agent_name}/`
+- **project** scope → run's backend, base (relative) `.pydantic-deep/memory/{agent_name}/`
+
+The legacy `/.deep/memory` path appears in this document **only** when describing the
+deprecated `AgentMemoryToolset` and the absolute-path bug it suffers on `LocalBackend`. No
+new code uses `/.deep/memory`.
+
 ## Motivation
 
 The current memory toolset (`pydantic_deep/toolsets/memory.py`) stores one append-only
@@ -146,14 +157,27 @@ name: str
 description: str
 type: str          # "user" | "feedback" | "project" | "reference"
 content: str
-file_path: str = ""
+file_path: str = ""        # backend path to THIS memory's own .md file (see below)
 created: str = ""          # ISO "2026-06-04"
 scope: str = "user"        # "user" | "project"
 confidence: float = 1.0    # 0.0–1.0
-source: str = "user"       # "user" | "model" | "tool" | "consolidator"
-last_used_at: str = ""     # ISO date, touched on search hits
+source: str = "user"       # "user" | "model" | "tool" | "consolidator" (see below)
+last_used_at: str = ""     # ISO date, touched on search hits (cleanup signal, not ranked)
 conflict_group: str = ""
 ```
+
+**`file_path`** is the backend path of *this memory's own* `.md` file — it is **not**
+source-code context attached to the memory. It is empty on a freshly constructed entry,
+populated by `save_memory` (after writing) and by `load_entries` (when scanning a scope),
+and used to build the index links and to target `touch_last_used`.
+
+**`source`** records provenance and takes exactly four values — there is no `"system"`:
+- `user` (default) — explicit user statement.
+- `model` — inferred by the agent.
+- `tool` — added programmatically / extracted from tool output (covers any
+  non-interactive origin).
+- `consolidator` — set internally by `consolidate_session`; not selectable via the
+  `MemorySave` tool (its enum exposes only `user`/`model`/`tool`).
 
 Frontmatter format and the `_format_entry_md` field-omission rules (only emit
 confidence/source/last_used_at/conflict_group when non-default) are ported verbatim.
@@ -195,13 +219,13 @@ entries older than `staleness_days` (default 7).
   decoupled from the recency score, touching every returned entry cannot inflate
   freshness.
 
+### Delete (`MemoryDelete`)
+Remove the slug file in the scope and rebuild that index. No error if absent.
+
 ### List (`MemoryList`)
 Enumerate entries for the requested scope(s) with type/scope/confidence/source/group tags.
 Every line carries an explicit `[<type>|<scope>]` tag; `conflict_group` (when set) appears
 as `grp:<group>`, and `last_used_at` may be shown to flag unused memories.
-
-### Delete (`MemoryDelete`)
-Remove the slug file in the scope and rebuild that index. No error if absent.
 
 ### Prompt injection (`get_instructions`)
 Inject `MEMORY_SYSTEM_PROMPT` once, then both scope indexes (user + project) for this
