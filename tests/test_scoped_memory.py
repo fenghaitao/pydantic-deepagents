@@ -2,7 +2,7 @@
 
 from pydantic_ai_backends import StateBackend
 
-from pydantic_deep.toolsets.scoped_memory import store
+from pydantic_deep.toolsets.scoped_memory import scan, store
 from pydantic_deep.toolsets.scoped_memory.store import INDEX_FILENAME as _IDX
 from pydantic_deep.toolsets.scoped_memory.types import (
     MEMORY_SYSTEM_PROMPT,
@@ -190,3 +190,21 @@ class TestConflictAndTouch:
 
     def test_touch_last_used_missing_file_is_noop(self):
         store.touch_last_used(StateBackend(), "main/nope.md", today="2026-06-10")  # no raise
+
+
+class TestScan:
+    def test_age_days(self):
+        assert scan.memory_age_days("2026-06-01", today="2026-06-04") == 3
+        assert scan.memory_age_days("", today="2026-06-04") == 0  # missing → fresh
+        assert scan.memory_age_days("not-a-date", today="2026-06-04") == 0
+        assert scan.memory_age_days("2026-06-10", today="2026-06-04") == 0  # future clamped
+
+    def test_age_str(self):
+        assert scan.memory_age_str(0) == "today"
+        assert scan.memory_age_str(1) == "yesterday"
+        assert scan.memory_age_str(5) == "5 days ago"
+
+    def test_freshness_text_threshold(self):
+        assert scan.memory_freshness_text(7, staleness_days=7) == ""  # at threshold → fresh
+        txt = scan.memory_freshness_text(8, staleness_days=7)
+        assert "8 days old" in txt and "Verify against current code" in txt
