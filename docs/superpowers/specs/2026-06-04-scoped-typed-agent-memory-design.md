@@ -96,6 +96,16 @@ root, with a `MEMORY.md` index per `(agent_name, scope)`:
 └── project_api_migration.md
 ```
 
+`MEMORY.md` is the auto-generated index — one line per memory (`- [name](file.md) —
+description`), rebuilt after every save/delete. The file contains **only** the bullet
+lines (no title/header), e.g.:
+
+```markdown
+- [user_prefers_tests](user_prefers_tests.md) — User prefers pytest over unittest
+- [project_api_migration](project_api_migration.md) — v2 API migration; v1 EOL 2026-09-30
+- [reference_jira](reference_jira.md) — Board: https://acme.atlassian.net/browse/PROJ
+```
+
 ### Backend path notes (verified empirically)
 
 - **Relative paths** (`.pydantic-deep/memory/...`, no leading slash) work on both
@@ -187,6 +197,33 @@ members to be co-surfaced during search. `check_conflict` operates purely on the
 
 ## Behavior
 
+### Tool signatures
+
+```python
+# MemorySave  — create/update a memory; conflict-checked
+name: str                 # human name; auto-slugified to the filename
+description: str          # one-line summary (used for relevance/index)
+type: str                 # "user" | "feedback" | "project" | "reference"
+content: str              # full memory body
+scope: str = "user"       # "user" | "project"
+confidence: float = 1.0   # 0.0–1.0
+source: str = "user"      # "user" | "model" | "tool"  (no "consolidator")
+conflict_group: str = ""  # advisory tag only
+
+# MemorySearch — keyword (+ optional AI) ranked lookup
+query: str
+scope: str = "all"        # "user" | "project" | "all"
+use_ai: bool = False      # AI re-rank; falls back to keyword on error
+max_results: int = 5
+
+# MemoryDelete — remove by name (no error if absent)
+name: str
+scope: str = "user"       # "user" | "project"
+
+# MemoryList — enumerate stored memories
+scope: str = "all"        # "user" | "project" | "all"
+```
+
 ### Save (`MemorySave`)
 Build `MemoryEntry` → `check_conflict` (read existing slug, diff body ignoring whitespace)
 → write `.md` (frontmatter + body), checking `WriteResult.error` → `_rewrite_index` for
@@ -246,6 +283,17 @@ returning a list of candidate memories, saves at most 3 with `source="consolidat
 default confidence 0.8, skipping any that would overwrite an existing memory of **equal or
 higher** confidence (tie-break: `existing_confidence >= new_confidence` → existing wins,
 new skipped). Returns the list of saved names. Never raises into the caller (defensive).
+
+```python
+from pydantic_deep.toolsets.scoped_memory import consolidate_session
+
+saved = await consolidate_session(
+    messages=run_result.all_messages(),          # pydantic-ai message history
+    model="anthropic:claude-haiku-4-5-20251001", # any model spec or instance
+    # agent_name="main", scope="user", user_backend=...  # optional, match the capability
+)
+# → ["user_prefers_tests", "project_uses_pytest"]   (≤ 3 names; [] on skip/error)
+```
 
 ## Backward Compatibility
 
