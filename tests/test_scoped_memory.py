@@ -226,3 +226,10 @@ class TestTruncation:
         out = context.truncate_index_content(raw, max_lines=10**6, max_bytes=500)
         assert len(out.encode()) < len(raw.encode())
         assert "WARNING" in out and "bytes" in out
+
+    def test_both_limits_truncation(self):
+        raw = "\n".join(f"- [m{i}](m{i}.md) — {'x' * 80}" for i in range(300))
+        out = context.truncate_index_content(raw, max_lines=200, max_bytes=5000)
+        assert "WARNING" in out
+        assert "lines and" in out and "bytes" in out
+        assert len(out.encode()) < len(raw.encode())
