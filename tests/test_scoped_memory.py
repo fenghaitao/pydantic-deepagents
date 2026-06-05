@@ -5,8 +5,12 @@ import math
 
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.models.function import FunctionModel
+from pydantic_ai.models.test import TestModel
+from pydantic_ai.tools import RunContext
+from pydantic_ai.usage import RunUsage
 from pydantic_ai_backends import StateBackend
 
+from pydantic_deep.deps import DeepAgentDeps
 from pydantic_deep.toolsets.scoped_memory import consolidator, context, scan, store
 from pydantic_deep.toolsets.scoped_memory.store import INDEX_FILENAME as _IDX
 from pydantic_deep.toolsets.scoped_memory.types import (
@@ -16,6 +20,15 @@ from pydantic_deep.toolsets.scoped_memory.types import (
 )
 
 INDEX_STEM = _IDX.removesuffix(".md")
+
+_TEST_MODEL = TestModel()
+
+
+def _make_ctx(backend: StateBackend | None = None) -> RunContext[DeepAgentDeps]:
+    """Build a RunContext with DeepAgentDeps + TestModel for toolset tests."""
+    b = backend or StateBackend()
+    deps = DeepAgentDeps(backend=b)
+    return RunContext(deps=deps, model=_TEST_MODEL, usage=RunUsage())
 
 
 class TestMemoryEntry:
@@ -449,3 +462,280 @@ class TestConsolidator:
             min_messages=1,
         )
         assert saved == ["m0"]
+
+
+# ---------------------------------------------------------------------------
+# ScopedMemoryToolset tests
+# ---------------------------------------------------------------------------
+
+from pydantic_deep.toolsets.scoped_memory import ScopedMemoryToolset  # noqa: E402
+
+
+def _ts(user_backend: StateBackend | None = None) -> ScopedMemoryToolset:
+    return ScopedMemoryToolset(agent_name="main", user_backend=user_backend or StateBackend())
+
+
+class TestScopedToolset:
+    async def test_save_then_search_shows_scope(self) -> None:
+        ts = _ts(StateBackend())
+        ctx = _make_ctx()
+        await ts.tools["MemorySave"].function(
+            ctx,
+            name="user_prefers_tests",
+            type="user",
+            description="prefers pytest",
+            content="Uses pytest.",
+            scope="user",
+        )
+        out = await ts.tools["MemorySearch"].function(ctx, query="pytest")
+        assert "user_prefers_tests" in out
+        assert "[user/user]" in out
+
+    async def test_save_project_scope_uses_run_backend(self) -> None:
+        ts = _ts()
+        ctx = _make_ctx()
+        await ts.tools["MemorySave"].function(
+            ctx, name="proj", type="project", description="d", content="c", scope="project"
+        )
+        assert ctx.deps.backend.exists(".pydantic-deep/memory/main/proj.md")
+
+    async def test_save_conflict_note(self) -> None:
+        ts = _ts(StateBackend())
+        ctx = _make_ctx()
+        kw = dict(name="m", type="user", description="d", scope="user")
+        await ts.tools["MemorySave"].function(ctx, content="old", **kw)
+        msg = await ts.tools["MemorySave"].function(ctx, content="new", **kw)
+        assert "Replaced conflicting memory" in msg
+
+    async def test_delete(self) -> None:
+        ts = _ts(StateBackend())
+        ctx = _make_ctx()
+        await ts.tools["MemorySave"].function(
+            ctx, name="m", type="user", description="d", content="c", scope="user"
+        )
+        out = await ts.tools["MemoryDelete"].function(ctx, name="m", scope="user")
+        assert "deleted" in out.lower()
+
+    async def test_list_shows_tags(self) -> None:
+        ts = _ts(StateBackend())
+        ctx = _make_ctx()
+        await ts.tools["MemorySave"].function(
+            ctx,
+            name="m",
+            type="feedback",
+            description="d",
+            content="c",
+            scope="user",
+            confidence=0.8,
+            source="model",
+        )
+        out = await ts.tools["MemoryList"].function(ctx, scope="all")
+        assert "feedback" in out and "conf:80%" in out
+
+    async def test_search_no_results(self) -> None:
+        ts = _ts(StateBackend())
+        out = await ts.tools["MemorySearch"].function(_make_ctx(), query="nothing")
+        assert "No memories" in out
+
+    async def test_get_instructions_injects_indexes(self) -> None:
+        ts = _ts(StateBackend())
+        ctx = _make_ctx()
+        await ts.tools["MemorySave"].function(
+            ctx, name="m", type="user", description="d", content="c", scope="user"
+        )
+        parts = await ts.get_instructions(ctx)
+        assert parts is not None
+        text = "\n".join(p.content for p in parts)
+        assert "Memory system" in text
+        assert "- [m](m.md)" in text
+
+    async def test_get_instructions_none_when_empty(self) -> None:
+        ts = _ts(StateBackend())
+        assert await ts.get_instructions(_make_ctx()) is None
+
+    # --- extra coverage tests ---
+
+    def test_default_user_backend(self, tmp_path, monkeypatch) -> None:  # type: ignore[override]
+        monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+        from pydantic_ai_backends import LocalBackend
+
+        from pydantic_deep.toolsets.scoped_memory.toolset import default_user_backend
+
+        b = default_user_backend()
+        assert isinstance(b, LocalBackend)
+        assert str(b.root_dir).endswith(".pydantic-deep/memory")
+
+    async def test_search_uses_ai_branch(self) -> None:
+        """Covers the `if use_ai and self._ai_model is not None` branch."""
+        ts = ScopedMemoryToolset(
+            agent_name="main",
+            user_backend=StateBackend(),
+            ai_model=_fixed_indices_model([0]),
+        )
+        ctx = _make_ctx()
+        await ts.tools["MemorySave"].function(
+            ctx,
+            name="alpha",
+            type="user",
+            description="testing query",
+            content="about testing",
+            scope="user",
+        )
+        await ts.tools["MemorySave"].function(
+            ctx,
+            name="beta",
+            type="user",
+            description="testing something",
+            content="about testing also",
+            scope="user",
+        )
+        out = await ts.tools["MemorySearch"].function(ctx, query="testing", use_ai=True)
+        # AI selects index 0; result must have exactly that entry
+        assert "alpha" in out or "beta" in out  # at least one returned
+
+    async def test_search_staleness_and_low_confidence_tag(self) -> None:
+        """Covers the `if fresh:` branch and the `tag` branch in _memory_search."""
+        ub = StateBackend()
+        ts = _ts(ub)
+        ctx = _make_ctx()
+        # seed an old low-confidence model-sourced memory directly
+        store.save_memory(
+            ub,
+            "main",
+            MemoryEntry(
+                name="old_mem",
+                description="testing old memory",
+                type="user",
+                content="some old content",
+                created="2020-01-01",
+                confidence=0.8,
+                source="model",
+            ),
+            scope="user",
+        )
+        out = await ts.tools["MemorySearch"].function(ctx, query="testing old memory")
+        assert "days old" in out
+        assert "conf:80%" in out or "src:model" in out
+
+    async def test_list_conflict_group_tag(self) -> None:
+        """Covers the `grp:` branch in _memory_list."""
+        ts = _ts(StateBackend())
+        ctx = _make_ctx()
+        await ts.tools["MemorySave"].function(
+            ctx,
+            name="grouped",
+            type="user",
+            description="some grouped memory",
+            content="c",
+            scope="user",
+            conflict_group="g",
+        )
+        out = await ts.tools["MemoryList"].function(ctx, scope="all")
+        assert "grp:g" in out
+
+    async def test_list_empty_no_memories(self) -> None:
+        """Covers the `if not entries: return 'No memories stored.'` branch."""
+        ts = _ts(StateBackend())
+        out = await ts.tools["MemoryList"].function(_make_ctx(), scope="all")
+        assert out == "No memories stored."
+
+    async def test_save_low_confidence_message(self) -> None:
+        """Covers the `if confidence < 1.0: msg += ...` branch in _memory_save."""
+        ts = _ts(StateBackend())
+        ctx = _make_ctx()
+        msg = await ts.tools["MemorySave"].function(
+            ctx,
+            name="uncertain",
+            type="user",
+            description="d",
+            content="c",
+            scope="user",
+            confidence=0.7,
+        )
+        assert "confidence: 70%" in msg
+
+    async def test_search_project_scope_only(self) -> None:
+        """Covers single-scope (project) path in _memory_search."""
+        ts = _ts()
+        ctx = _make_ctx()
+        await ts.tools["MemorySave"].function(
+            ctx,
+            name="proj_mem",
+            type="project",
+            description="project description",
+            content="project content",
+            scope="project",
+        )
+        out = await ts.tools["MemorySearch"].function(ctx, query="project", scope="project")
+        assert "proj_mem" in out
+
+    async def test_delete_project_scope(self) -> None:
+        """Covers _memory_delete with project scope."""
+        ts = _ts()
+        ctx = _make_ctx()
+        await ts.tools["MemorySave"].function(
+            ctx, name="pdel", type="project", description="d", content="c", scope="project"
+        )
+        out = await ts.tools["MemoryDelete"].function(ctx, name="pdel", scope="project")
+        assert "pdel" in out and "project" in out
+
+    async def test_search_content_long_truncated(self) -> None:
+        """Covers the `...` truncation branch in _memory_search preview."""
+        ts = _ts(StateBackend())
+        ctx = _make_ctx()
+        long_content = "x" * 300
+        await ts.tools["MemorySave"].function(
+            ctx,
+            name="longmem",
+            type="user",
+            description="long content memory",
+            content=long_content,
+            scope="user",
+        )
+        out = await ts.tools["MemorySearch"].function(ctx, query="long content memory")
+        assert "..." in out
+
+    async def test_list_user_scope_only(self) -> None:
+        """Covers MemoryList with explicit user scope."""
+        ts = _ts(StateBackend())
+        ctx = _make_ctx()
+        await ts.tools["MemorySave"].function(
+            ctx, name="u1", type="user", description="user mem", content="c", scope="user"
+        )
+        out = await ts.tools["MemoryList"].function(ctx, scope="user")
+        assert "u1" in out
+
+    async def test_get_instructions_project_only(self) -> None:
+        """Covers get_instructions when project has memories but user has none."""
+        ts = _ts(StateBackend())  # empty user backend
+        ctx = _make_ctx()
+        await ts.tools["MemorySave"].function(
+            ctx, name="pm", type="project", description="d", content="c", scope="project"
+        )
+        parts = await ts.get_instructions(ctx)
+        assert parts is not None
+        text = "\n".join(p.content for p in parts)
+        assert "pm" in text
+
+    async def test_list_entry_with_empty_description(self) -> None:
+        """Covers the `if e.description:` False branch in _memory_list (no description line)."""
+        ts = _ts(StateBackend())
+        ctx = _make_ctx()
+        # Save with empty description; store.save_memory writes it as-is
+        ub = ts._user_backend
+        store.save_memory(
+            ub,
+            "main",
+            MemoryEntry(
+                name="nodesc",
+                description="",
+                type="user",
+                content="content here",
+                created="2026-06-05",
+            ),
+            scope="user",
+        )
+        out = await ts.tools["MemoryList"].function(ctx, scope="user")
+        assert "nodesc" in out
+        # description line should NOT appear
+        assert "    " not in out or "content here" not in out

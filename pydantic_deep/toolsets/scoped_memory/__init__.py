@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .toolset import ScopedMemoryToolset, default_user_backend
 from .types import (
     MEMORY_FORMAT_EXAMPLE,
     MEMORY_SYSTEM_PROMPT,
@@ -18,4 +19,6 @@ __all__ = [
     "MEMORY_SYSTEM_PROMPT",
     "WHAT_NOT_TO_SAVE",
     "MEMORY_FORMAT_EXAMPLE",
+    "ScopedMemoryToolset",
+    "default_user_backend",
 ]
