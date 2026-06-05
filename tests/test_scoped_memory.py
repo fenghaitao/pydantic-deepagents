@@ -819,6 +819,64 @@ class TestDeprecation:
         assert legacy == []
 
 
+class TestStoreCoverage:
+    def test_parse_frontmatter_line_without_colon(self):
+        # covers the `if ":" in line` False branch
+        meta, body = store.parse_frontmatter("---\nnocolon line\nname: a\n---\nbody")
+        assert meta == {"name": "a"}
+        assert body == "body"
+
+    def test_write_error_raises(self, tmp_path):
+        # covers _write_or_raise raising on a WriteResult error (absolute path escapes root)
+        import pytest
+        from pydantic_ai_backends import LocalBackend
+
+        b = LocalBackend(root_dir=str(tmp_path))
+        with pytest.raises(OSError):
+            store.save_memory(
+                b,
+                "/outside-the-root",
+                MemoryEntry(
+                    name="m", description="d", type="user", content="c", created="2026-06-04"
+                ),
+                scope="user",
+            )
+
+    def test_list_md_paths_swallows_glob_error(self):
+        # covers the `except Exception: return []` in _list_md_paths
+        class _BadGlob(StateBackend):
+            def glob_info(self, pattern, path="/"):
+                raise RuntimeError("boom")
+
+        assert store.load_entries(_BadGlob(), "main", scope="user") == []
+
+    def test_load_skips_empty_file(self):
+        # covers `if not raw: continue` in load_entries
+        b = StateBackend()
+        b.write("main/empty.md", b"")
+        assert store.load_entries(b, "main", scope="user") == []
+
+    def test_load_bad_confidence_falls_back(self):
+        # covers the `except ValueError: confidence = 1.0` in load_entries
+        b = StateBackend()
+        b.write(
+            "main/bad.md", b"---\nname: bad\ndescription: d\ntype: user\nconfidence: abc\n---\nbody"
+        )
+        entries = store.load_entries(b, "main", scope="user")
+        assert len(entries) == 1
+        assert entries[0].confidence == 1.0
+
+    def test_check_conflict_bad_confidence_falls_back(self):
+        # covers the `except ValueError: existing_conf = 1.0` in check_conflict
+        b = StateBackend()
+        b.write("main/m.md", b"---\nname: m\nconfidence: xyz\n---\nold body")
+        c = store.check_conflict(
+            b, "main", MemoryEntry(name="m", description="d", type="user", content="new body")
+        )
+        assert c is not None
+        assert c["existing_confidence"] == 1.0
+
+
 class TestPublicAPI:
     def test_top_level_exports(self):
         import pydantic_deep as pd
