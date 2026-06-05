@@ -42,7 +42,9 @@ class ScopedMemoryToolset(FunctionToolset[Any]):
     ) -> None:
         super().__init__(id="scoped-memory")
         self._agent_name = agent_name
-        self._user_backend = user_backend or default_user_backend()
+        # Built lazily on first user-scope access so merely constructing the toolset
+        # (e.g. in a dry run or with project scope only) never touches ~/.pydantic-deep.
+        self._user_backend = user_backend
         self._project_base = project_base.rstrip("/")
         self._staleness_days = staleness_days
         self._max_results_default = max_results_default
@@ -53,10 +55,15 @@ class ScopedMemoryToolset(FunctionToolset[Any]):
         self.add_function(self._memory_delete, name="MemoryDelete")
         self.add_function(self._memory_list, name="MemoryList")
 
+    def _ensure_user_backend(self) -> BackendProtocol:
+        if self._user_backend is None:
+            self._user_backend = default_user_backend()
+        return self._user_backend
+
     def _resolve(self, ctx: RunContext[Any], scope: str) -> tuple[BackendProtocol, str]:
         if scope == "project":
             return ctx.deps.backend, f"{self._project_base}/{self._agent_name}"
-        return self._user_backend, self._agent_name
+        return self._ensure_user_backend(), self._agent_name
 
     def _load_scope(self, ctx: RunContext[Any], scope: str) -> list[MemoryEntry]:
         backend, base = self._resolve(ctx, scope)

@@ -566,6 +566,19 @@ class TestScopedToolset:
         assert isinstance(b, LocalBackend)
         assert str(b.root_dir).endswith(".pydantic-deep/memory")
 
+    async def test_lazy_user_backend_created_on_first_use(
+        self, tmp_path, monkeypatch
+    ) -> None:  # type: ignore[override]
+        """Covers _ensure_user_backend lazy-init: no mkdir until user scope is accessed."""
+        monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+        ts = ScopedMemoryToolset(agent_name="main")  # no user_backend passed
+        assert ts._user_backend is None  # not yet created
+        ctx = _make_ctx()
+        # First user-scope access triggers lazy init
+        out = await ts.tools["MemorySearch"].function(ctx, query="x", scope="user")
+        assert "No memories" in out
+        assert ts._user_backend is not None  # now populated
+
     async def test_search_uses_ai_branch(self) -> None:
         """Covers the `if use_ai and self._ai_model is not None` branch."""
         ts = ScopedMemoryToolset(

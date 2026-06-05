@@ -26,7 +26,7 @@ _SYSTEM = (
     "You are a memory consolidation assistant. From the conversation, extract at most 3 "
     "durable memories worth keeping for future sessions: new user preferences, project "
     "decisions/facts (not derivable from code/git), or behavioral feedback. For each return "
-    "name (slug), type (user|feedback|project), description (one line), content (for "
+    "name (slug), type (user|feedback|project|reference), description (one line), content (for "
     "feedback/project lead with the rule then **Why:**/**How to apply:**), and confidence "
     "(~0.8 inferred, ~0.9 clearly stated). Return an empty list if nothing is worth saving."
 )
