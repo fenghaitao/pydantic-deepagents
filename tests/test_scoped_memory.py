@@ -817,3 +817,17 @@ class TestDeprecation:
             if issubclass(x.category, DeprecationWarning) and "AgentMemoryToolset" in str(x.message)
         ]
         assert legacy == []
+
+
+class TestPublicAPI:
+    def test_top_level_exports(self):
+        import pydantic_deep as pd
+
+        for name in (
+            "ScopedMemoryToolset",
+            "ScopedMemoryCapability",
+            "consolidate_session",
+            "MemoryEntry",
+            "MEMORY_SYSTEM_PROMPT",
+        ):
+            assert hasattr(pd, name), name
