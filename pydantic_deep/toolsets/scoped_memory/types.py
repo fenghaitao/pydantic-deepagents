@@ -1,0 +1,95 @@
+"""Memory type taxonomy, data model, and system-prompt guidance."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+MEMORY_TYPES = ["user", "feedback", "project", "reference"]
+
+MEMORY_TYPE_DESCRIPTIONS: dict[str, str] = {
+    "user": (
+        "Information about the user's role, goals, responsibilities, and knowledge. "
+        "Helps tailor future behavior to the user's preferences."
+    ),
+    "feedback": (
+        "Guidance the user has given about how to approach work — both what to avoid "
+        "and what to keep doing. Lead with the rule, then **Why:** and **How to apply:**."
+    ),
+    "project": (
+        "Ongoing work, goals, bugs, or incidents not derivable from code or git history. "
+        "Lead with the fact/decision, then **Why:** and **How to apply:**. "
+        "Always convert relative dates to absolute dates."
+    ),
+    "reference": (
+        "Pointers to external systems (issue trackers, dashboards, Slack channels, docs)."
+    ),
+}
+
+WHAT_NOT_TO_SAVE = """\
+## What NOT to save in memory
+- Code patterns, conventions, architecture, file paths, or project structure — derivable from the codebase.
+- Git history, recent changes, who-changed-what — use `git log` / `git blame`.
+- Debugging solutions or fix recipes — the fix is in the code; the commit message has context.
+- Anything already documented in CLAUDE.md files.
+- Ephemeral task details: in-progress work, temporary state, current conversation context.
+
+These exclusions apply even when explicitly asked. If asked to save a PR list or activity summary,
+ask what was *surprising* or *non-obvious* — that is the part worth keeping."""
+
+MEMORY_FORMAT_EXAMPLE = """\
+```markdown
+---
+name: {{memory name}}
+description: {{one-line description — used to decide relevance, so be specific}}
+type: {{user | feedback | project | reference}}
+---
+
+{{memory content — for feedback/project types: rule/fact, then **Why:** and **How to apply:** lines}}
+```"""
+
+MEMORY_SYSTEM_PROMPT = f"""\
+## Memory system
+
+You have a persistent, file-based memory system. Memories are stored as markdown files with
+YAML frontmatter. Build this up over time so future conversations have context about the user,
+their preferences, and the work you're doing together.
+
+**Types** (save only what cannot be derived from the codebase):
+- **user** — role, goals, knowledge, preferences
+- **feedback** — guidance on how to work (corrections AND confirmations of non-obvious approaches)
+- **project** — ongoing work, decisions, deadlines not in git history
+- **reference** — pointers to external systems (Linear, Grafana, Slack, etc.)
+
+**When to save**: If the user corrects you, confirms an approach, or shares context that should
+persist beyond this conversation. For feedback: save corrections AND quiet confirmations.
+
+**Body structure for feedback/project**: Lead with the rule/fact, then:
+  **Why:** (reason given) | **How to apply:** (when this guidance kicks in)
+
+**Format**:
+{MEMORY_FORMAT_EXAMPLE}
+
+**What NOT to save**: code patterns, architecture, git history, debugging fixes,
+anything already in CLAUDE.md, or ephemeral task state.
+
+**Before recommending from memory**: A memory naming a file, function, or flag may be stale.
+Verify it still exists before acting on it. For current state, prefer `git log` or reading code.
+"""
+
+
+@dataclass
+class MemoryEntry:
+    """A single memory entry. ``file_path`` is this memory's OWN .md path (set on
+    save/load), not source context. ``last_used_at`` is a cleanup signal, not ranked."""
+
+    name: str
+    description: str
+    type: str
+    content: str
+    file_path: str = ""
+    created: str = ""
+    scope: str = "user"
+    confidence: float = 1.0
+    source: str = "user"
+    last_used_at: str = ""
+    conflict_group: str = ""

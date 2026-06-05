@@ -609,6 +609,8 @@ def create_deep_agent(  # noqa: C901
 
         # Inject per-subagent AgentMemoryToolset when include_memory=True
         if include_memory and effective_subagents:
+            import warnings
+
             from pydantic_deep.toolsets.memory import (
                 DEFAULT_MAX_MEMORY_LINES as _DEFAULT_MEM_LINES,
             )
@@ -626,11 +628,15 @@ def create_deep_agent(  # noqa: C901
                 if not extra.get("memory", True):
                     continue
                 sa_max_lines = extra.get("memory_max_lines", _DEFAULT_MEM_LINES)
-                sa_memory = _PerSubagentMem(
-                    agent_name=sa_config["name"],
-                    memory_dir=_sa_memory_dir,
-                    max_lines=sa_max_lines,
-                )
+                with warnings.catch_warnings():
+                    # Default factory still uses the legacy toolset during the deprecation
+                    # window; don't surface its DeprecationWarning to create_deep_agent callers.
+                    warnings.simplefilter("ignore", DeprecationWarning)
+                    sa_memory = _PerSubagentMem(
+                        agent_name=sa_config["name"],
+                        memory_dir=_sa_memory_dir,
+                        max_lines=sa_max_lines,
+                    )
                 existing_toolsets = list(sa_config.get("toolsets", []))
                 existing_toolsets.append(sa_memory)
                 sa_config["toolsets"] = existing_toolsets
@@ -682,13 +688,19 @@ def create_deep_agent(  # noqa: C901
     # Memory toolset
     memory_toolset = None
     if include_memory:
+        import warnings
+
         from pydantic_deep.toolsets.memory import DEFAULT_MEMORY_DIR, AgentMemoryToolset
 
         _memory_dir = memory_dir or DEFAULT_MEMORY_DIR
-        memory_toolset = AgentMemoryToolset(
-            agent_name="main",
-            memory_dir=_memory_dir,
-        )
+        with warnings.catch_warnings():
+            # Default factory still uses the legacy toolset during the deprecation
+            # window; don't surface its DeprecationWarning to create_deep_agent callers.
+            warnings.simplefilter("ignore", DeprecationWarning)
+            memory_toolset = AgentMemoryToolset(
+                agent_name="main",
+                memory_dir=_memory_dir,
+            )
         all_toolsets.append(memory_toolset)
 
     # Add user-provided toolsets
@@ -791,14 +803,14 @@ def create_deep_agent(  # noqa: C901
     }
 
     # Human-in-the-loop / deferred tools require DeferredToolRequests in output_type.
-    _require_write = interrupt_on.get("write_file", False) or interrupt_on.get(
-        "edit_file", False
-    )
+    _require_write = interrupt_on.get("write_file", False) or interrupt_on.get("edit_file", False)
     _require_execute = interrupt_on.get("execute", False)
     _require_web = interrupt_on.get("web_search", False)
-    has_interrupt_tools = any(interrupt_on.values()) or (
-        include_filesystem and (_require_write or _require_execute)
-    ) or ((web_search or web_fetch) and _require_web)
+    has_interrupt_tools = (
+        any(interrupt_on.values())
+        or (include_filesystem and (_require_write or _require_execute))
+        or ((web_search or web_fetch) and _require_web)
+    )
 
     if output_type is not None:
         # If interrupt_on is used, combine output_type with DeferredToolRequests
