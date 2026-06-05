@@ -2,6 +2,7 @@
 
 import json
 import math
+import warnings
 
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.models.function import FunctionModel
@@ -777,3 +778,42 @@ class TestScopedCapability:
         cap = ScopedMemoryCapability(agent_name="main", user_backend=StateBackend())
         ctx = RunContext(deps=_NoBackend(), model=TestModel(), usage=RunUsage())
         assert await cap.get_instructions()(ctx) is None
+
+
+# ---------------------------------------------------------------------------
+# Deprecation tests
+# ---------------------------------------------------------------------------
+
+
+class TestDeprecation:
+    def test_agent_memory_toolset_deprecated(self):
+        from pydantic_deep.toolsets.memory import AgentMemoryToolset
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            AgentMemoryToolset(agent_name="main")
+        assert any(issubclass(x.category, DeprecationWarning) for x in w)
+
+    def test_memory_capability_deprecated(self):
+        from pydantic_deep.capabilities.memory import MemoryCapability
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            MemoryCapability()
+        msgs = [str(x.message) for x in w if issubclass(x.category, DeprecationWarning)]
+        # exactly one deprecation (the capability's own), not the inner toolset's too
+        assert any("MemoryCapability" in m for m in msgs)
+        assert not any("AgentMemoryToolset" in m for m in msgs)
+
+    def test_create_deep_agent_does_not_self_warn(self):
+        from pydantic_deep import create_deep_agent
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            create_deep_agent(model=TestModel())
+        legacy = [
+            str(x.message)
+            for x in w
+            if issubclass(x.category, DeprecationWarning) and "AgentMemoryToolset" in str(x.message)
+        ]
+        assert legacy == []
