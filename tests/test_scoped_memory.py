@@ -739,3 +739,41 @@ class TestScopedToolset:
         assert "nodesc" in out
         # description line should NOT appear
         assert "    " not in out or "content here" not in out
+
+
+# ---------------------------------------------------------------------------
+# ScopedMemoryCapability tests
+# ---------------------------------------------------------------------------
+
+from pydantic_deep.capabilities.scoped_memory import ScopedMemoryCapability  # noqa: E402
+
+
+class TestScopedCapability:
+    def test_get_toolset_is_scoped(self):
+        cap = ScopedMemoryCapability(agent_name="main", user_backend=StateBackend())
+        assert isinstance(cap.get_toolset(), ScopedMemoryToolset)
+
+    async def test_instructions_callable_returns_none_when_empty(self):
+        cap = ScopedMemoryCapability(agent_name="main", user_backend=StateBackend())
+        fn = cap.get_instructions()
+        assert await fn(_make_ctx()) is None
+
+    async def test_instructions_present_after_save(self):
+        ub = StateBackend()
+        cap = ScopedMemoryCapability(agent_name="main", user_backend=ub)
+        ts = cap.get_toolset()
+        ctx = _make_ctx()
+        await ts.tools["MemorySave"].function(
+            ctx, name="m", type="user", description="d", content="c", scope="user"
+        )
+        text = await cap.get_instructions()(ctx)
+        assert "Memory system" in text
+
+    async def test_instructions_none_without_backend(self):
+        # Covers the `not hasattr(ctx.deps, "backend")` guard branch.
+        class _NoBackend:
+            pass
+
+        cap = ScopedMemoryCapability(agent_name="main", user_backend=StateBackend())
+        ctx = RunContext(deps=_NoBackend(), model=TestModel(), usage=RunUsage())
+        assert await cap.get_instructions()(ctx) is None
