@@ -138,10 +138,12 @@ Capability `ScopedMemoryCapability(AbstractCapability)` in
 `pydantic_deep/capabilities/scoped_memory.py`, parallel to existing `MemoryCapability`.
 Holds the project-scope config and the dedicated user-scope backend; wires the toolset and
 instructions. Configurable fields include: `agent_name`, `user_backend` (default factory
-→ `LocalBackend(~/.pydantic-deep/memory)`), `project_base` (default
-`.pydantic-deep/memory`), `staleness_days` (default 7), `max_index_lines` (200),
-`max_index_bytes` (25_000), and an optional `ai_model` for `use_ai` ranking (defaults to a
-fast model, overridable).
+→ `LocalBackend(~/.pydantic-deep/memory)`, lazily created on first user-scope access),
+`project_base` (default `.pydantic-deep/memory`), `staleness_days` (default 7), and
+an optional `ai_model` for `use_ai` ranking (defaults to a fast model, overridable).
+`max_index_lines` (200) and `max_index_bytes` (25_000) remain module-level constants
+in `context.py` (not exposed on the capability — YAGNI, sensible defaults, no use case
+driving tuning).
 
 ### Resolving backend + base path per scope
 
