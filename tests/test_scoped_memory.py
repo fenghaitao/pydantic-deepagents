@@ -3,11 +3,11 @@
 import json
 import math
 
-from pydantic_ai.messages import ModelResponse, TextPart
+from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai_backends import StateBackend
 
-from pydantic_deep.toolsets.scoped_memory import context, scan, store
+from pydantic_deep.toolsets.scoped_memory import consolidator, context, scan, store
 from pydantic_deep.toolsets.scoped_memory.store import INDEX_FILENAME as _IDX
 from pydantic_deep.toolsets.scoped_memory.types import (
     MEMORY_SYSTEM_PROMPT,
@@ -329,3 +329,123 @@ class TestMemoryContext:
         out = context.get_memory_context("", "- [p](p.md) — y")
         assert out.startswith("[Project memories]")
         assert "- [p](p.md) — y" in out
+
+
+def _consolidation_model(memories):
+    def fn(messages, info):
+        return ModelResponse(parts=[TextPart(json.dumps({"memories": memories}))])
+
+    return FunctionModel(fn)
+
+
+def _history(n):
+    msgs = []
+    for i in range(n):
+        msgs.append(ModelRequest(parts=[UserPromptPart(content=f"user msg {i}")]))
+        msgs.append(ModelResponse(parts=[TextPart(f"assistant msg {i}")]))
+    return msgs
+
+
+class TestConsolidator:
+    async def test_skips_short_session(self):
+        b = StateBackend()
+        saved = await consolidator.consolidate_session(
+            _history(1), _consolidation_model([]), backend=b, base_dir="main", min_messages=8
+        )
+        assert saved == []
+
+    async def test_empty_transcript_returns_empty(self):
+        b = StateBackend()
+        msgs = [ModelRequest(parts=[UserPromptPart(content="")]) for _ in range(10)]
+        saved = await consolidator.consolidate_session(
+            msgs,
+            _consolidation_model(
+                [{"name": "x", "type": "user", "description": "d", "content": "c"}]
+            ),
+            backend=b,
+            base_dir="main",
+        )
+        assert saved == []
+
+    async def test_saves_capped_at_three(self):
+        b = StateBackend()
+        mems = [
+            {"name": f"m{i}", "type": "user", "description": "d", "content": "c", "confidence": 0.8}
+            for i in range(5)
+        ]
+        saved = await consolidator.consolidate_session(
+            _history(10), _consolidation_model(mems), backend=b, base_dir="main"
+        )
+        assert len(saved) == 3
+        assert [e.source for e in store.load_entries(b, "main")] == ["consolidator"] * 3
+
+    async def test_skips_equal_or_higher_confidence_existing(self):
+        b = StateBackend()
+        store.save_memory(
+            b,
+            "main",
+            MemoryEntry(
+                name="m0",
+                description="d",
+                type="user",
+                content="existing",
+                created="2026-06-04",
+                confidence=0.8,
+            ),
+            scope="user",
+        )
+        saved = await consolidator.consolidate_session(
+            _history(10),
+            _consolidation_model(
+                [
+                    {
+                        "name": "m0",
+                        "type": "user",
+                        "description": "d",
+                        "content": "new",
+                        "confidence": 0.8,
+                    }
+                ]
+            ),
+            backend=b,
+            base_dir="main",
+        )
+        assert saved == []  # existing 0.8 >= new 0.8
+
+    async def test_malformed_output_returns_empty(self):
+        b = StateBackend()
+        bad = FunctionModel(lambda m, i: ModelResponse(parts=[TextPart("garbage")]))
+        saved = await consolidator.consolidate_session(
+            _history(10), bad, backend=b, base_dir="main"
+        )
+        assert saved == []
+
+    async def test_non_text_response_parts_ignored(self):
+        """ModelResponse parts that are not TextPart are silently skipped."""
+        from pydantic_ai.messages import ToolCallPart
+
+        msgs = []
+        for i in range(4):
+            msgs.append(ModelRequest(parts=[UserPromptPart(content=f"user {i}")]))
+            msgs.append(ModelResponse(parts=[ToolCallPart(tool_name="x", args={})]))
+        # Add one real text message to make transcript non-empty
+        msgs.append(ModelRequest(parts=[UserPromptPart(content="final user")]))
+        msgs.append(ModelResponse(parts=[TextPart("final assistant")]))
+        saved = await consolidator.consolidate_session(
+            msgs,
+            _consolidation_model(
+                [
+                    {
+                        "name": "m0",
+                        "type": "user",
+                        "description": "d",
+                        "content": "c",
+                        "confidence": 0.8,
+                    }
+                ]
+            ),
+            backend=StateBackend(),
+            base_dir="main",
+            min_messages=1,
+        )
+        assert saved == ["m0"]
