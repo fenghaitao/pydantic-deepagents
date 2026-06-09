@@ -176,8 +176,8 @@ jobs:
           print('Pre-warming sentence-transformers/all-MiniLM-L6-v2 ...')
           path = snapshot_download('sentence-transformers/all-MiniLM-L6-v2')
           print(f'Model cached at: {path}')
-          print(f'HF_HOME={os.environ.get(\"HF_HOME\", \"(not set)\")}')  
-          print(f'HUGGINGFACE_HUB_CACHE={os.environ.get(\"HUGGINGFACE_HUB_CACHE\", \"(not set)\")}')  
+          print(f'HF_HOME={os.environ.get(\"HF_HOME\", \"(not set)\")}')
+          print(f'HUGGINGFACE_HUB_CACHE={os.environ.get(\"HUGGINGFACE_HUB_CACHE\", \"(not set)\")}')
           "
 
       - name: Ensure backend services are healthy
@@ -240,6 +240,28 @@ jobs:
             --fast -v -s \
             --tb=short \
             --junitxml=test-results/junit-int-scip-python.xml
+
+      - name: Download scip-clang binary
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: make setup-scip-clang
+
+      - name: Generate compile_commands.json for sample-cpp
+        working-directory: tests/integration-tests/sample-cpp
+        run: bash gen-compile-commands.sh
+
+      - name: Run scip-clang-potpie integration test
+        # Runs from the pydantic-deepagents root.  Parses sample-cpp with
+        # scip-clang through the potpie backend and verifies Neo4j graph nodes/edges.
+        env:
+          SCIP_CLANG_BIN: ${{ github.workspace }}/code-graph-providers/scip-languages/bin/scip-clang
+        timeout-minutes: 30
+        run: |
+          mkdir -p test-results
+          uv run --no-sync pytest tests/integration-tests/test_scip_clang_potpie.py \
+            -v -s \
+            --tb=short \
+            --junitxml=test-results/junit-int-scip-clang-potpie.xml
 
       - name: Run MCP integration tests
         timeout-minutes: 20
@@ -500,6 +522,8 @@ jobs:
           uv-sync-args: "--frozen --group dev --extra cgc"
 
       - name: Download scip-clang binary
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
         run: make setup-scip-clang
 
       - name: Generate compile_commands.json for sample-cpp

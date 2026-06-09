@@ -19,7 +19,7 @@ DEST="$BIN_DIR/scip-clang"
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 MODE="download"
-VERSION="0.3.3"  # pinned — v0.4.0+ requires glibc not available on this machine
+VERSION="v0.1.0"
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -41,34 +41,35 @@ die()   { echo "[setup-scip-clang] ERROR: $*" >&2; exit 1; }
 
 # ── Download mode (default) ───────────────────────────────────────────────────
 if [[ "$MODE" == "download" ]]; then
-    # Detect platform
-    ARCH="$(uname -m)"
-    OS="$(uname -s)"
+    TARBALL="$SCRIPT_DIR/scip-clang.zip"
+    info "Downloading scip-clang v${VERSION}..."
+    info "  to:   $TARBALL"
 
-    case "$OS-$ARCH" in
-        Linux-x86_64)  ASSET="scip-clang-x86_64-linux" ;;
-        Darwin-arm64)  ASSET="scip-clang-arm64-macos" ;;
-        Darwin-x86_64) ASSET="scip-clang-x86_64-macos" ;;
-        *)
-            die "No pre-built release for $OS-$ARCH. Use --build to compile from source."
-            ;;
-    esac
-
-    URL="https://github.com/sourcegraph/scip-clang/releases/download/v${VERSION}/${ASSET}"
-    info "Downloading scip-clang v${VERSION} for ${OS}-${ARCH}..."
-    info "  from: $URL"
-    info "  to:   $DEST"
-
-    if command -v curl &>/dev/null; then
-        curl -fsSL --retry 3 -o "$DEST" "$URL"
-    elif command -v wget &>/dev/null; then
-        wget -q -O "$DEST" "$URL"
+   if command -v gh &>/dev/null; then
+        gh release download $VERSION --repo intel-sandbox/scip-clang --pattern 'scip-clang.zip' --output "$TARBALL"
+    elif command -v curl &>/dev/null && command -v wget &>/dev/null; then
+        [[ -n "${GITHUB_TOKEN:-}" ]] || die "GITHUB_TOKEN must be set for curl/wget download."
+        ASSET_ID=$(curl -fsSL \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/intel-sandbox/scip-clang/releases/tags/${VERSION}" \
+            | jq '.assets[] | select(.name=="scip-clang.zip") | .id')
+        [[ -n "$ASSET_ID" ]] || die "Failed to resolve asset ID for scip-clang.zip"
+        wget -q \
+            --header="Authorization: token $GITHUB_TOKEN" \
+            --header="Accept: application/octet-stream" \
+            -O "$TARBALL" \
+            "https://api.github.com/repos/intel-sandbox/scip-clang/releases/assets/$ASSET_ID"
     else
-        die "Neither 'curl' nor 'wget' found. Install one and retry."
+        die "Need 'gh' or both 'curl' and 'wget' to download. Install one and retry."
     fi
 
+    unzip -q "$TARBALL" -d "$BIN_DIR"
+    DEST="$BIN_DIR/scip-clang"
     chmod +x "$DEST"
-    info "Downloaded: $("$DEST" --version 2>&1 | head -1 || echo 'version check failed')"
+
+    [[ -x "$DEST" ]] || die "Expected binary not found at $DEST after extraction."
+    info "Extracted: $("$DEST" --version 2>&1 | head -1 || echo 'version check failed')"
 
 # ── Build mode ────────────────────────────────────────────────────────────────
 else
