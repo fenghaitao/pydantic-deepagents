@@ -42,6 +42,11 @@ die()   { echo "[setup-scip-clang] ERROR: $*" >&2; exit 1; }
 # ── Download mode (default) ───────────────────────────────────────────────────
 if [[ "$MODE" == "download" ]]; then
     TARBALL="$SCRIPT_DIR/scip-clang.zip"
+    DEST="$BIN_DIR/scip-clang"
+
+    [[ -f "$TARBALL" ]] && { info "Removing existing tarball: $TARBALL"; rm -f "$TARBALL"; }
+    [[ -f "$DEST"    ]] && { info "Removing existing binary:  $DEST";    rm -f "$DEST";    }
+
     info "Downloading scip-clang v${VERSION}..."
     info "  to:   $TARBALL"
 
@@ -65,7 +70,6 @@ if [[ "$MODE" == "download" ]]; then
     fi
 
     unzip -q "$TARBALL" -d "$BIN_DIR"
-    DEST="$BIN_DIR/scip-clang"
     chmod +x "$DEST"
 
     [[ -x "$DEST" ]] || die "Expected binary not found at $DEST after extraction."

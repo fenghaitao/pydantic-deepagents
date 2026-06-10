@@ -2387,8 +2387,8 @@ simics_device_app = typer.Typer(
 )
 app.add_typer(simics_device_app)
 
-_ANALYZE_FEATURES = ("register", "interface", "fsm", "event", "capability", "all")
-_SHOW_FEATURES = ("register", "interface", "fsm", "event", "capability", "all")
+_ANALYZE_FEATURES = ("attribute", "register", "interface", "fsm", "event", "capability", "all")
+_SHOW_FEATURES = ("attribute", "register", "interface", "fsm", "event", "capability", "all")
 
 
 @simics_device_app.command("analyze")
@@ -2454,7 +2454,7 @@ def simics_device_analyze(
         from pydantic_deep.providers.code_graph import make_provider
 
         runtime: Any = make_provider("potpie", user_id=user_id)
-        features_to_run = ["register", "interface", "fsm", "event", "capability"] if feature == "all" else [feature]
+        features_to_run = ["attribute", "register", "interface", "fsm", "event", "capability"] if feature == "all" else [feature]
         if "capability" in features_to_run:
             features_to_run = [feat for feat in features_to_run if feat != "capability"] + ["capability"]
 
@@ -2502,6 +2502,15 @@ def simics_device_analyze(
                     if batch_size is not None:
                         kwargs["batch_size"] = batch_size
                     result = await runtime.analyze_event(**kwargs)
+                elif feat == "attribute":
+                        kwargs = {
+                            "project_id": project_id,
+                            "device_name": device_name,
+                            "refresh": refresh,
+                        }
+                        if batch_size is not None:
+                            kwargs["batch_size"] = batch_size
+                        result = await runtime.analyze_attribute(**kwargs)
                 else:  # capability
                     kwargs = {
                         "project_id": project_id,

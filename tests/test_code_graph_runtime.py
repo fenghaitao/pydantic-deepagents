@@ -815,6 +815,56 @@ class TestPotpieRuntimeSimicsTools:
             batch_size=4,
         )
 
+    async def test_analyze_attribute(self) -> None:
+        b = PotpieRuntime()
+        mock_rt = _make_runtime()
+        expected = {"device_name": "my_dev", "total_attributes": 2, "done": 2}
+        mock_tool = AsyncMock()
+        mock_tool.arun = AsyncMock(return_value=expected)
+        mock_mod = MagicMock(AnalyzeAttributeTool=MagicMock(return_value=mock_tool))
+
+        with patch.dict("sys.modules", {
+            **_potpie_modules(mock_rt),
+            "app.modules.intelligence.tools.simics_device_tools.analyze_attribute_tool": mock_mod,
+        }):
+            result = await b.analyze_attribute(
+                project_id="p1",
+                device_name="my_dev",
+            )
+
+        assert result == expected
+        mock_tool.arun.assert_called_once_with(
+            project_id="p1",
+            device_name="my_dev",
+            refresh=False,
+            batch_size=5,
+        )
+
+    async def test_analyze_attribute_with_refresh(self) -> None:
+        b = PotpieRuntime()
+        mock_rt = _make_runtime()
+        mock_tool = AsyncMock()
+        mock_tool.arun = AsyncMock(return_value={"total_attributes": 0})
+        mock_mod = MagicMock(AnalyzeAttributeTool=MagicMock(return_value=mock_tool))
+
+        with patch.dict("sys.modules", {
+            **_potpie_modules(mock_rt),
+            "app.modules.intelligence.tools.simics_device_tools.analyze_attribute_tool": mock_mod,
+        }):
+            await b.analyze_attribute(
+                project_id="p1",
+                device_name="my_dev",
+                refresh=True,
+                batch_size=8,
+            )
+
+        mock_tool.arun.assert_called_once_with(
+            project_id="p1",
+            device_name="my_dev",
+            refresh=True,
+            batch_size=8,
+        )
+
     async def test_explore_simics_device(self) -> None:
         b = PotpieRuntime()
         mock_rt = _make_runtime()

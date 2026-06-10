@@ -69,6 +69,8 @@ nodes_to_check: List[Tuple[str, str]] = [
     ("EVENT",    "modules/wdt/wdt.dml:timeout_event"),
     ("FUNCTION", "modules/wdt/wdt.dml:schedule_timeout"),
     ("FUNCTION", "modules/wdt/wdt.dml:update_interrupt_signal"),
+    ("ATTRIBUTE", "modules/wdt/wdt.dml:counter_value"),
+    ("FUNCTION", "modules/wdt/wdt.dml:counter_value.refresh"),
 ]
 
 edges_to_check: List[Tuple[str, str, str, str, str]] = [
@@ -84,6 +86,8 @@ edges_to_check: List[Tuple[str, str, str, str, str]] = [
     ("FUNCTION", "modules/wdt/wdt.dml:timeout_event.event", "REFERENCES", "FUNCTION", "modules/wdt/wdt.dml:schedule_timeout"),
     ("EVENT",    "modules/wdt/wdt.dml:timeout_event", "CONTAINS", "FUNCTION", "modules/wdt/wdt.dml:timeout_event.event"),
     ("PORT",     "modules/wdt/wdt.dml:prst_n",    "CONTAINS",   "FUNCTION",  "modules/wdt/wdt.dml:prst_n.signal_raise"),
+    ("DEVICE",  "wdt",                           "CONTAINS",   "ATTRIBUTE", "modules/wdt/wdt.dml:counter_value"),
+    ("ATTRIBUTE", "modules/wdt/wdt.dml:counter_value", "CONTAINS",   "FUNCTION",  "modules/wdt/wdt.dml:counter_value.refresh"),
 ]
 
 

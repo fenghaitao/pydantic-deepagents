@@ -324,6 +324,30 @@ class PotpieRuntime:
         finally:
             session.close()
 
+    async def analyze_attribute(
+        self,
+        project_id: str,
+        device_name: str,
+        refresh: bool = False,
+        batch_size: int = 5,
+    ) -> dict:
+        from app.modules.intelligence.tools.simics_device_tools.analyze_attribute_tool import (
+            AnalyzeAttributeTool,
+        )
+
+        rt = await self._get_runtime()
+        session = rt.db.get_session()
+        try:
+            tool = AnalyzeAttributeTool(sql_db=session, user_id=self._user_id)
+            return await tool.arun(
+                project_id=project_id,
+                device_name=device_name,
+                refresh=refresh,
+                batch_size=batch_size,
+            )
+        finally:
+            session.close()
+
     async def explore_simics_device(
         self,
         project_id: str,
