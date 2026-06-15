@@ -354,8 +354,13 @@ def _run_workflow(pydantic_deep_runner, src_dir: Path, output_dir: Path = Path("
             + "\n".join(failures)
         )
 
-        # Step 4: QnA evaluation against the indexed project
-        _run_eval(project_id, output_dir, fast=fast)
+        # Step 4: QnA evaluation against the indexed project.
+        # In --fast mode we skip this to keep CI focused on indexing + graph checks
+        # and avoid long-running/flaky model-judge calls.
+        if fast:
+            print(f"[{_ts()}] Fast mode: skipping QnA evaluation")
+        else:
+            _run_eval(project_id, output_dir, fast=fast)
 
     finally:
         checker.close()

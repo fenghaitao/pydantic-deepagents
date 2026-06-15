@@ -8,7 +8,8 @@ Design document for the `simics_device_tools` package located at
 ## 1. End-to-End Working Flow
 
 The pipeline transforms a raw Simics DML device in a Neo4j code graph into a
-set of structured, human-readable hardware-capability specifications.
+set of structured, human-readable hardware-capability specifications and
+multi-audience wiki documentation.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -49,7 +50,18 @@ set of structured, human-readable hardware-capability specifications.
 └──────────────────────────────────────────────────────────────────────────────┘
                           ↓
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│  Step 4 — Dump / Export                                                      │
+│  Step 4 — Wiki Generation                                                    │
+│  simics_device_wiki_agent                                                    │
+│   ├─ ensure_capabilities_ready — verify Step 3 is complete (or run it)      │
+│   ├─ Read structure inventory from device_storage                            │
+│   ├─ Generate section pages: registers, interfaces, FSMs (one page each)    │
+│   ├─ Generate capability pages: one wiki page per capability (batched)      │
+│   ├─ Generate overview page: Mermaid block diagram + page index             │
+│   └─ Write .repowiki/en/content/Simics Device/<device>/<section>/*.md       │
+└──────────────────────────────────────────────────────────────────────────────┘
+                          ↓
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  Step 5 — Dump / Export                                                      │
 │  list_capability (show --feature capability --gen-specs --output <dir>)     │
 │   └─ Write <output>/<capability-name>/spec.md  (OpenSpec pattern)           │
 └──────────────────────────────────────────────────────────────────────────────┘
@@ -58,6 +70,7 @@ set of structured, human-readable hardware-capability specifications.
 The pipeline is **incremental**: every tool checks `device_storage` before
 doing work, skips already-analysed items (`status == done`), and writes
 results atomically.  Any sub-step can be re-run in isolation with `--refresh`.
+The wiki agent (Step 4) requires Steps 1-3 to be complete before it runs.
 
 ---
 
@@ -560,6 +573,108 @@ Results are returned flat (single feature) or under a `"features"` key
 
 ---
 
+### 2.9 `SimicsDeviceWikiAgent`
+
+| | |
+|---|---|
+| **Module** | `chat_agents/system_agents/simics_device_wiki_agent.py` |
+| **Agent ID** | `simics_device_wiki_agent` |
+| **Pipeline step** | Step 4 — Wiki Generation |
+
+#### Goal
+
+Generate comprehensive, multi-page wiki documentation for a Simics DML
+device model by consuming the results of the analysis pipeline (Steps 1-3)
+and producing structured Markdown pages suitable for three target audiences:
+
+| Audience | Focus |
+|---|---|
+| **Simics device model developers** | DML implementation details, code structure, template dependencies, extension points |
+| **Software feature validators** | Behavioural specifications, test case scenarios, observable register state transitions |
+| **Platform architects** | System-level integration, interface summary, block diagram, capability dependencies |
+
+#### Pipeline (internal)
+
+The agent orchestrates the following sequence on each invocation:
+
+```
+1. ensure_capabilities_ready
+   └─ Verify capability analysis (Step 3) is complete.
+      If not, run the full analysis pipeline (explore → analyse → capability)
+      automatically before proceeding.
+
+2. get_capabilities_with_nodes
+   └─ Retrieve all capability specs and their referenced node IDs from
+      device_storage.
+
+3. Read structure inventory
+   └─ Load banks, registers, interfaces, FSMs, and events from
+      device_storage.
+
+4. Generate section pages (three aggregate pages)
+   ├─ Registers page  — consolidated register-map table, per-register
+   │                    write/read side-effect descriptions.
+   ├─ Interfaces page — PORT (input) and CONNECT (output) endpoint
+   │                    descriptions with LLM-analysed feature details.
+   └─ FSMs page       — Mermaid stateDiagram-v2 diagrams for every FSM,
+                        feature descriptions, states, event triggering
+                        points, and event schedules.
+
+5. Generate capability pages (batched, with retries)
+   └─ One wiki page per capability domain.  Default batch size: 5,
+      max 3 retries per page on LLM failure.  Each page is enriched
+      with code-graph context via get_code_graph_from_node_id,
+      search_semantic, nl_cypher_query, and neo4j_graph_rag.
+
+6. Generate overview page
+   └─ Mermaid block diagram of the device architecture plus a
+      summary index linking to all sub-pages.
+```
+
+#### Toolset
+
+The agent has access to both pipeline tools and enrichment tools:
+
+| Category | Tools |
+|---|---|
+| **Pipeline** | `explore_simics_device`, `analyze_register_side_effect`, `list_register_side_effect`, `analyze_interface`, `list_interface_feature`, `analyze_capability`, `list_capability`, `analyze_event`, `analyze_attribute` |
+| **Enrichment** | `get_code_graph_from_node_id`, `search_semantic`, `nl_cypher_query`, `neo4j_graph_rag` |
+
+#### Output layout
+
+Pages are written to `.repowiki/en/content/Simics Device/<device_name>/`:
+
+```
+.repowiki/en/content/Simics Device/<device_name>/
+├── Overview/
+│   └── Overview.md          ← Mermaid block diagram + page index
+├── Registers/
+│   └── Registers.md          ← Register-map table + per-register side-effects
+├── Interfaces/
+│   └── Interfaces.md         ← PORT/CONNECT endpoint descriptions
+├── Finite State Machines/
+│   └── Finite State Machines.md  ← FSM diagrams + feature descriptions
+└── Capabilities/
+    ├── <capability-name-1>/
+    │   └── <capability-name-1>.md
+    ├── <capability-name-2>/
+    │   └── <capability-name-2>.md
+    └── ...
+```
+
+#### Key behaviours
+
+- **Idempotent**: Already-generated pages are skipped on re-run unless
+  `--force` is passed.
+- **Automatic pipeline**: If capability analysis has not been run, the agent
+  runs the full explore → analyse → capability pipeline first.
+- **Token budgeting**: Each LLM prompt is capped at 130 000 characters
+  (~37 000 input tokens) to stay under typical 64 K model limits.
+- **Atomic writes**: Pages are written using write-to-tmp + rename so
+  partially-written pages are never visible.
+
+---
+
 ## 3. Device Storage Design
 
 ### `SimicsDeviceStorage`
@@ -732,7 +847,46 @@ The class is **thread-safe** (Python `threading.RLock`) and uses
 ## 4. CLI Usage
 
 The `simics-device` sub-command is registered in `apps/cli/main.py` as a
-Typer sub-app under the root `pydantic-deep` CLI.
+Typer sub-app under the root `pydantic-deep` CLI.  It provides four
+sub-commands that mirror the pipeline steps:
+
+| Command | Pipeline Step | Description |
+|---|---|---|
+| `explore` | Step 1 | Discover and cache device structure |
+| `analyze` | Step 2-3 | Run component/capability analysis |
+| `show` | Step 5 | Inspect stored results or dump spec files |
+| `wiki` | Step 4 | Generate multi-page wiki documentation |
+
+### `explore` — discover and cache device structure
+
+```bash
+pydantic-deep simics-device explore \
+  --project-id <project-uuid> \
+  --device-name <device-name> \
+  [--refresh]
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `--project-id` / `-p` | required | Potpie project UUID |
+| `--device-name` / `-d` | required | DML device name or partial name (case-insensitive) |
+| `--refresh` | `false` | Force re-query of all structure sections (registers, interfaces, fsms, events) instead of using cached data |
+
+`explore` runs `explore_simics_device` directly and stores the structural
+inventory in device storage. It is useful for validating discovery before
+running downstream analysis steps.
+
+**Examples:**
+
+```bash
+# Explore and cache structure (uses cache if already complete)
+pydantic-deep simics-device explore -p 550e8400-... -d watchdog
+
+# Force a full refresh from the graph
+pydantic-deep simics-device explore -p 550e8400-... -d watchdog --refresh
+```
+
+---
 
 ### `analyze` — run analysis pipeline
 
@@ -767,37 +921,6 @@ pydantic-deep simics-device analyze -p 550e8400-... -d watchdog --feature regist
 
 # Generate capability descriptions after all component analyses are done
 pydantic-deep simics-device analyze -p 550e8400-... -d watchdog --feature capability
-```
-
----
-
-### `explore` — discover and cache device structure
-
-```bash
-pydantic-deep simics-device explore \
-  --project-id <project-uuid> \
-  --device-name <device-name> \
-  [--refresh]
-```
-
-| Option | Default | Description |
-|---|---|---|
-| `--project-id` / `-p` | required | Potpie project UUID |
-| `--device-name` / `-d` | required | DML device name or partial name (case-insensitive) |
-| `--refresh` | `false` | Force re-query of all structure sections (registers, interfaces, fsms, events) instead of using cached data |
-
-`explore` runs `explore_simics_device` directly and stores the structural
-inventory in device storage. It is useful for validating discovery before
-running downstream analysis steps.
-
-**Examples:**
-
-```bash
-# Explore and cache structure (uses cache if already complete)
-pydantic-deep simics-device explore -p 550e8400-... -d watchdog
-
-# Force a full refresh from the graph
-pydantic-deep simics-device explore -p 550e8400-... -d watchdog --refresh
 ```
 
 ---
@@ -855,6 +978,65 @@ Each `spec.md` follows the OpenSpec pattern described in §2.7.
 
 ---
 
+### `wiki` — generate wiki documentation
+
+```bash
+pydantic-deep simics-device wiki \
+  --project-id <project-uuid> \
+  --device-name <device-name> \
+  [--force] \
+  [--output <dir>] \
+  [--user-id <uid>]
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `--project-id` / `-p` | required | Potpie project UUID |
+| `--device-name` / `-d` | required | DML device name (passed as query to the wiki agent) |
+| `--force` | `false` | Force regeneration even if wiki pages already exist |
+| `--output` / `-o` | `.repowiki/en/content` or `POTPIE_WIKI_OUTPUT_DIR` env var | Root directory for wiki pages |
+| `--user-id` | `defaultuser` | User ID passed to the agent |
+
+The `wiki` command invokes the `SimicsDeviceWikiAgent` (§2.9) to generate a
+full set of structured Markdown wiki pages.  If the analysis pipeline (Steps
+1-3) has not been run yet, the agent runs it automatically before generating
+pages.
+
+**Examples:**
+
+```bash
+# Generate wiki for a watchdog device
+pydantic-deep simics-device wiki -p 550e8400-... -d watchdog
+
+# Force regeneration of all pages
+pydantic-deep simics-device wiki -p 550e8400-... -d watchdog --force
+
+# Write pages to a custom output directory
+pydantic-deep simics-device wiki -p 550e8400-... -d watchdog -o ./wiki
+```
+
+After running, the output directory contains:
+
+```
+.repowiki/en/content/Simics Device/watchdog/
+├── Overview/
+│   └── Overview.md
+├── Registers/
+│   └── Registers.md
+├── Interfaces/
+│   └── Interfaces.md
+├── Finite State Machines/
+│   └── Finite State Machines.md
+└── Capabilities/
+    ├── watchdog-countdown-timer/
+    │   └── watchdog-countdown-timer.md
+    ├── interrupt-and-reset-generation/
+    │   └── interrupt-and-reset-generation.md
+    └── ...
+```
+
+---
+
 ## 5. Dependency Graph
 
 ```
@@ -869,12 +1051,21 @@ AnalyzeRegisterSideEffectTool  AnalyzeInterfaceTool  AnalyzeFsmTool  AnalyzeEven
                                            ▼  (capability_keywords populated)
                                   AnalyzeCapabilityTool
                                            │
-                                           ▼
-                                   ListCapabilityTool
-                                    (→ spec.md files)
+                                           ├──────────────────────────┐
+                                           ▼                          ▼
+                                   ListCapabilityTool        SimicsDeviceWikiAgent
+                                    (→ spec.md files)         (→ wiki pages via
+                                                              explore → analyse →
+                                                              capability pipeline)
 ```
 
 Each Step-2 tool reads the structural inventory (`storage.structure`) and
 writes its results back to `device_storage` before Step-3 starts.
 `AnalyzeCapabilityTool` requires at least one Step-2 tool to have merged
 keywords into `capability_keywords`.
+
+The `SimicsDeviceWikiAgent` (Step 4) consumes all Step 1-3 outputs and runs
+the pipeline automatically if capability analysis is not yet complete. It
+produces multi-page wiki documentation targeting developers, validators, and
+architects.  `ListCapabilityTool` (Step 5) with `--gen-specs` produces
+standalone OpenSpec-format `spec.md` files independent of the wiki.

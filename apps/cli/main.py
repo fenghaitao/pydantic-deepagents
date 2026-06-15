@@ -21,6 +21,7 @@ import sys
 from dataclasses import fields
 from pathlib import Path
 from typing import Annotated, Any
+import uuid
 
 import typer
 from rich.console import Console
@@ -2608,6 +2609,81 @@ def simics_device_show(
             console.print_json(json.dumps(result, default=str))
         else:
             console.print(str(result))
+
+    asyncio.run(_run())
+
+
+@simics_device_app.command("wiki")
+def simics_device_wiki(
+    project_id: Annotated[str, typer.Option("--project-id", "-p", help="Project ID")],
+    device_name: Annotated[str, typer.Option("--device-name", "-d", help="DML device name")],
+    user_id: Annotated[
+        str,
+        typer.Option("--user-id", help="User ID (default: defaultuser)"),
+    ] = "defaultuser",
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Force regeneration even if pages already exist"),
+    ] = False,
+    output: Annotated[
+        str | None,
+        typer.Option(
+            "--output",
+            "-o",
+            help=(
+                "Root directory for wiki pages. "
+                "Pages are written to <output>/<section>/<subsection>/<page>.md. "
+                "Defaults to .repowiki/en/content (or POTPIE_WIKI_OUTPUT_DIR env var)."
+            ),
+        ),
+    ] = None,
+) -> None:
+    """Generate wiki documentation for a Simics DML device model.
+
+    Runs the full analysis pipeline (registers, interfaces, FSM, events,
+    capabilities) and writes Markdown wiki pages. The device name is passed as
+    ChatContext.query; force and output are passed via additional_context as JSON.
+
+    Examples:\n
+        pydantic-deep simics-device wiki --project-id <id> --device-name my_dev\n
+        pydantic-deep simics-device wiki --project-id <id> --device-name my_dev --force\n
+        pydantic-deep simics-device wiki --project-id <id> --device-name my_dev --output ./wiki
+    """
+    console = Console()
+
+    async def _run() -> None:
+        import app.core.models  # noqa: ensure all SQLAlchemy models are registered
+        from app.modules.intelligence.agents.chat_agent import ChatContext
+
+        runtime = _make_code_graph_runtime()
+        _rt = await runtime._get_runtime()
+        project_info = await _rt.projects.get(project_id)
+        project_name = project_info.repo_name
+        agent_id = "simics_device_wiki_agent"
+        additional_context = json.dumps(
+            {
+                "force": force,
+                "output": output,
+            }
+        )
+
+        try:
+            agent_handle = getattr(_rt.agents, agent_id)
+            conversation_id = str(uuid.uuid4())
+            ctx = ChatContext(
+                project_id=project_id,
+                project_name=project_name,
+                curr_agent_id=agent_id,
+                user_id=user_id,
+                query=device_name,
+                additional_context=additional_context,
+                conversation_id=conversation_id,
+                history=[],
+            )
+            response = await agent_handle.query(ctx)
+            console.print(response.response)
+        except Exception as e:
+            console.print(f"[red]Error running agent:[/red] {e}")
 
     asyncio.run(_run())
 

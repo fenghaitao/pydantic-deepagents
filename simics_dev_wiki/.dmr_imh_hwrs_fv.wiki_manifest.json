@@ -1,0 +1,74 @@
+{
+  "pages": {
+    "Capability-hardware-reset-sequencer": {
+      "path": "✅ Wiki page written to: simics_dev_wiki/Capabilities/hardware-reset-sequencer.md",
+      "source_hash": "0cede0b9d4faf19f",
+      "generated_at": "2026-06-11T10:17:57Z"
+    },
+    "Capability-power-sequencing-and-power-good": {
+      "path": "✅ Wiki page written to: simics_dev_wiki/Capabilities/power-sequencing-and-power-good.md",
+      "source_hash": "aef2bee313727dae",
+      "generated_at": "2026-06-11T10:17:57Z"
+    },
+    "Capability-boot-and-initialization-sequencing": {
+      "path": "✅ Wiki page written to: simics_dev_wiki/Capabilities/boot-and-initialization-sequencing.md",
+      "source_hash": "435742de2a85821b",
+      "generated_at": "2026-06-11T10:17:57Z"
+    },
+    "Capability-fuse-and-strap-configuration": {
+      "path": "✅ Wiki page written to: simics_dev_wiki/Capabilities/fuse-and-strap-configuration.md",
+      "source_hash": "a0266a9711719e8c",
+      "generated_at": "2026-06-11T10:17:57Z"
+    },
+    "Capability-die-topology-and-die-synchronization": {
+      "path": "✅ Wiki page written to: simics_dev_wiki/Capabilities/die-topology-and-die-synchronization.md",
+      "source_hash": "34cca72e0d16a3ca",
+      "generated_at": "2026-06-11T10:17:57Z"
+    },
+    "Capability-ip-feature-control": {
+      "path": "✅ Wiki page written to: simics_dev_wiki/Capabilities/ip-feature-control.md",
+      "source_hash": "6df926f5f214858a",
+      "generated_at": "2026-06-11T10:19:07Z"
+    },
+    "Capability-clock-and-reference-control": {
+      "path": "✅ Wiki page written to: simics_dev_wiki/Capabilities/clock-and-reference-control.md",
+      "source_hash": "61b8081149095f10",
+      "generated_at": "2026-06-11T10:19:07Z"
+    },
+    "Capability-pcie-and-io-reset": {
+      "path": "✅ Wiki page written to: simics_dev_wiki/Capabilities/pcie-and-io-reset.md",
+      "source_hash": "baa8156c8ef01b91",
+      "generated_at": "2026-06-11T10:19:07Z"
+    },
+    "Capability-device-identification-and-provisioning": {
+      "path": "✅ Wiki page written to: simics_dev_wiki/Capabilities/device-identification-and-provisioning.md",
+      "source_hash": "533d12e7cd365479",
+      "generated_at": "2026-06-11T10:19:07Z"
+    },
+    "Capability-thermal-and-safety": {
+      "path": "✅ Wiki page written to: simics_dev_wiki/Capabilities/thermal-and-safety.md",
+      "source_hash": "95526d6fdce39f7c",
+      "generated_at": "2026-06-11T10:19:07Z"
+    },
+    "Capability-pin-and-signal-drive": {
+      "path": "✅ Wiki page written to: simics_dev_wiki/Capabilities/pin-and-signal-drive.md",
+      "source_hash": "a68aa0190c95a4f6",
+      "generated_at": "2026-06-11T10:20:09Z"
+    },
+    "Capability-debug-and-integration": {
+      "path": "✅ Wiki page written to: simics_dev_wiki/Capabilities/debug-and-integration.md",
+      "source_hash": "55f3825d4e1145c0",
+      "generated_at": "2026-06-11T10:20:09Z"
+    },
+    "Capability-sequencer-control-and-timing": {
+      "path": "✅ Wiki page written to: simics_dev_wiki/Capabilities/sequencer-control-and-timing.md",
+      "source_hash": "d3a4f804e92a4349",
+      "generated_at": "2026-06-11T10:20:09Z"
+    },
+    "Capability-security-and-trust-configuration": {
+      "path": "✅ Wiki page written to: simics_dev_wiki/Capabilities/security-and-trust-configuration.md",
+      "source_hash": "8f360d09149cfa21",
+      "generated_at": "2026-06-11T10:20:09Z"
+    }
+  }
+}
