@@ -29,7 +29,7 @@ from neo4j import GraphDatabase
 # ── Paths ──────────────────────────────────────────────────────────────────────
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _POTPIE_ROOT = _REPO_ROOT / "code-graph-providers" / "potpie"
-_SAMPLE_CPP = Path(__file__).resolve().parent / "sample-cpp"
+_SAMPLE_CPP = Path(__file__).resolve().parent / "sample-cpp-ns"
 
 load_dotenv(_POTPIE_ROOT / ".env")
 
@@ -45,31 +45,38 @@ nodes_to_check: List[Tuple[str, str]] = [
     ("FILE", "main.cpp"),
     ("FILE", "graph.h"),
     ("FILE", "graph.cpp"),
+    ("NAMESPACE", "CodeAnalysis"),
     ("FUNCTION", "main"),
-    ("CLASS", "Graph"),
-    ("CLASS", "Graph.Node"),
-    ("FUNCTION", "Graph.addNode"),
-    ("FUNCTION", "Graph.addEdge"),
-    ("FUNCTION", "Graph.neighbors"),
-    ("FUNCTION", "Graph.hasNode"),
-    ("FUNCTION", "Graph.nodeCount"),
+    ("CLASS", "CodeAnalysis.Graph"),
+    ("CLASS", "CodeAnalysis.Graph.Node"),
+    ("CLASS", "CodeAnalysis.CodeGraph"),
+    ("FUNCTION", "CodeAnalysis.Graph.add_node"),
+    ("FUNCTION", "CodeAnalysis.Graph.add_edge"),
+    ("FUNCTION", "CodeAnalysis.Graph.count_node"),
+    ("FUNCTION", "CodeAnalysis.Graph.count_edge"),
+    ("FUNCTION", "CodeAnalysis.CodeGraph.docstring"),
+    ("FUNCTION", "CodeAnalysis.CodeGraph.source_code")
 ]
 
 # Format: (src_type, src_name, edge_type, tgt_type, tgt_name)
 # TODO: populate with expected edges from scip-clang parsing of sample-cpp
 edges_to_check: List[Tuple[str, str, str, str, str]] = [
     ("FILE", "main.cpp", "CONTAINS", "FUNCTION", "main"),
-    ("FILE", "graph.h", "CONTAINS", "CLASS", "Graph"),
-    ("CLASS", "Graph", "CONTAINS", "CLASS", "Graph.Node"),
-    ("CLASS", "Graph", "CONTAINS", "FUNCTION", "Graph.addNode"),
-    ("CLASS", "Graph", "CONTAINS", "FUNCTION", "Graph.addEdge"),
-    ("CLASS", "Graph", "CONTAINS", "FUNCTION", "Graph.neighbors"),
-    ("CLASS", "Graph", "CONTAINS", "FUNCTION", "Graph.hasNode"),
-    ("CLASS", "Graph", "CONTAINS", "FUNCTION", "Graph.nodeCount"),
-    ("FUNCTION", "main", "REFERENCES", "FUNCTION", "Graph.addNode"),
-    ("FUNCTION", "main", "REFERENCES", "FUNCTION", "Graph.addEdge"),
-    ("FUNCTION", "main", "REFERENCES", "FUNCTION", "Graph.neighbors"),
-    ("FUNCTION", "main", "REFERENCES", "FUNCTION", "Graph.nodeCount"),
+    ("FILE", "graph.h", "CONTAINS", "CLASS", "CodeAnalysis.Graph"),
+    ("NAMESPACE", "CodeAnalysis", "CONTAINS", "CLASS", "CodeAnalysis.Graph"),
+    ("NAMESPACE", "CodeAnalysis", "CONTAINS", "CLASS", "CodeAnalysis.CodeGraph"),
+    ("CLASS", "CodeAnalysis.Graph", "CONTAINS", "CLASS", "CodeAnalysis.Graph.Node"),
+    ("CLASS", "CodeAnalysis.Graph", "CONTAINS", "FUNCTION", "CodeAnalysis.Graph.add_node"),
+    ("CLASS", "CodeAnalysis.Graph", "CONTAINS", "FUNCTION", "CodeAnalysis.Graph.add_edge"),
+    ("CLASS", "CodeAnalysis.Graph", "CONTAINS", "FUNCTION", "CodeAnalysis.Graph.count_edge"),
+    ("CLASS", "CodeAnalysis.Graph", "CONTAINS", "FUNCTION", "CodeAnalysis.Graph.count_node"),
+    ("FUNCTION", "main", "REFERENCES", "FUNCTION", "CodeAnalysis.Graph.add_node"),
+    ("FUNCTION", "main", "REFERENCES", "FUNCTION", "CodeAnalysis.Graph.add_edge"),
+    ("FUNCTION", "main", "REFERENCES", "FUNCTION", "CodeAnalysis.Graph.count_node"),
+    ("FUNCTION", "main", "REFERENCES", "FUNCTION", "CodeAnalysis.Graph.count_edge"),
+    ("FUNCTION", "main", "REFERENCES", "FUNCTION", "CodeAnalysis.CodeGraph.docstring"),
+    ("FUNCTION", "main", "REFERENCES", "FUNCTION", "CodeAnalysis.CodeGraph.source_code"),
+    ("CLASS", "CodeAnalysis.CodeGraph", "EXTENDS", "CLASS", "CodeAnalysis.Graph"),
 ]
 
 
@@ -79,6 +86,33 @@ class Neo4jChecker:
     def __init__(self, uri: str, user: str, password: str, project_id: str) -> None:
         self._driver = GraphDatabase.driver(uri, auth=(user, password))
         self.project_id = project_id
+        # self.dump_all_nodes_and_edges()
+
+    def dump_all_nodes_and_edges(self) -> None:
+        print(f"[{_ts()}] Dumping all nodes and edges for project_id={self.project_id}...")
+        with self._driver.session() as session:
+            nodes = session.run(
+                "MATCH (n:NODE {repoId: $project_id}) RETURN n.type AS type, n.name AS name",
+                project_id=self.project_id
+            ).data()
+            edges = session.run(
+                """
+                MATCH (src:NODE {repoId: $project_id})-[r]->(tgt:NODE {repoId: $project_id})
+                RETURN src.type AS src_type, src.name AS src_name,
+                       type(r) AS edge_type,
+                       tgt.type AS tgt_type, tgt.name AS tgt_name
+                """,
+                project_id=self.project_id
+            ).data()
+        print(f"[{_ts()}] Nodes ({len(nodes)}):")
+        for node in nodes:
+            print(f"  NODE  type={node['type']!r}, name={node['name']!r}")
+        print(f"[{_ts()}] Edges ({len(edges)}):")
+        for edge in edges:
+            print(
+                f"  EDGE  ({edge['src_type']}:{edge['src_name']})-[{edge['edge_type']}]->"
+                f"({edge['tgt_type']}:{edge['tgt_name']})"
+            )
 
     def close(self) -> None:
         self._driver.close()

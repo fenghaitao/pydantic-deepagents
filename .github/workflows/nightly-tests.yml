@@ -246,12 +246,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: make setup-scip-clang
 
-      - name: Generate compile_commands.json for sample-cpp
-        working-directory: tests/integration-tests/sample-cpp
+      - name: Generate compile_commands.json for sample-cpp-ns
+        working-directory: tests/integration-tests/sample-cpp-ns
         run: bash gen-compile-commands.sh
 
       - name: Run scip-clang-potpie integration test
-        # Runs from the pydantic-deepagents root.  Parses sample-cpp with
+        # Runs from the pydantic-deepagents root.  Parses sample-cpp-ns with
         # scip-clang through the potpie backend and verifies Neo4j graph nodes/edges.
         env:
           SCIP_CLANG_BIN: ${{ github.workspace }}/code-graph-providers/scip-languages/bin/scip-clang
