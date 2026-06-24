@@ -107,6 +107,7 @@ from pydantic_deep.capabilities.hooks import (
     HookResult,
     HooksCapability,
 )
+from pydantic_deep.capabilities.scoped_memory import ScopedMemoryCapability
 from pydantic_deep.deps import DEFAULT_USAGE_LIMITS as DEFAULT_USAGE_LIMITS
 from pydantic_deep.deps import DeepAgentDeps
 from pydantic_deep.processors.eviction import (
@@ -166,6 +167,12 @@ from pydantic_deep.toolsets.memory import (
     get_memory_path,
     load_memory,
 )
+from pydantic_deep.toolsets.scoped_memory import (
+    MEMORY_SYSTEM_PROMPT,
+    MemoryEntry,
+    ScopedMemoryToolset,
+)
+from pydantic_deep.toolsets.scoped_memory.consolidator import consolidate_session
 from pydantic_deep.toolsets.skills import (
     BackendSkillResource,
     BackendSkillScript,
@@ -241,6 +248,7 @@ __all__ = [
     "SkillsCapability",
     "ContextFilesCapability",
     "MemoryCapability",
+    "ScopedMemoryCapability",
     "TeamCapability",
     "PlanCapability",
     "StuckLoopDetection",
@@ -259,6 +267,7 @@ __all__ = [
     "ConsoleDeps",
     "SubAgentToolset",
     "SkillsToolset",
+    "ScopedMemoryToolset",
     "create_plan_toolset",
     # Skills types
     "Skill",
@@ -301,6 +310,10 @@ __all__ = [
     "DEFAULT_MEMORY_DIR",
     "DEFAULT_MEMORY_FILENAME",
     "DEFAULT_MAX_MEMORY_LINES",
+    # Scoped, typed memory (newer API)
+    "MemoryEntry",
+    "MEMORY_SYSTEM_PROMPT",
+    "consolidate_session",
     # Eviction
     "EvictionCapability",
     "EvictionProcessor",

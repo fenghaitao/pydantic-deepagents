@@ -163,6 +163,14 @@ class AgentMemoryToolset(FunctionToolset[Any]):
                 Supported keys: ``read_memory``, ``write_memory``, ``update_memory``.
                 Any key not present falls back to the built-in description constant.
         """
+        import warnings
+
+        warnings.warn(
+            "AgentMemoryToolset is deprecated; use "
+            "pydantic_deep.toolsets.scoped_memory.ScopedMemoryToolset instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         super().__init__(id="deep-memory")
         self._agent_name = agent_name
         self._memory_dir = memory_dir

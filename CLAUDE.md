@@ -113,17 +113,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Capabilities (`pydantic_deep/capabilities/`)**
 - `SkillsCapability`: Injects skills system prompt and manages skill discovery
 - `ContextFilesCapability`: Auto-discovers and injects context files (DEEP.md, AGENTS.md, CLAUDE.md, SOUL.md)
-- `MemoryCapability`: Persistent memory management with read/write/update tools
+- `ScopedMemoryCapability`: Scoped, typed persistent memory (4 tools + dual-scope injection) — supersedes `MemoryCapability`
+- `MemoryCapability`: Persistent memory management with read/write/update tools (deprecated — use `ScopedMemoryCapability`)
 - `TeamCapability`: Agent team coordination and management
 - `PlanCapability`: Planning mode with ask_user + save_plan tools
 - All extend pydantic-ai's `AbstractCapability`
 
 **Persistent Memory (`pydantic_deep/toolsets/memory.py`)**
 - `MemoryFile`: Loaded memory (agent_name, path, content)
-- `AgentMemoryToolset`: FunctionToolset with read_memory, write_memory, update_memory
+- `AgentMemoryToolset`: FunctionToolset with read_memory, write_memory, update_memory (deprecated — use `ScopedMemoryToolset`)
 - `get_instructions()`: Injects memory into system prompt (first N lines)
 - `load_memory()`, `format_memory_prompt()`, `get_memory_path()`
 - Default path: `{memory_dir}/{agent_name}/MEMORY.md`
+
+**Scoped, Typed Memory (`pydantic_deep/toolsets/scoped_memory/`)**
+- `ScopedMemoryToolset`: FunctionToolset with `MemorySave`, `MemorySearch`, `MemoryDelete`, `MemoryList` tools + system-prompt index injection
+- `MemoryEntry`: file-per-memory dataclass (name, description, type, content, created, scope, confidence, source, last_used_at, conflict_group)
+- 4 types: `user` | `feedback` | `project` | `reference`; YAML frontmatter `.md` files + auto-built `MEMORY.md` index per scope
+- Dual scope: **user** (cross-project, dedicated `LocalBackend` at `~/.pydantic-deep/memory/{agent_name}/`) and **project** (run's backend at `.pydantic-deep/memory/{agent_name}/`)
+- Keyword + optional AI search; ranking = `confidence × exp(-age_days/30)` (age from `created`); configurable `staleness_days` warnings; slug-based conflict detection
+- `consolidate_session()`: app-triggered AI consolidation extracting ≤3 memories from a session
+- Replaces the legacy single-blob memory; prefer this over `AgentMemoryToolset`
 
 **Context Files (`pydantic_deep/toolsets/context.py`)**
 - `ContextFile`: Loaded context file (name, path, content)

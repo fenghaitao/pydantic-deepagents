@@ -34,11 +34,23 @@ class MemoryCapability(AbstractCapability[Any]):
     _toolset: AgentMemoryToolset | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
-        self._toolset = AgentMemoryToolset(
-            agent_name=self.agent_name,
-            memory_dir=self.memory_dir,
-            max_lines=self.max_lines,
+        import warnings
+
+        warnings.warn(
+            "MemoryCapability is deprecated; use "
+            "pydantic_deep.capabilities.scoped_memory.ScopedMemoryCapability instead.",
+            DeprecationWarning,
+            stacklevel=2,
         )
+        with warnings.catch_warnings():
+            # The legacy toolset emits its own DeprecationWarning; this capability is
+            # already deprecated, so don't double-warn for one construction.
+            warnings.simplefilter("ignore", DeprecationWarning)
+            self._toolset = AgentMemoryToolset(
+                agent_name=self.agent_name,
+                memory_dir=self.memory_dir,
+                max_lines=self.max_lines,
+            )
 
     def get_toolset(self) -> AbstractToolset[Any] | None:
         return self._toolset
