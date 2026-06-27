@@ -1,12 +1,12 @@
 [submodule "subagents-pydantic-ai"]
 	path = subagents-pydantic-ai
-	url = https://github.com/intel-sandbox/subagents-pydantic-ai.git
+	url = https://github.com/fenghaitao/subagents-pydantic-ai.git
 [submodule "code-graph-providers/potpie"]
 	path = code-graph-providers/potpie
-	url = https://github.com/intel-sandbox/potpie.git
+	url = https://github.com/fenghaitao/potpie.git
 [submodule "code-graph-providers/CodeGraphContext"]
 	path = code-graph-providers/CodeGraphContext
-	url = https://github.com/intel-sandbox/CodeGraphContext.git
+	url = https://github.com/fenghaitao/CodeGraphContext.git
 [submodule "code-graph-providers/scip-languages/scip-clang"]
 	path = code-graph-providers/scip-languages/scip-clang
-	url = https://github.com/intel-sandbox/scip-clang
+	url = https://github.com/fenghaitao/scip-clang
