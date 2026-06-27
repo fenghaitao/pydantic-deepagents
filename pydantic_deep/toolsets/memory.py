@@ -19,8 +19,6 @@ from pydantic_ai.messages import InstructionPart
 from pydantic_ai.toolsets import FunctionToolset
 from pydantic_ai_backends import BackendProtocol
 
-from pydantic_deep._backend import read_backend_bytes
-
 DEFAULT_MEMORY_DIR: str = "/.deep/memory"
 """Default base directory for memory files in the backend."""
 
@@ -99,7 +97,7 @@ def load_memory(
     Returns:
         MemoryFile if found, None otherwise.
     """
-    raw = read_backend_bytes(backend, path)
+    raw = backend._read_bytes(path)
     if not raw:
         return None
     content = raw.decode("utf-8", errors="replace")

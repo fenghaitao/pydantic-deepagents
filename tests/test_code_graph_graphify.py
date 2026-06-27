@@ -157,6 +157,25 @@ class TestResolveGraphPath:
         ).resolve()
 
 
+class TestMakeGraphifyRuntime:
+    def test_factory_returns_runtime(self) -> None:
+        from pydantic_deep.toolsets.code_graph import make_graphify_runtime
+
+        rt = make_graphify_runtime(repo_path="/repo", graph_path="/g/graph.json")
+        assert isinstance(rt, GraphifyRuntime)
+        assert rt.resolve_graph_path() == Path("/g/graph.json").resolve()
+
+    def test_factory_defaults(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        from pydantic_deep.toolsets.code_graph import make_graphify_runtime
+
+        monkeypatch.chdir(tmp_path)
+        rt = make_graphify_runtime()
+        assert isinstance(rt, GraphifyRuntime)
+        assert rt.resolve_graph_path() == (
+            tmp_path / GRAPHIFY_OUT_DIRNAME / GRAPH_FILENAME
+        ).resolve()
+
+
 # ── _load_graph / lifecycle ────────────────────────────────────────────────────
 
 
