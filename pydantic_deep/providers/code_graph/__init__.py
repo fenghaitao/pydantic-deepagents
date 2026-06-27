@@ -1,8 +1,8 @@
 """Code-graph provider protocol and adapters.
 
-Defines a common ``CodeGraphProvider`` protocol that both the Potpie and CGC
-runtimes satisfy (directly or via thin adapters), so CLI commands like
-``projects list`` and ``projects delete`` work with either backend.
+Defines a common ``CodeGraphProvider`` protocol that the Potpie, CGC, and
+Graphify runtimes satisfy (directly or via thin adapters), so CLI commands
+like ``projects list`` and ``projects delete`` work with any backend.
 
 Usage::
 
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 @runtime_checkable
 class CodeGraphProvider(Protocol):
-    """Protocol for code-graph providers (Potpie, CGC, etc.).
+    """Protocol for code-graph providers (Potpie, CGC, Graphify, etc.).
 
     Any object implementing these async methods can be used as the backend
     for CLI project-management commands.
@@ -98,10 +98,11 @@ def make_provider(provider: str, **kwargs: Any) -> CodeGraphProvider:
     """Factory that returns an appropriate :class:`CodeGraphProvider`.
 
     Args:
-        provider: ``"potpie"`` (default) or ``"cgc"``.
+        provider: ``"potpie"`` (default), ``"cgc"``, or ``"graphify"``.
         **kwargs: Forwarded to the underlying runtime constructor.
-            - Potpie: ``user_id``
-            - CGC:    ``repo_path``
+            - Potpie:   ``user_id``
+            - CGC:      ``repo_path``
+            - Graphify: ``repo_path``, ``graph_path``
 
     Returns:
         A :class:`CodeGraphProvider`-compatible object.
@@ -119,8 +120,17 @@ def make_provider(provider: str, **kwargs: Any) -> CodeGraphProvider:
 
         return PotpieRuntime(user_id=kwargs.get("user_id"))  # type: ignore[return-value]
 
+    if provider == "graphify":
+        from pydantic_deep.toolsets.code_graph.graphify.runtime import GraphifyRuntime
+
+        return GraphifyRuntime(  # type: ignore[return-value]
+            repo_path=kwargs.get("repo_path"),
+            graph_path=kwargs.get("graph_path"),
+        )
+
     raise ValueError(
-        f"Unknown code-graph provider: '{provider}'. Valid values: 'potpie', 'cgc'."
+        f"Unknown code-graph provider: '{provider}'. "
+        "Valid values: 'potpie', 'cgc', 'graphify'."
     )
 
 

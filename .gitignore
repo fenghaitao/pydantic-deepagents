@@ -117,3 +117,5 @@ scripts/vector/bin/
 scripts/vector/data/
 scripts/vector/logs/
 scripts/vector/pids/
+# Graphify generated knowledge graph output
+graphify-out/

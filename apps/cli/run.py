@@ -266,10 +266,54 @@ async def execute_headless(  # noqa: C901
             except Exception as _mcp_exc:
                 print(f"Warning: --mcp: unexpected error: {_mcp_exc}", file=sys.stderr)
 
+        elif _kg_provider == "graphify":
+            try:
+                import shutil
+                from pathlib import Path as _Path
+
+                from pydantic_ai.capabilities import MCP
+                from pydantic_ai.mcp import MCPServerStdio
+                from pydantic_deep.capabilities.code_graph_mcp import CodeGraphMCPCapability
+
+                # Resolve graphify graph path: prefer working dir's graphify-out.
+                _gf_root = _Path(working_dir) if working_dir else _Path.cwd()
+                _gf_graph = str(_gf_root / "graphify-out" / "graph.json")
+
+                # Prefer the installed 'graphify-mcp' script, otherwise invoke
+                # the in-tree source via sys.executable + PYTHONPATH.
+                _gf_bin = shutil.which("graphify-mcp")
+                if _gf_bin:
+                    _gf_cmd = _gf_bin
+                    _gf_args = [_gf_graph]
+                    _gf_env = _os.environ.copy()
+                else:
+                    _gf_src = str(
+                        _Path(__file__).resolve().parent.parent.parent
+                        / "code-graph-providers" / "graphify"
+                    )
+                    _gf_cmd = sys.executable
+                    _gf_args = ["-m", "graphify.serve", _gf_graph]
+                    _gf_env = {**_os.environ, "PYTHONPATH": _gf_src}
+
+                _gf_stdio = MCPServerStdio(_gf_cmd, _gf_args, env=_gf_env, timeout=30)
+                _extra = list(agent_kwargs.get("extra_capabilities") or [])
+                _extra.append(CodeGraphMCPCapability(
+                    wrapped=MCP(url="stdio://graphify", local=_gf_stdio),
+                    prefix="graphify",
+                    project_id=_pid,
+                ))
+                agent_kwargs["extra_capabilities"] = _extra
+                print(
+                    f"Graphify MCP server configured (stdio: graphify.serve {_gf_graph})",
+                    file=sys.stderr,
+                )
+            except Exception as _mcp_exc:
+                print(f"Warning: --mcp: unexpected error: {_mcp_exc}", file=sys.stderr)
+
         else:
             print(
                 f"Warning: --mcp: unsupported kg.provider '{_kg_provider}'. "
-                "Supported providers: potpie, cgc",
+                "Supported providers: potpie, cgc, graphify",
                 file=sys.stderr,
             )
 

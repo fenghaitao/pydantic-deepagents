@@ -89,7 +89,7 @@ class KgConfig:
     """Configuration for the code-graph / KG backend."""
 
     provider: str = "potpie"
-    """Code-graph provider: ``"potpie"`` (default) or ``"cgc"``."""
+    """Code-graph provider: ``"potpie"`` (default), ``"cgc"``, or ``"graphify"``."""
     project_id: str | None = None
     """Default project UUID injected into agent system prompt."""
 
@@ -209,7 +209,7 @@ def validate_config(config: CliConfig) -> list[str]:
         warnings.append(
             f"Unknown sandbox '{config.sandbox}'. Known: {', '.join(sorted(known_sandboxes))}"
         )
-    known_providers = {"potpie", "cgc"}
+    known_providers = {"potpie", "cgc", "graphify"}
     if config.kg.provider not in known_providers:
         warnings.append(
             f"Unknown code-graph provider '{config.kg.provider}'."

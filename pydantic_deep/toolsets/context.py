@@ -17,6 +17,8 @@ from pydantic_ai.messages import InstructionPart
 from pydantic_ai.toolsets import FunctionToolset
 from pydantic_ai_backends import BackendProtocol
 
+from pydantic_deep._backend import read_backend_bytes
+
 DEFAULT_CONTEXT_FILENAMES: list[str] = [
     "AGENTS.md",
     "CLAUDE.md",
@@ -87,7 +89,7 @@ def load_context_files(
     """
     result: list[ContextFile] = []
     for path in paths:
-        raw = backend._read_bytes(path)
+        raw = read_backend_bytes(backend, path)
         if not raw:
             continue
         content = raw.decode("utf-8", errors="replace")
@@ -115,7 +117,7 @@ def discover_context_files(
     found: list[str] = []
     for name in filenames:
         path = f"{search_path.rstrip('/')}/{name}"
-        raw = backend._read_bytes(path)
+        raw = read_backend_bytes(backend, path)
         if raw:
             found.append(path)
     return found

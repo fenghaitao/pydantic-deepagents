@@ -10,3 +10,6 @@
 [submodule "code-graph-providers/scip-languages/scip-clang"]
 	path = code-graph-providers/scip-languages/scip-clang
 	url = https://github.com/fenghaitao/scip-clang
+[submodule "code-graph-providers/graphify"]
+	path = code-graph-providers/graphify
+	url = https://github.com/fenghaitao/graphify.git

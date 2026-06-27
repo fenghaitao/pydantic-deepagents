@@ -3,7 +3,7 @@
 This module provides backend-integrated implementations that parallel
 the local filesystem implementations in ``local.py``:
 
-- `BackendSkillResource`: Load resources via ``BackendProtocol._read_bytes()``
+- `BackendSkillResource`: Load resources via the backend byte-read API
 - `BackendSkillScriptExecutor`: Execute scripts via ``SandboxProtocol.execute()``
 - `BackendSkillScript`: File-based script delegating to backend executor
 - `BackendSkillsDirectory`: Discover skills from a backend filesystem
@@ -20,6 +20,8 @@ from typing import Any
 
 from pydantic_ai_backends import BackendProtocol, SandboxProtocol
 from pydantic_ai_backends.types import ExecuteResponse
+
+from pydantic_deep._backend import read_backend_bytes
 
 from .directory import _parse_skill_md, _validate_skill_metadata
 from .exceptions import (
@@ -79,7 +81,7 @@ class BackendSkillResource(SkillResource):
             raise SkillResourceLoadError(f"Resource '{self.name}' has no backend configured")
 
         try:
-            content_bytes = self.backend._read_bytes(self.uri)
+            content_bytes = read_backend_bytes(self.backend, self.uri)
             content = content_bytes.decode("utf-8")
         except Exception as e:
             raise SkillResourceLoadError(
@@ -397,7 +399,7 @@ def _discover_backend_scripts(
 class BackendSkillsDirectory:
     """Discover and load skills from a backend filesystem.
 
-    Uses ``BackendProtocol`` methods (``glob_info``, ``_read_bytes``) for
+    Uses ``BackendProtocol`` methods (``glob_info``, byte reading) for
     skill discovery and resource loading. Script execution requires
     ``SandboxProtocol`` (with ``execute()``).
 
@@ -501,7 +503,7 @@ class BackendSkillsDirectory:
         Returns:
             Loaded Skill object, or None if skill should be skipped.
         """
-        content_bytes = self._backend._read_bytes(skill_file_path)
+        content_bytes = read_backend_bytes(self._backend, skill_file_path)
         content = content_bytes.decode("utf-8")
 
         frontmatter, instructions = _parse_skill_md(content)

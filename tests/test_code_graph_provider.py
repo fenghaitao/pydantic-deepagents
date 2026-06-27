@@ -178,6 +178,43 @@ class TestMakeProvider:
             make_provider("potpie", user_id="myuser")
         mock_potpie_mod.PotpieRuntime.assert_called_once_with(user_id="myuser")
 
+    def test_graphify_returns_graphify_runtime(self) -> None:
+        mock_rt = MagicMock()
+        mock_gf_mod = MagicMock()
+        mock_gf_mod.GraphifyRuntime = MagicMock(return_value=mock_rt)
+        with patch.dict(
+            "sys.modules",
+            {
+                "pydantic_deep.toolsets.code_graph.graphify": MagicMock(),
+                "pydantic_deep.toolsets.code_graph.graphify.runtime": mock_gf_mod,
+            },
+        ):
+            provider = make_provider("graphify")
+        assert provider is mock_rt
+        mock_gf_mod.GraphifyRuntime.assert_called_once_with(
+            repo_path=None, graph_path=None
+        )
+
+    def test_graphify_passes_paths(self) -> None:
+        mock_rt = MagicMock()
+        mock_gf_mod = MagicMock()
+        mock_gf_mod.GraphifyRuntime = MagicMock(return_value=mock_rt)
+        with patch.dict(
+            "sys.modules",
+            {
+                "pydantic_deep.toolsets.code_graph.graphify": MagicMock(),
+                "pydantic_deep.toolsets.code_graph.graphify.runtime": mock_gf_mod,
+            },
+        ):
+            make_provider("graphify", repo_path="/my/repo", graph_path="/g/graph.json")
+        mock_gf_mod.GraphifyRuntime.assert_called_once_with(
+            repo_path="/my/repo", graph_path="/g/graph.json"
+        )
+
     def test_unknown_provider_raises(self) -> None:
         with pytest.raises(ValueError, match="Unknown code-graph provider: 'foobar'"):
+            make_provider("foobar")
+
+    def test_unknown_provider_lists_graphify(self) -> None:
+        with pytest.raises(ValueError, match="graphify"):
             make_provider("foobar")

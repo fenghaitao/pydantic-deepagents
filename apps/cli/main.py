@@ -1345,7 +1345,7 @@ def main() -> None:
 
 
 def _make_code_graph_runtime():
-    """Return a CodeGraphProvider for the configured provider (potpie or cgc)."""
+    """Return a CodeGraphProvider for the configured provider (potpie, cgc, or graphify)."""
     from apps.cli.config import load_config
     from pydantic_deep.providers.code_graph import make_provider
 
@@ -1514,7 +1514,7 @@ def projects_list(
 
         if effective_provider == "all":
             all_results: dict[str, list[dict]] = {}
-            for p_name in ("potpie", "cgc"):
+            for p_name in ("potpie", "cgc", "graphify"):
                 try:
                     all_results[p_name] = await make_provider(p_name).list_projects()
                 except Exception:

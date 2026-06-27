@@ -31,6 +31,8 @@ class DeepAgentDeps:
         todos: Task list for planning
         subagents: Pre-configured subagents available for delegation
         kg_context: holds the `PotpieContext | None` for the current KG session (generic name, not potpie-specific)
+        cgc_context: holds the `CGCContext | None` for the current CGC session
+        graphify_context: holds the `GraphifyContext | None` for the current Graphify session
     """
 
     backend: BackendProtocol = field(default_factory=StateBackend)
@@ -43,6 +45,7 @@ class DeepAgentDeps:
     share_todos: bool = False  # When True, subagents share parent's todo list
     kg_context: Any = field(default=None, repr=False)  # PotpieContext | None
     cgc_context: Any = field(default=None, repr=False)  # CGCContext | None
+    graphify_context: Any = field(default=None, repr=False)  # GraphifyContext | None
 
     def __post_init__(self) -> None:
         """Initialize backend with files if using StateBackend."""
@@ -237,6 +240,7 @@ class DeepAgentDeps:
             share_todos=self.share_todos,  # Propagate to subagents
             kg_context=self.kg_context,  # Propagate project context to subagents
             cgc_context=self.cgc_context,  # Propagate CGC context to subagents
+            graphify_context=self.graphify_context,  # Propagate Graphify context to subagents
         )
 
 
