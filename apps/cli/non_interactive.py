@@ -171,29 +171,34 @@ async def run_non_interactive(  # noqa: C901
         # Potpie KG toolset — injected when --project-id is provided or auto-discovered
         cap = None
         simics_cap = None
+        _extra_cg: list[Any] = []
         try:
             from pathlib import Path as _Path
 
-            from apps.cli.code_graph.potpie_setup import build_kg_capability, build_simics_dev_capability
+            from apps.cli.code_graph import build_code_graph_capabilities
+
+            # Resolve the configured code-graph provider (potpie | cgc | graphify).
+            _cg_provider = "potpie"
+            try:
+                from apps.cli.config import load_config as _load_config
+                _cg_provider = _load_config().kg.provider or "potpie"
+            except Exception:
+                pass
 
             _root = _Path(working_dir) if working_dir else _Path.cwd()
-            cap = await build_kg_capability(
-                project_id,
-                user_id,
+            _status = None if effective_quiet else (lambda msg: err_console.print(f"[dim]{msg}[/dim]"))
+            cap, simics_cap, _extra_cg, project_id = await build_code_graph_capabilities(
+                _cg_provider,
+                project_id=project_id,
+                user_id=user_id,
                 root=_root,
-                on_status=None if effective_quiet else lambda msg: err_console.print(f"[dim]{msg}[/dim]"),
-            )
-            if cap is not None and cap.context is not None and cap.context.project_id:
-                project_id = cap.context.project_id
-            simics_cap = await build_simics_dev_capability(
-                project_id,
-                user_id,
-                root=_root,
-                on_status=None if effective_quiet else lambda msg: err_console.print(f"[dim]{msg}[/dim]"),
+                on_status=_status,
             )
         except Exception as e:
-            err_console.print(f"[yellow]Warning: could not load Potpie KG or Simics tools: {e}[/yellow]")
+            err_console.print(f"[yellow]Warning: could not load code-graph tools: {e}[/yellow]")
 
+        _extra_caps = list(_build_mcp_capabilities(mcp_urls or [], err_console) or [])
+        _extra_caps.extend(_extra_cg)
         agent, deps = create_cli_agent(
             model=model,
             working_dir=working_dir,
@@ -206,7 +211,7 @@ async def run_non_interactive(  # noqa: C901
             session_id=session_id,
             kg_capability=cap,
             simics_dev_capability=simics_cap,
-            extra_capabilities=_build_mcp_capabilities(mcp_urls or [], err_console),
+            extra_capabilities=_extra_caps,
         )
 
         show_tools = not effective_quiet or verbose

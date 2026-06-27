@@ -121,47 +121,59 @@ async def execute_headless(  # noqa: C901
     if browser_headless is not None:
         agent_kwargs["browser_headless"] = browser_headless
     if code_graph is not None and code_graph:
+        from pathlib import Path as _Path
+
+        from apps.cli.code_graph import build_code_graph_capabilities
+
+        # Resolve the configured code-graph provider (potpie | cgc | graphify).
+        _cg_provider = "potpie"
+        try:
+            from apps.cli.config import load_config as _load_config
+
+            _cg_provider = _load_config(agent_kwargs.get("config_path")).kg.provider or "potpie"
+        except Exception:
+            pass
+
+        user_id = user_id or "defaultuser"
+        _root = _Path(working_dir) if working_dir else _Path.cwd()
+        _status = None if not verbose else (lambda msg: print(f"[dim]{msg}[/dim]"))
         cap = None
         simics_cap = None
         try:
-            from pathlib import Path as _Path
-
-            from apps.cli.code_graph.potpie_setup import build_kg_capability
-
-            user_id = user_id or "defaultuser"
-            _root = _Path(working_dir) if working_dir else _Path.cwd()
-            cap = await build_kg_capability(
-                project_id,
-                user_id,
+            cap, simics_cap, _extra_cg, project_id = await build_code_graph_capabilities(
+                _cg_provider,
+                project_id=project_id,
+                user_id=user_id,
                 root=_root,
-                on_status=None if not verbose else lambda msg: print(f"[dim]{msg}[/dim]"),
+                on_status=_status,
             )
-            if cap is not None and cap.context is not None and cap.context.project_id:
-                project_id = cap.context.project_id
-            if cap is None:
+            if _cg_provider == "potpie":
+                if cap is None:
+                    print(
+                        "[yellow]Warning: --code-graph requested but no Potpie project found. "
+                        "Pass --project-id <id> or set a default with: "
+                        "pydantic-deep config set kg.project_id <id>[/yellow]",
+                        file=sys.stderr,
+                    )
+                if simics_cap is None:
+                    print(
+                        "[yellow]Warning: --code-graph requested but no Simics device project found. "
+                        "Pass --project-id <id> or set a default with: "
+                        "pydantic-deep config set kg.project_id <id>[/yellow]",
+                        file=sys.stderr,
+                    )
+            elif _extra_cg:
+                _ex = list(agent_kwargs.get("extra_capabilities") or [])
+                _ex.extend(_extra_cg)
+                agent_kwargs["extra_capabilities"] = _ex
+            else:
                 print(
-                    "[yellow]Warning: --code-graph requested but no Potpie project found. "
-                    "Pass --project-id <id> or set a default with: "
-                    "pydantic-deep config set kg.project_id <id>[/yellow]",
-                    file=__import__("sys").stderr,
-                )
-
-            from apps.cli.code_graph.potpie_setup import build_simics_dev_capability
-            simics_cap = await build_simics_dev_capability(
-                project_id,
-                user_id,
-                root=_root,
-                on_status=None if not verbose else lambda msg: print(f"[dim]{msg}[/dim]"),
-            )
-            if simics_cap is None:
-                print(
-                    "[yellow]Warning: --code-graph requested but no Simics device project found. "
-                    "Pass --project-id <id> or set a default with: "
-                    "pydantic-deep config set kg.project_id <id>[/yellow]",
-                    file=__import__("sys").stderr,
+                    f"[yellow]Warning: --code-graph requested but no {_cg_provider} graph found. "
+                    "Build it first (e.g. `graphify .` for graphify, `cgc index .` for cgc).[/yellow]",
+                    file=sys.stderr,
                 )
         except Exception as e:
-            print(f"[yellow]Warning: could not load Potpie KG tools: {e}[/yellow]")
+            print(f"[yellow]Warning: could not load {_cg_provider} code-graph tools: {e}[/yellow]")
 
         agent_kwargs["kg_capability"] = cap
         agent_kwargs["simics_dev_capability"] = simics_cap

@@ -2474,21 +2474,21 @@ async def run_interactive(  # noqa: C901
             if setup_model is None:
                 return
 
-        # Auto-discover the potpie project root and build both Potpie-backed
-        # capabilities needed by the interactive agent.
+        # Build code-graph capabilities for the configured provider
+        # (potpie | cgc | graphify). Potpie auto-discovers a project; cgc and
+        # graphify load an in-process toolset for the working-directory graph.
         _root = Path(working_dir) if working_dir else Path.cwd()
-        from apps.cli.code_graph.potpie_setup import build_kg_capability, build_simics_dev_capability
-        cap = await build_kg_capability(
-            project_id,
-            user_id,
-            root=_root,
-            on_status=lambda msg: console.print(f"[dim]{msg}[/dim]"),
-        )
-        if cap is not None and cap.context is not None and cap.context.project_id:
-            project_id = cap.context.project_id
-        simics_cap = await build_simics_dev_capability(
-            project_id,
-            user_id,
+        from apps.cli.code_graph import build_code_graph_capabilities
+        _cg_provider = "potpie"
+        try:
+            from apps.cli.config import load_config as _load_config
+            _cg_provider = _load_config().kg.provider or "potpie"
+        except Exception:
+            pass
+        cap, simics_cap, _extra_cg, project_id = await build_code_graph_capabilities(
+            _cg_provider,
+            project_id=project_id,
+            user_id=user_id,
             root=_root,
             on_status=lambda msg: console.print(f"[dim]{msg}[/dim]"),
         )
@@ -2505,6 +2505,7 @@ async def run_interactive(  # noqa: C901
             session_id=session_id,
             kg_capability=cap,
             simics_dev_capability=simics_cap,
+            extra_capabilities=_extra_cg or None,
             lean=lean,
         )
         if result[0] is None:
