@@ -97,7 +97,10 @@ logfire = ["logfire>=4.0"]
 # Vector OTLP tracing support (uses logfire as the OTel bridge)
 vector = ["logfire>=4.0", "ports-allocator"]
 # Potpie KG (knowledge-graph) code intelligence — requires Python 3.13
-potpie = ["potpie"]
+# torch is declared here (not just transitively via potpie) so the CPU-only
+# index source in [tool.uv.sources] applies — uv ignores sources for purely
+# transitive deps.
+potpie = ["potpie", "torch"]
 # CodeGraphContext (CGC) provider — tree-sitter-based code graph, multi-language
 cgc = ["codegraphcontext", "kuzu>=0.11.3"]
 # All optional dependencies
@@ -130,11 +133,18 @@ constraint-dependencies = [
     "tree-sitter-language-pack<1.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 
+[[tool.uv.index]]
+# CPU-only PyTorch wheels: avoids pulling the large nvidia-cu12 CUDA packages.
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
 [tool.uv.sources]
 subagents-pydantic-ai = { path = "subagents-pydantic-ai", editable = true }
 potpie = { path = "code-graph-providers/potpie", editable = true }
 codegraphcontext = { path = "code-graph-providers/CodeGraphContext", editable = true }
-ports-allocator = { git = "https://github.com/intel-sandbox/ports-allocator.git" }
+ports-allocator = { git = "https://github.com/fenghaitao/ports-allocator.git" }
+torch = [{ index = "pytorch-cpu" }]
 
 [tool.hatch.build.targets.wheel]
 packages = ["pydantic_deep", "apps"]
